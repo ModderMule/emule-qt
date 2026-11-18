@@ -110,6 +110,7 @@ public:
     std::function<void(QMenu*)> m_schedMenuHook;
 
 signals:
+    void peerHostnameResolutionChanged(bool enabled);
     /// "Test" on the Notifications page: show a pop-up the way these settings
     /// would, saved or not. @p soundFile is empty for "No sound".
     void testNotificationRequested(const QString& soundFile);
@@ -394,6 +395,7 @@ private:
     bool m_initialUseOriginalIcons = false;
     int  m_initialColorScheme = 0;   ///< theme shown at load / last sync
     QCheckBox* m_showCountryFlagsCheck = nullptr;
+    QCheckBox* m_resolvePeerHostnamesCheck = nullptr;
     QComboBox* m_geoIpSourceCombo = nullptr;
     QLabel* m_geoIpAccountLabel = nullptr;
     QLabel* m_geoIpLicenseLabel = nullptr;

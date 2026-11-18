@@ -7,6 +7,8 @@
 /// discovery order (X) vs XOR distance from target (Y), with arrows from the
 /// node that reported each contact.
 
+#include "utils/HostnameResolver.h"
+
 #include <QElapsedTimer>
 #include <QIcon>
 #include <QTimer>
@@ -45,6 +47,9 @@ class KadGraphBase : public QWidget {
 public:
     void setAutoShowLookups(bool on) { m_autoShow = on; }
 
+    /// Hostname row in the node tips ("Resolve downloaders' hostnames").
+    void setResolveHostnames(bool on);
+
     /// A new picture is on its way (or arrived: false). Under the pointer the tool tip
     /// says "Loading..." at once and turns into the node's tip with the data.
     void setLoading(bool on);
@@ -75,13 +80,19 @@ protected:
     [[nodiscard]] static QString tipRow(const QString& label, const QString& value);
     /// Tool tip table row, @p html as is.
     [[nodiscard]] static QString tipRowHtml(const QString& label, const QString& html);
-    /// Country row with flag; empty when unknown. The address stays out of tooltips.
+    /// Country row with flag; empty when unknown.
     [[nodiscard]] static QString countryRow(const QString& cc);
+    /// IP row ("ip:port" as sent) and, when resolving, a hostname row; empty when unknown.
+    [[nodiscard]] QString addressRows(const QString& endpoint) const;
+    /// The "ip:port" texts now shown: their lookups start, the others' results go.
+    void syncHostnames(const QStringList& endpoints);
 
     bool m_autoShow = true;
 
 private:
     void onDwell();
+
+    HostnameResolver m_resolver;
 
     QTimer m_dwell;                   // rest on a node before its tip shows
     QElapsedTimer m_loadingAge;

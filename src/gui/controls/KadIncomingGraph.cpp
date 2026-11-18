@@ -162,6 +162,11 @@ void KadIncomingGraph::setRequest(const QCborMap& row, const QCborMap& graph, co
     std::stable_sort(m_nodes.begin() + 2, m_nodes.end(),
                      [](const Node& a, const Node& b) { return a.closeness < b.closeness; });
     m_hot = -1;
+    QStringList endpoints;
+    endpoints.reserve(static_cast<qsizetype>(m_nodes.size()));
+    for (const Node& n : m_nodes)
+        endpoints.append(n.addr);
+    syncHostnames(endpoints);
     layoutNodes();
     setLoading(false);   // and the tip under the pointer follows the new nodes
     update();
@@ -394,6 +399,7 @@ QString KadIncomingGraph::toolTipText(int idx) const
         html += row(tr("Node ID"), n.known ? n.id : unknown);
     }
     html += countryRow(n.cc);
+    html += addressRows(n.addr);
     if (n.version >= 0)
         html += row(tr("Protocol Version"), QString::number(n.version));
     if (n.known) {

@@ -27,6 +27,8 @@ public:
 
     /// The daemon's preferences landed: the nodes.dat URL field, the ed3k node list prefs.
     void refreshNodesUrl();
+    /// Display options changed (hostnames in the contact lists).
+    void applyDisplayOptions();
 
     /// 0 = eD2K Contacts, 1 = eD2K Search Details, 2 = ed3k Contacts, 3 = ed3k Search Details.
     void switchToSubTab(int index);

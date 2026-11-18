@@ -42,6 +42,12 @@ void KadPanel::refreshNodesUrl()
     m_ed3k->refreshPrefs();
 }
 
+void KadPanel::applyDisplayOptions()
+{
+    m_ed2k->applyDisplayOptions();
+    m_ed3k->applyDisplayOptions();
+}
+
 void KadPanel::switchToSubTab(int index)
 {
     const int network = index >= 2 ? 1 : 0;

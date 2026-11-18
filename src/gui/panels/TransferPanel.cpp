@@ -1468,7 +1468,14 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
     auto* hdr = view->header();
     hdr->setStretchLastSection(true);
     hdr->setDefaultSectionSize(100);
+    const bool newPeerIpColumn = !theUiState.hasHeaderState(headerKey)
+        || theUiState.headerStateSectionCount(headerKey) <= model->peerIpColumn();
     view->bindColumns(headerKey, columnWidths, model->defaultHiddenColumns());
+    if (newPeerIpColumn) {
+        hdr->moveSection(hdr->visualIndex(model->peerIpColumn()), hdr->visualIndex(0) + 1);
+        hdr->resizeSection(model->peerIpColumn(), 200);
+    }
+    model->setResolveHostnames(theUiState.resolvePeerHostnames());
     view->setExtColumns(model->extColumns(), thePrefs.showExtControls());
     view->setDescendingFirst(descendingFirst);
     CountryFlags::bindFlagColumn(view);
@@ -2847,6 +2854,8 @@ void TransferPanel::applyExtColumns()
 
 void TransferPanel::applyDisplayOptions()
 {
+    for (const auto id : {Uploading, Downloading, OnQueue, Known})
+        clientSlot(id).model->setResolveHostnames(theUiState.resolvePeerHostnames());
     m_statusFilterBar->setRowOn(theUiState.showDownloadStatusFilter());
     m_downloadProxy->setSortHistoryEnabled(theUiState.downloadSortHistory());
     const bool buttons = thePrefs.showTransToolbar();

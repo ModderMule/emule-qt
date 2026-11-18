@@ -2,6 +2,7 @@
 #include "controls/ServerListModel.h"
 
 #include "prefs/Preferences.h"
+#include "utils/AddressSortKey.h"
 #include "utils/Appearance.h"
 #include "utils/ColorUtils.h"
 #include "utils/CountryFlags.h"
@@ -16,26 +17,6 @@
 namespace eMule {
 
 namespace {
-
-/// A fixed-width sort key for an address, because the displayed form sorts by
-/// leading digit: "192.168.1.10" lands before "192.168.1.9".
-///
-/// An IPv6 literal has no octets to pad and is left as it is. The key stays a
-/// QString either way, so the column keeps a single type and every IPv4 row
-/// sorts ahead of every IPv6 one — arbitrary, but stable and grouped.
-QString addressSortKey(const QString& ip, uint16_t port)
-{
-    QString host = ip;
-    const QStringList octets = ip.split(QLatin1Char('.'));
-    if (octets.size() == 4) {
-        QStringList padded;
-        padded.reserve(4);
-        for (const QString& octet : octets)
-            padded << QStringLiteral("%1").arg(octet.toUInt(), 3, 10, QLatin1Char('0'));
-        host = padded.join(QLatin1Char('.'));
-    }
-    return QStringLiteral("%1:%2").arg(host).arg(port, 5, 10, QLatin1Char('0'));
-}
 
 /// Strength order, which the wire value is not — it is 0 Normal, 1 High, 2 Low.
 /// MFC sorts this column by strength (ServerListCtrl.cpp:632-645); by name it
@@ -109,7 +90,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColLowID:       return r.lowIdUsers;
         case ColObfuscation: return r.obfuscation ? 1 : 0;
         case ColCountry:     return CountryFlags::sortKey(r.cc);
-        case ColIPv6:        return r.addr6;
+        case ColIPv6:        return r.addr6.isEmpty() ? QString() : addressSortKey(r.addr6, r.port);
         case ColHardFiles:   return r.hardFiles;
         case ColVersion:     return r.version;
         default:             break;

@@ -6,6 +6,7 @@
 #include "controls/ClientListModel.h"
 #include "controls/KadContactsModel.h"
 #include "controls/ServerListModel.h"
+#include "utils/AddressSortKey.h"
 #include "utils/CountryFlags.h"
 
 #include <QCborArray>
@@ -13,6 +14,7 @@
 #include <QDirIterator>
 #include <QHeaderView>
 #include <QStandardItemModel>
+#include <QSignalSpy>
 #include <QTest>
 
 using namespace eMule;
@@ -33,6 +35,9 @@ private slots:
     void countryColumn_hiddenByDefaultSavedLayoutWins();
     void sharedListColumn_hiddenByDefaultAndExtOnly();
     void clientModel_transferAndRatioColumns();
+    void clientModel_peerIp();
+    void clientModel_hostnameEligibility();
+    void clientModel_hostnameSurvivesRefresh();
     void restoreHeader_keepsLayoutWhenColumnAppended();
     void delegate_widensComposedDecoration();
 };
@@ -189,7 +194,7 @@ void tst_CountryFlags::sharedListColumn_hiddenByDefaultAndExtOnly()
     http.isUrl = true;
     model.setClients({open, closed, http});
     const int col = model.sharedListColumn();
-    QCOMPARE(col, model.columnCount() - 1);
+    QCOMPARE(col, model.columnCount() - 2);
     QCOMPARE(model.headerData(col, Qt::Horizontal).toString(), QStringLiteral("Shared List"));
     QCOMPARE(model.data(model.index(0, col)).toString(), QStringLiteral("Yes"));
     QCOMPARE(model.data(model.index(1, col)).toString(), QStringLiteral("No"));
@@ -198,13 +203,13 @@ void tst_CountryFlags::sharedListColumn_hiddenByDefaultAndExtOnly()
     // A layout saved before the column existed: the column still starts hidden
     const QString key = QStringLiteral("tst_countryFlags_sharedList");
     {
-        QStandardItemModel oldModel(0, model.columnCount() - 1);
+        QStandardItemModel oldModel(0, col);
         QHeaderView oldHeader(Qt::Horizontal);
         oldHeader.setModel(&oldModel);
         oldHeader.resizeSection(1, 123);
         theUiState.captureHeaderState(&oldHeader, key);
     }
-    QCOMPARE(theUiState.headerStateSectionCount(key), model.columnCount() - 1);
+    QCOMPARE(theUiState.headerStateSectionCount(key), col);
     ListTreeView view;
     view.setModel(&model);
     view.bindColumns(key, {}, {model.countryColumn(), col});
@@ -234,7 +239,7 @@ void tst_CountryFlags::clientModel_transferAndRatioColumns()
 
         const int first = model.sharedListColumn() + 1;
         const bool uploading = mode == ClientListMode::Uploading;
-        QCOMPARE(model.columnCount(), first + (uploading ? 5 : 4));
+        QCOMPARE(model.columnCount(), first + (uploading ? 5 : 4) + 1);
         QCOMPARE(model.headerData(first, Qt::Horizontal).toString(), QStringLiteral("Uploaded"));
         QCOMPARE(model.headerData(first + 3, Qt::Horizontal).toString(), QStringLiteral("Session Ratio"));
         QCOMPARE(model.data(model.index(0, first)).toString(), QStringLiteral("3.00 MB"));
@@ -259,10 +264,106 @@ void tst_CountryFlags::clientModel_transferAndRatioColumns()
         }
         QCOMPARE(model.extColumns(), expected);
     }
-    // The other two tabs keep Shared List last
+    // The other two tabs append Peer IP immediately after Shared List.
     ClientListModel known(ClientListMode::KnownClients);
-    QCOMPARE(known.sharedListColumn(), known.columnCount() - 1);
+    QCOMPARE(known.sharedListColumn(), known.columnCount() - 2);
     QCOMPARE(known.extColumns(), std::vector<int>{known.sharedListColumn()});
+}
+
+void tst_CountryFlags::clientModel_peerIp()
+{
+    for (const auto mode : {ClientListMode::Uploading, ClientListMode::Downloading,
+                            ClientListMode::OnQueue, ClientListMode::KnownClients}) {
+        ClientListModel model(mode);
+        ClientRow ipv4, ipv6, unknown, anonymous, hoster;
+        ipv4.addr = QStringLiteral("192.0.2.1");
+        ipv6.addr = QStringLiteral("2001:db8::1");
+        anonymous.addr = QStringLiteral("192.0.2.2");
+        anonymous.anonymous = true;
+        hoster.network = ClientNetwork::Hoster;
+        hoster.addr = QStringLiteral("example.com");
+        model.setClients({ipv4, ipv6, unknown, anonymous, hoster});
+        const int col = model.peerIpColumn();
+        QCOMPARE(col, model.columnCount() - 1);
+        QCOMPARE(model.headerData(col, Qt::Horizontal).toString(), QStringLiteral("Peer IP"));
+        QCOMPARE(model.index(0, col).data().toString(), ipv4.addr);
+        QCOMPARE(model.index(1, col).data().toString(), ipv6.addr);
+        QCOMPARE(model.index(2, col).data().toString(), QStringLiteral("Unknown"));
+        QCOMPARE(model.index(3, col).data().toString(), QStringLiteral("Hidden"));
+        QCOMPARE(model.index(3, col).data(Qt::UserRole).toString(), QString());
+        QVERIFY(!model.index(4, col).data().isValid());
+        const auto hidden = model.defaultHiddenColumns();
+        QVERIFY(std::ranges::find(hidden, col) == hidden.end());
+        const auto ext = model.extColumns();
+        QVERIFY(std::ranges::find(ext, col) == ext.end());
+    }
+}
+
+void tst_CountryFlags::clientModel_hostnameEligibility()
+{
+    ClientListModel model(ClientListMode::KnownClients);
+    ClientRow peer;
+    QVERIFY(!model.canResolveHostname(peer));
+    for (const auto* invalid : {"example.com", "0.0.0.0", "::", "239.1.2.3", "255.255.255.255"}) {
+        peer.addr = QString::fromLatin1(invalid);
+        QVERIFY(!model.canResolveHostname(peer));
+    }
+    for (const auto* address : {"192.0.2.1", "2001:db8::1"}) {
+        peer.addr = QString::fromLatin1(address);
+        QVERIFY(model.canResolveHostname(peer));
+    }
+    peer.anonymous = true;
+    QVERIFY(!model.canResolveHostname(peer));
+    peer.anonymous = false;
+    peer.isUrl = true;
+    QVERIFY(!model.canResolveHostname(peer));
+    peer.isUrl = false;
+    peer.network = ClientNetwork::Hoster;
+    QVERIFY(!model.canResolveHostname(peer));
+    peer.network = ClientNetwork::Usenet;
+    QVERIFY(!model.canResolveHostname(peer));
+    peer.network = ClientNetwork::Bt;
+    QVERIFY(model.canResolveHostname(peer));
+}
+
+void tst_CountryFlags::clientModel_hostnameSurvivesRefresh()
+{
+    ClientListModel model(ClientListMode::KnownClients);
+    ClientRow peer, other;
+    peer.addr = QStringLiteral("127.0.0.1");
+    other.addr = QStringLiteral("192.0.2.1");
+    other.anonymous = true; // never query an external address in this test
+    model.setClients({peer});
+    QCOMPARE(model.index(0, model.peerIpColumn()).data().toString(), peer.addr);
+    QVERIFY(model.canResolveHostname(peer)); // off by default: no lookup was started
+    model.setResolveHostnames(true);
+    QVERIFY(!model.canResolveHostname(peer)); // duplicate queries are suppressed
+    QVERIFY(model.index(0, model.peerIpColumn()).data(Qt::ToolTipRole).toString().contains(QStringLiteral("resolving")));
+    model.setClients({other, peer}); // a refresh moves the requested peer
+    QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+    QTRY_VERIFY_WITH_TIMEOUT(!changed.isEmpty(), 10000);
+    QCOMPARE(changed.last().at(0).value<QModelIndex>().row(), 1);
+    QCOMPARE(model.index(0, model.peerIpColumn()).data().toString(), QStringLiteral("Hidden"));
+    QVERIFY(model.index(1, model.peerIpColumn()).data(Qt::ToolTipRole).toString().contains(peer.addr));
+    const QString resolved = model.index(1, model.peerIpColumn()).data().toString();
+    // sorts by the name found, else numerically by the address
+    QCOMPARE(model.index(1, model.peerIpColumn()).data(Qt::UserRole).toString(),
+             resolved == peer.addr ? addressSortKey(peer.addr, peer.port) : resolved);
+    QVERIFY(!model.canResolveHostname(peer)); // success and failure both cached
+    model.setResolveHostnames(false);
+    QCOMPARE(model.index(1, model.peerIpColumn()).data().toString(), peer.addr);
+    QCOMPARE(model.headerData(model.peerIpColumn(), Qt::Horizontal).toString(), QStringLiteral("Peer IP"));
+    model.setResolveHostnames(true);
+    QCOMPARE(model.index(1, model.peerIpColumn()).data().toString(), resolved);
+    QCOMPARE(model.headerData(model.peerIpColumn(), Qt::Horizontal).toString(), QStringLiteral("Hostname / IP"));
+
+    ClientListModel cancelled(ClientListMode::Downloading);
+    cancelled.setClients({peer});
+    cancelled.setResolveHostnames(true);
+    cancelled.setResolveHostnames(false);
+    QTest::qWait(20);
+    QCOMPARE(cancelled.index(0, cancelled.peerIpColumn()).data().toString(), peer.addr);
+    QVERIFY(cancelled.canResolveHostname(peer)); // the cancelled callback cannot populate the cache
 }
 
 void tst_CountryFlags::restoreHeader_keepsLayoutWhenColumnAppended()

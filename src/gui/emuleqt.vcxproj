@@ -388,6 +388,7 @@
     <ClCompile Include="utils\MoveDownloadsAction.cpp" />
     <ClCompile Include="utils\Ed3kLinkMenu.cpp" />
     <ClCompile Include="utils\FolderLister.cpp" />
+    <ClCompile Include="utils\HostnameResolver.cpp" />
     <ClCompile Include="utils\ListActivation.cpp" />
     <ClCompile Include="utils\MenuUtils.cpp" />
     <ClCompile Include="utils\ViewNavigation.cpp" />
@@ -445,6 +446,7 @@
     <ClInclude Include="utils\PriorityText.h" />
     <ClInclude Include="utils\Ed3kKeyText.h" />
     <ClInclude Include="utils\ClientStateText.h" />
+    <ClInclude Include="utils\AddressSortKey.h" />
     <ClInclude Include="utils\CompleteSourcesText.h" />
     <ClInclude Include="utils\FileTypeText.h" />
     <ClInclude Include="utils\TooltipDelayStyle.h" />
@@ -484,6 +486,7 @@
     <ClInclude Include="utils\MenuDump.h" />
     <ClInclude Include="utils\ViewSelection.h" />
     <QtMoc Include="utils\PanelPoller.h" />
+    <QtMoc Include="utils\HostnameResolver.h" />
     <QtMoc Include="utils\CountryFlags.h" />
     <ClInclude Include="utils\ClientIcons.h" />
     <ClInclude Include="utils\PreviewLauncher.h" />

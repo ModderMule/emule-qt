@@ -6,6 +6,7 @@
 
 #include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
+#include "utils/AddressSortKey.h"
 #include "utils/ClientIcons.h"
 #include "utils/ClientStateText.h"
 #include "utils/CountryFlags.h"
@@ -77,6 +78,25 @@ ClientListModel::ClientListModel(ClientListMode mode, QObject* parent)
     : AbstractTableModel<ClientRow>(parent)
     , m_mode(mode)
 {
+    connect(&m_resolver, &HostnameResolver::resolved, this, &ClientListModel::hostnameChanged);
+}
+
+bool ClientListModel::canResolveHostname(const ClientRow& client) const
+{
+    return hostnameCandidate(client) && HostnameResolver::isResolvable(client.addr)
+        && !m_resolver.isKnown(client.addr);
+}
+
+void ClientListModel::setResolveHostnames(bool enabled)
+{
+    if (m_resolver.enabled() == enabled)
+        return;
+    m_resolver.setEnabled(enabled);
+    refreshHostnames();
+    emit headerDataChanged(Qt::Horizontal, peerIpColumn(), peerIpColumn());
+    if (clientCount() > 0)
+        emit dataChanged(index(0, peerIpColumn()), index(clientCount() - 1, peerIpColumn()),
+                         {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
 }
 
 std::vector<int> ClientListModel::extColumns() const
@@ -98,7 +118,7 @@ std::vector<int> ClientListModel::defaultHiddenColumns() const
 
 int ClientListModel::columnCountValue() const
 {
-    return baseColumnCount() + extraColumnCount();
+    return peerIpColumn() + 1;
 }
 
 QVariant ClientListModel::data(const QModelIndex& index, int role) const
@@ -107,6 +127,22 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
         return {};
 
     const auto& c = m_rows[static_cast<size_t>(index.row())];
+    if (index.column() == peerIpColumn()) {
+        // These rows carry a service hostname, not a peer IP address.
+        if (c.isUrl || c.network == ClientNetwork::Usenet || c.network == ClientNetwork::Hoster)
+            return {};
+        if (role == Qt::DisplayRole || role == Qt::ToolTipRole) {
+            if (c.anonymous)
+                return tr("Hidden");
+            if (c.addr.isEmpty())
+                return tr("Unknown");
+            return role == Qt::DisplayRole ? m_resolver.endpointText(c.addr, c.port)
+                                           : m_resolver.toolTip(c.addr, c.port);
+        }
+        if (role == Qt::UserRole)
+            return c.anonymous ? QString() : m_resolver.displayText(c.addr, addressSortKey(c.addr, c.port));
+        return {};
+    }
     if (index.column() >= baseColumnCount())
         return extraData(c, index.column() - baseColumnCount(), role);
 
@@ -201,6 +237,8 @@ QVariant ClientListModel::headerData(int section, Qt::Orientation orientation, i
 {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
         return {};
+    if (section == peerIpColumn())
+        return m_resolver.enabled() ? tr("Hostname / IP") : tr("Peer IP");
     if (section == countryColumn())
         return tr("Country");
     if (section == sharedListColumn())
@@ -485,6 +523,39 @@ QString ClientListModel::lowIdText(const ClientRow& c)
     if (!c.hasLowID)
         return route;
     return route.isEmpty() ? tr("Low ID") : tr("Low ID, %1").arg(route);
+}
+
+// ---------------------------------------------------------------------------
+// private: hostnames
+// ---------------------------------------------------------------------------
+
+bool ClientListModel::hostnameCandidate(const ClientRow& client)
+{
+    return !client.anonymous && !client.isUrl
+        && client.network != ClientNetwork::Usenet && client.network != ClientNetwork::Hoster;
+}
+
+void ClientListModel::refreshHostnames()
+{
+    // Results stay while listed, failures too: no lookup again on every poll
+    QSet<QString> listed;
+    QStringList candidates;
+    for (const auto& client : m_rows) {
+        listed.insert(client.addr);
+        if (hostnameCandidate(client))
+            candidates.append(client.addr);
+    }
+    m_resolver.sync(listed, candidates);
+}
+
+void ClientListModel::hostnameChanged(const QString& address)
+{
+    // Polling may reorder or remove peers while DNS is in flight
+    for (int row = 0; row < clientCount(); ++row) {
+        if (m_rows[size_t(row)].addr == address)
+            emit dataChanged(index(row, peerIpColumn()), index(row, peerIpColumn()),
+                             {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
+    }
 }
 
 } // namespace eMule

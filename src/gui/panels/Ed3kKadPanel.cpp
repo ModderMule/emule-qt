@@ -87,8 +87,13 @@ Ed3kKadPanel::Ed3kKadPanel(QWidget* parent)
     // contactsView->bindColumns(QStringLiteral("ed3kKadContacts2"), {260, 110, 90, 260, 50, 80},
     //                           {Ed3kKadContactsModel::ColCountry});
     // "3": Type column in front, as eD2K Kad
-    contactsView->bindColumns(QStringLiteral("ed3kKadContacts3"), {110, 260, 110, 90, 260, 50, 80},
+    const bool newIpColumn = isNewColumn(QStringLiteral("ed3kKadContacts3"), Ed3kKadContactsModel::ColIp);
+    contactsView->bindColumns(QStringLiteral("ed3kKadContacts3"), {110, 260, 110, 90, 260, 50, 80, 220},
                               {Ed3kKadContactsModel::ColCountry});
+    // IP (not MFC) after Node ID; also into a layout saved before it
+    if (newIpColumn)
+        placeColumn(m_contactsView, Ed3kKadContactsModel::ColIp, Ed3kKadContactsModel::ColId, 220);
+    m_contactsModel->setResolveHostnames(theUiState.resolvePeerHostnames());
     CountryFlags::bindFlagColumn(contactsView);
     m_contactsView->setFont(QFont(QStringLiteral("Courier New"), scaledPointSize(9)));
 
@@ -122,6 +127,12 @@ Ed3kKadPanel::Ed3kKadPanel(QWidget* parent)
 }
 
 Ed3kKadPanel::~Ed3kKadPanel() = default;
+
+void Ed3kKadPanel::applyDisplayOptions()
+{
+    KadPanelBase::applyDisplayOptions();
+    m_contactsModel->setResolveHostnames(theUiState.resolvePeerHostnames());
+}
 
 void Ed3kKadPanel::setIpcClient(IpcClient* client)
 {
@@ -442,7 +453,7 @@ void Ed3kKadPanel::requestContacts()
         // hidden list: skip the reset + re-sort of every row each poll
         if (!contactsTabShown())
             return;
-        m_contactsModel->setRows(rows);
+        m_contactsModel->setContacts(rows);
         m_contactsView->verticalScrollBar()->setValue(scroll);
     });
 }
