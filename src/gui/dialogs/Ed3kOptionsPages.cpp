@@ -281,6 +281,8 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_extTree->setChecked(m_lanItem, p.value(QStringLiteral("ed3kLan")).toBool(false));
     m_extTree->setChecked(m_autoIndexItem, p.value(QStringLiteral("ed3kAutoIndexNode")).toBool(false));
     m_extTree->setChecked(m_forceOpenItem, p.value(QStringLiteral("ed3kForceOpen")).toBool(false));
+    m_extTree->setChecked(m_lanUnlimitedItem, p.value(QStringLiteral("ed3kLanUnlimited")).toBool(true));
+    m_extTree->setChecked(m_advertiseEd2kItem, p.value(QStringLiteral("ed3kAdvertiseEd2k")).toBool(true));
     m_extTree->setChecked(m_roomStoreItem, p.value(QStringLiteral("ed3kRoomHistoryStore")).toBool(true));
     m_extTree->setValue(m_roomMaxItem, int(p.value(QStringLiteral("ed3kRoomHistoryMax")).toInteger(5000)));
     m_hiding->load(p);
@@ -383,6 +385,8 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kLan", m_extTree->isChecked(m_lanItem));
     put("ed3kAutoIndexNode", m_extTree->isChecked(m_autoIndexItem));
     put("ed3kForceOpen", m_extTree->isChecked(m_forceOpenItem));
+    put("ed3kLanUnlimited", m_extTree->isChecked(m_lanUnlimitedItem));
+    put("ed3kAdvertiseEd2k", m_extTree->isChecked(m_advertiseEd2kItem));
     put("ed3kRoomHistoryStore", m_extTree->isChecked(m_roomStoreItem));
     put("ed3kRoomHistoryMax", qint64(m_extTree->value(m_roomMaxItem)));
     m_hiding->appendTo(req);
@@ -454,6 +458,8 @@ void Ed3kOptionsPages::saveLocal() const
     thePrefs.setEd3kLan(m_extTree->isChecked(m_lanItem));
     thePrefs.setEd3kAutoIndexNode(m_extTree->isChecked(m_autoIndexItem));
     thePrefs.setEd3kForceOpen(m_extTree->isChecked(m_forceOpenItem));
+    thePrefs.setEd3kLanUnlimited(m_extTree->isChecked(m_lanUnlimitedItem));
+    thePrefs.setEd3kAdvertiseEd2k(m_extTree->isChecked(m_advertiseEd2kItem));
     thePrefs.setEd3kRoomHistoryStore(m_extTree->isChecked(m_roomStoreItem));
     thePrefs.setEd3kRoomHistoryMax(m_extTree->value(m_roomMaxItem));
     m_hiding->saveLocal();
@@ -2243,6 +2249,15 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
     m_forceOpenItem->setToolTip(0, tr("Only when the UDP port is forwarded or the computer has a public address. "
                                       "The node then counts as open without reach tests and serves as a router. "
                                       "Helps a small ed3k network where reach tests find no prober."));
+    m_lanUnlimitedItem = m_extTree->addCheck(connection, tr("No speed limits for ed3k peers in the local network"));
+    m_lanUnlimitedItem->setToolTip(0, tr("Uploads to and downloads from ed3k peers on this computer's local networks "
+                                         "do not count against the upload and download limits, since they do not "
+                                         "use the Internet line."));
+    m_extTree->setChecked(m_lanUnlimitedItem, true);
+    m_advertiseEd2kItem = m_extTree->addCheck(connection, tr("Tell ed3k peers this client also speaks eD2K"));
+    m_advertiseEd2kItem->setToolTip(0, tr("Sets the eD2K bit in the ed3k hello while eD2K is not switched off. "
+                                          "Peers then show \"eD2K: Yes\" in the ed3k tab of Client Details."));
+    m_extTree->setChecked(m_advertiseEd2kItem, true);
     QTreeWidgetItem* rooms = m_extTree->addGroup(tr("Rooms"), skinIcon(QStringLiteral(":/icons/IRC.ico")));
     m_roomStoreItem = m_extTree->addCheck(rooms, tr("Store recent room posts on disk"));
     m_roomStoreItem->setToolTip(0, tr("Keeps the recent posts of each joined room in a file, shown again after a "

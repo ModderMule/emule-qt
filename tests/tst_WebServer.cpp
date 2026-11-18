@@ -420,6 +420,50 @@ public:
     }
 };
 
+class FakeIndexerBackend final : public IndexerWebBackend {
+public:
+    mutable QStringList calls;
+    bool hasUsenet = true;
+
+    bool available() const override { return true; }
+    StartResult start(const Query& q) override
+    {
+        calls << QStringLiteral("start:%1:%2:%3:%4").arg(q.text).arg(q.torrents).arg(q.mode, q.indexers.join(u','));
+        if (q.torrents)
+            return {.error = QStringLiteral("No torrent indexer is configured."), .noIndexer = true};
+        return {.id = 7};
+    }
+    QCborArray searches() const override { return {*search(7)}; }
+    std::optional<QCborMap> search(quint32 id) const override
+    {
+        if (id != 7)
+            return std::nullopt;
+        return QCborMap{{QStringLiteral("id"), 7}, {QStringLiteral("network"), QStringLiteral("usenet")},
+                        {QStringLiteral("running"), false}, {QStringLiteral("count"), 1}};
+    }
+    std::optional<QCborArray> results(quint32 id) const override
+    {
+        if (id != 7)
+            return std::nullopt;
+        return QCborArray{QCborMap{{QStringLiteral("id"), QStringLiteral("ix:1")},
+                                   {QStringLiteral("title"), QStringLiteral("Some.Release")},
+                                   {QStringLiteral("isUsenet"), true}}};
+    }
+    bool stop(quint32 id) override { return id == 7; }
+    bool remove(quint32 id) override { return id == 7; }
+    void grab(quint32 searchId, const QString& resultId, const GrabOptions& o,
+              std::function<void(const GrabResult&)> done) override
+    {
+        calls << QStringLiteral("grab:%1:%2:%3:%4:%5").arg(searchId).arg(resultId).arg(o.category).arg(o.priority).arg(o.paused);
+        if (resultId == QStringLiteral("dup"))
+            done({.target = QStringLiteral("usenet"), .error = QStringLiteral("Already downloaded"), .usenetOutcome = 4});
+        else if (resultId == QStringLiteral("gone"))
+            done({.error = QStringLiteral("The indexer returned no NZB.")});
+        else
+            done({.ok = true, .target = QStringLiteral("usenet"), .id = QStringLiteral("item-1"), .usenetOutcome = 0});
+    }
+};
+
 /// A multipart/form-data body: text fields, then files as {field, file name, bytes}.
 QByteArray multipartBody(const QByteArray& boundary, const QList<std::pair<QByteArray, QByteArray>>& fields,
                          const QList<std::tuple<QByteArray, QByteArray, QByteArray>>& files)
@@ -683,8 +727,8 @@ private slots:
     void previewCapsTheResponseBody();
     void previewStopsAtWhatHasDownloaded();
     void previewWaitsForBytesThatHaveNotArrivedYet();
-    void usenetPreviewWithSeekingOffServesTheFileAsItIs();
-    void hosterPreviewFollowsTheSeekingSwitch();
+    void usenetPreviewFetchesWithSeekingOff();
+    void hosterPreviewFetchesWithSeekingOff();
     void hosterPreviewRefusesWhatNoPlayerTakes();
     void previewGivesUpWhenTheItemDisappears();
     void previewStitchesAReadAcrossTwoFiles();
@@ -793,6 +837,7 @@ private slots:
     void restUsenetAbsentWhenRestDisabled();
     void restHosterRoutes();
     void restEd3kRoutes();
+    void restIndexerRoutes();
     void restSharedEditChecksInput();
     void theUsenetTemplateHasItsSections();
 
@@ -2217,42 +2262,42 @@ void tst_WebServer::previewWaitsForBytesThatHaveNotArrivedYet()
     m_webServer->setUsenetStreamResolver({});
 }
 
-void tst_WebServer::usenetPreviewWithSeekingOffServesTheFileAsItIs()
+void tst_WebServer::usenetPreviewFetchesWithSeekingOff()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     constexpr qint64 kSize = 200 * 1024;
+    constexpr qint64 kLate = 100 * 1024;
     const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
     QVERIFY(!path.isEmpty());
 
-    // off: a lookup only (no boost, nothing fetched first), the preallocated file as it is
+    // a click asks for these bytes: fetched first and waited for, not the preallocated zeros
     QList<bool> fetches;
-    m_webServer->setUsenetStreamResolver([path, &fetches](const UsenetStreamRequest& ask) {
+    QElapsedTimer since;
+    since.start();
+    m_webServer->setUsenetStreamResolver([&](const UsenetStreamRequest& ask) {
         fetches << ask.fetch;
         UsenetStreamSource src;
         src.found = true;
         src.pieces = {{path, 0, 0, kSize}};
         src.fileName = QStringLiteral("movie.mkv");
         src.totalSize = kSize;
-        src.availableEnd = 0;   // nothing arrived
+        src.availableEnd = since.elapsed() > 400 ? kLate : 0;
         return src;
     });
     QVERIFY(!m_preferences->downloadSeeking());
-    QElapsedTimer took;
-    took.start();
     const auto resp = sendRanged(
         QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(m_webServer->streamToken()),
         QByteArrayLiteral("bytes=0-"));
     m_webServer->setUsenetStreamResolver({});
 
     QCOMPARE(resp.statusCode, 206);
-    QCOMPARE(qint64(resp.rawBody.size()), kSize);
-    QVERIFY(took.elapsed() < 2000);   // no wait
-    QVERIFY(!fetches.isEmpty());
-    QVERIFY(std::ranges::none_of(fetches, [](bool f) { return f; }));
+    QCOMPARE(qint64(resp.rawBody.size()), kLate);
+    QVERIFY(fetches.size() > 1);
+    QVERIFY(std::ranges::all_of(fetches, [](bool f) { return f; }));
 }
 
-void tst_WebServer::hosterPreviewFollowsTheSeekingSwitch()
+void tst_WebServer::hosterPreviewFetchesWithSeekingOff()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
@@ -2281,28 +2326,22 @@ void tst_WebServer::hosterPreviewFollowsTheSeekingSwitch()
         return src;
     });
 
-    // on: asked from the seek offset with fetch, the answer waits for the bytes
-    m_preferences->setDownloadSeeking(true);
-    resp = sendRanged(
-        QStringLiteral("/api/v1/hoster/7/preview?token=%1").arg(m_webServer->streamToken()),
-        QByteArrayLiteral("bytes=%1-").replace("%1", QByteArray::number(kSeek)));
-    m_preferences->setDownloadSeeking(false);
-    QCOMPARE(resp.statusCode, 206);
-    QCOMPARE(qint64(resp.rawBody.size()), kSize - kSeek);
-    QVERIFY(asks.size() > 1);
-    QVERIFY(std::ranges::all_of(asks, [](const auto& a) {
-        return std::get<0>(a) == QStringLiteral("7") && std::get<1>(a) == kSeek && std::get<2>(a);
-    }));
-
-    // off: one lookup without fetch, the file as it is on disk
-    asks.clear();
-    resp = sendRanged(
-        QStringLiteral("/api/v1/hoster/7/preview?token=%1").arg(m_webServer->streamToken()),
-        QByteArrayLiteral("bytes=0-"));
-    QCOMPARE(resp.statusCode, 206);
-    QCOMPARE(qint64(resp.rawBody.size()), kSize);
-    QCOMPARE(asks.size(), 1);
-    QVERIFY(!std::get<2>(asks.front()));
+    // seeking on or off: asked from the seek offset with fetch, the answer waits for the bytes
+    for (const bool seeking : {false, true}) {
+        asks.clear();
+        since.restart();
+        m_preferences->setDownloadSeeking(seeking);
+        resp = sendRanged(
+            QStringLiteral("/api/v1/hoster/7/preview?token=%1").arg(m_webServer->streamToken()),
+            QByteArrayLiteral("bytes=%1-").replace("%1", QByteArray::number(kSeek)));
+        m_preferences->setDownloadSeeking(false);
+        QCOMPARE(resp.statusCode, 206);
+        QCOMPARE(qint64(resp.rawBody.size()), kSize - kSeek);
+        QVERIFY(asks.size() > 1);
+        QVERIFY(std::ranges::all_of(asks, [](const auto& a) {
+            return std::get<0>(a) == QStringLiteral("7") && std::get<1>(a) == kSeek && std::get<2>(a);
+        }));
+    }
 
     m_webServer->setHosterStreamResolver({});
 }
@@ -4789,6 +4828,51 @@ void tst_WebServer::restEd3kRoutes()
 
     fake.on = false;
     QCOMPARE(sendRequest("GET", item).statusCode, 503);
+}
+
+void tst_WebServer::restIndexerRoutes()
+{
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/indexer/searches")).statusCode, 503);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/indexers")).statusCode, 200);
+
+    FakeIndexerBackend fake;
+    m_webServer->setIndexerBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setIndexerBackend(nullptr); });
+    const QString base = QStringLiteral("/api/v1/indexer/searches");
+
+    Response r = sendRequest("POST", base, "{\"query\":\"linux iso\",\"indexers\":[\"a\",\"b\"]}");
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("id")).toInt(), 7);
+    QVERIFY(fake.calls.contains(QStringLiteral("start:linux iso:0:search:a,b")));
+    QCOMPARE(sendRequest("POST", base, "{\"query\":\"x\",\"network\":\"torrent\"}").statusCode, 409);
+    QCOMPARE(sendRequest("POST", base, "{\"query\":\"x\",\"network\":\"ed2k\"}").statusCode, 400);
+
+    r = sendRequest("GET", base);
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 1);
+    QCOMPARE(sendRequest("GET", base + QStringLiteral("/7")).statusCode, 200);
+    QCOMPARE(sendRequest("GET", base + QStringLiteral("/8")).statusCode, 404);
+
+    r = sendRequest("GET", base + QStringLiteral("/7/results"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("items")).toArray().at(0).toObject()
+                 .value(QStringLiteral("title")).toString(), QStringLiteral("Some.Release"));
+
+    r = sendRequest("POST", base + QStringLiteral("/7/download"), "{\"result\":\"ix:1\",\"priority\":1,\"paused\":true}");
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("target")).toString(), QStringLiteral("usenet"));
+    QVERIFY(fake.calls.contains(QStringLiteral("grab:7:ix:1:0:1:1")));
+    r = sendRequest("POST", base + QStringLiteral("/7/download"), "{\"result\":\"dup\"}");
+    QCOMPARE(r.statusCode, 409);
+    QCOMPARE(r.json.object().value(QStringLiteral("outcome")).toInt(), 4);
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/7/download"), "{\"result\":\"gone\"}").statusCode, 502);
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/7/download"), "{}").statusCode, 400);
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/7/download"), "{\"result\":\"x\",\"category\":999}").statusCode, 400);
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/8/download"), "{\"result\":\"x\"}").statusCode, 404);
+
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/7/stop")).statusCode, 200);
+    QCOMPARE(sendRequest("DELETE", base + QStringLiteral("/7")).statusCode, 200);
+    QCOMPARE(sendRequest("DELETE", base + QStringLiteral("/8")).statusCode, 404);
 }
 
 void tst_WebServer::restSharedEditChecksInput()

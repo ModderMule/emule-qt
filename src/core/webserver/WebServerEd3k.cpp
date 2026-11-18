@@ -4,6 +4,7 @@
 ///        module. Core never links it; both talk to a backend DaemonApp installs.
 
 #include "webserver/WebServer.h"
+#include "webserver/ApiOpBuilder.h"
 
 #include <QCborMap>
 #include <QCborValue>
@@ -16,25 +17,11 @@
 namespace eMule {
 
 using namespace api;
+using namespace api::build;
 
 namespace {
 
 using L = QLatin1StringView;
-
-[[nodiscard]] QString s(const char* text) { return QString::fromUtf8(text); }
-
-[[nodiscard]] Operation make(const char* id, Method method, const char* path, const char* tag,
-                             const char* summary, const char* description = "")
-{
-    Operation op;
-    op.id = s(id);
-    op.method = method;
-    op.path = s(path);
-    op.tag = s(tag);
-    op.summary = s(summary);
-    op.description = s(description);
-    return op;
-}
 
 // --- ed3k ------------------------------------------------------------------
 

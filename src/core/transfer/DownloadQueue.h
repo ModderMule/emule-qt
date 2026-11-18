@@ -229,6 +229,9 @@ public:
     /// The download limit an upload of @p maxUpBytes allows: below 4 / 10 / 20 KB/s up,
     /// at most 3x / 4x / 5x comes down. Bytes per second, 0 = unlimited on both sides.
     [[nodiscard]] static uint64 ratioLimitedDownload(uint64 maxDownBytes, uint64 maxUpBytes);
+    /// The upload the ratio is taken from, bytes/s, 0 = unlimited: the measured rate while USS
+    /// steers it and somebody waits, else the configured limit (MFC GetMaxDownloadInBytesPerSec(true)).
+    [[nodiscard]] static uint64 ratioUploadBytes();
 
     void sortByPriority();
     /// Sort at the start of the next process() pass; safe while the list is being walked.

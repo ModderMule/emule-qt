@@ -333,19 +333,27 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         const QString yes = tr("Available");
         const QString no  = tr("Not available");
 
-        // Kad buddy that relays callbacks for it
-        const QString buddy = str(cb, QLatin1StringView("buddy"));
-        const QString buddy6 = str(cb, QLatin1StringView("buddyIPv6"));
+        // Kad buddy that relays callbacks for it: flag + country (ISO) + port, never its IP
+        const int buddyPort = int(cb.value(QLatin1StringView("buddyPort")).toInteger());
+        const auto place = [this](const QString& cc) {
+            const QString html = CountryFlags::tooltipHtml(cc);
+            return html.isEmpty() ? tr("Unknown country") : html;
+        };
+        // one form for every buddy: IPv4 country, else the IPv6 one
+        QString cc = str(cb, QLatin1StringView("buddyCC"));
+        if (cc.isEmpty())
+            cc = str(cb, QLatin1StringView("buddy6CC"));
         QString buddyText;
-        if (!buddy.isEmpty())
-            buddyText = buddy6.isEmpty() ? buddy : QStringLiteral("%1, %2").arg(buddy, buddy6);
-        else if (flag(QLatin1StringView("buddyID")))
+        if (buddyPort > 0 || flag(QLatin1StringView("buddyIPv6"))) {
+            buddyText = buddyPort > 0 ? tr("%1, port %2").arg(place(cc)).arg(buddyPort) : place(cc);
+        } else if (flag(QLatin1StringView("buddyID")))
             buddyText = tr("Known, address not resolved yet");
         else
             buddyText = tr("None");
         addDetailRow(form, tr("Kad buddy"), buddyText,
                      tr("A High ID Kad node that keeps a connection to this Low ID client and "
-                        "forwards callback requests to it."));
+                        "forwards callback requests to it."))
+            ->setTextFormat(Qt::RichText);   // the flag image
         addDetailRow(form, tr("Kad buddy callback"), flag(QLatin1StringView("kadBuddy")) ? yes : no,
                      tr("We can ask the client's Kad buddy to make it connect to us."));
         addDetailRow(form, tr("Direct UDP callback"), flag(QLatin1StringView("directUdp")) ? yes : no,

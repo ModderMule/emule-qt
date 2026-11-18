@@ -999,14 +999,6 @@ QList<Ed3kHosterJoin::Item> Ed3kHosterJoin::items() const
     return out;
 }
 
-std::optional<std::uint64_t> Ed3kHosterJoin::previewTail(quint32 id, std::uint64_t offset)
-{
-    Entry* e = find(id);
-    if (!e || e->item.retired)
-        return std::nullopt;
-    return tailHeld(*e, offset);
-}
-
 std::optional<Ed3kHosterJoin::Item> Ed3kHosterJoin::item(quint32 id) const
 {
     if (const Entry* e = find(id); e && !e->item.retired)

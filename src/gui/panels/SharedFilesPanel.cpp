@@ -2324,7 +2324,7 @@ void SharedFilesPanel::openSharedFile(const QString& hash)
     // default handler, which for an http URL means the browser downloads it.
     const ED2KFileType fileType = getED2KFileTypeID(file->fileName);
     if (fileType == ED2KFileType::Video || fileType == ED2KFileType::Audio)
-        launchPreview(url);
+        launchPreview(url, file->fileName);
     else
         QDesktopServices::openUrl(QUrl(url));
 }

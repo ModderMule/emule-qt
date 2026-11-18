@@ -1670,6 +1670,16 @@ public:
     void setEd3kRoomHistoryMax(int val);
     static constexpr int kMinEd3kRoomHistoryMax = 100;
     static constexpr int kMaxEd3kRoomHistoryMax = 100000;
+    /// Disk cache of room media (room.md §2.6), MiB; oldest used dropped beyond. Default 200,
+    /// yaml only (ed3k.roomMediaCacheMiB).
+    [[nodiscard]] int ed3kRoomMediaCacheMiB() const;
+    void setEd3kRoomMediaCacheMiB(int val);
+    static constexpr int kMinEd3kRoomMediaCacheMiB = 16;
+    static constexpr int kMaxEd3kRoomMediaCacheMiB = 1 << 20;
+    /// Media fetched by itself per room and hour; beyond: a click fetches. Default 60, yaml
+    /// only (ed3k.roomMediaPerHour); 0 = never by itself.
+    [[nodiscard]] int ed3kRoomMediaPerHour() const;
+    void setEd3kRoomMediaPerHour(int val);
     /// eD2K downloads also fetch from ed3k peers, dual peers over ed3k (Protocol.md §14.4)
     [[nodiscard]] bool ed3kJointDownloads() const;
     void setEd3kJointDownloads(bool val);
@@ -1686,6 +1696,9 @@ public:
     /// MAY). Default off: limits hold for every peer, as eD2K's.
     [[nodiscard]] bool ed3kLanUnlimited() const;
     void setEd3kLanUnlimited(bool val);
+    /// CAP_ED2K in the ed3k Hello while eD2K is not switched off (Protocol.md §2, §14)
+    [[nodiscard]] bool ed3kAdvertiseEd2k() const;
+    void setEd3kAdvertiseEd2k(bool val);
     /// Own ed3k sets' folders watched: a changed folder publishes a new version. Default on.
     [[nodiscard]] bool ed3kOwnSetsWatch() const;
     void setEd3kOwnSetsWatch(bool val);
@@ -2218,6 +2231,13 @@ public:
     /// ed3k room moderators marked by a gold star; off: the IRC "@"
     [[nodiscard]] bool chatModStar() const;
     void setChatModStar(bool val);
+    /// ed3k room images (and videos, chatRoomVideos) fetched and shown in the chat; off: a
+    /// file line, a click fetches
+    [[nodiscard]] bool chatRoomMedia() const;
+    void setChatRoomMedia(bool val);
+    /// room videos fetched by themselves too (played muted); default off
+    [[nodiscard]] bool chatRoomVideos() const;
+    void setChatRoomVideos(bool val);
 
     [[nodiscard]] bool indicateRatings() const;
     void setIndicateRatings(bool val);

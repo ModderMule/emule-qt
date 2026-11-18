@@ -232,6 +232,7 @@ void FileDetailDialog::setDetails(const QCborMap& details)
     m_chkHtml             = nullptr;
     m_chkMediaInfo        = nullptr;
     m_archive             = nullptr;
+    m_ed3kMeta            = nullptr;
     delete m_tabs;
     m_tabs = nullptr;
 
@@ -765,6 +766,16 @@ void FileDetailDialog::populateFileNames(const QCborMap& d)
 void FileDetailDialog::applyDetails(const QCborMap& details)
 {
     populateFileNames(details);
+    // ed3k: the tags came with a Kad answer; the page is built whole
+    if (m_ed3kMeta && details.contains(QLatin1StringView("tags"))) {
+        if (auto* layout = m_ed3kMeta->layout()) {
+            while (QLayoutItem* item = layout->takeAt(0)) {
+                delete item->widget();
+                delete item;
+            }
+            layout->addWidget(createMetadataTab(details));
+        }
+    }
     if (m_commentsPanel)
         m_commentsPanel->setDetails(details);
 }
@@ -919,16 +930,26 @@ QWidget* FileDetailDialog::createEd2kLinkTab(const QCborMap& d)
 
 void FileDetailDialog::buildEd3kTabs(const QCborMap& details, int tabToSelect)
 {
-    // no File Names (sources tell no names) and no Metadata (no eD2K tags)
+    // was: no File Names (sources tell no names) and no Metadata (no eD2K tags); now both from
+    // the KEYWORD records others publish for the root, looked up when either tab is opened
     const bool icons = thePrefs.useOriginalIcons();
     const auto add = [&](QWidget* page, const char* icon, const QString& title) {
         return icons ? m_tabs->addTab(page, skinIcon(QStringLiteral(":/icons/") + QLatin1StringView(icon)), title)
                      : m_tabs->addTab(page, title);
     };
     add(createGeneralTab(details), "FileInfo.ico", tr("General"));
+    const int names = add(createFileNamesTab(details), "FileRename.ico", tr("File Names"));
+    if (m_fileNamesEmptyLabel)
+        m_fileNamesEmptyLabel->setText(tr("No other names found in ed3k Kad yet. Opening this tab looks them up."));
     const int comments = add(createCommentsTab(details), "FileComments.ico", tr("Comments"));
     const int media = add(createMediaInfoTab(details), "MediaInfo.ico", tr("Media Info"));
+    m_ed3kMeta = new QWidget;
+    auto* metaLayout = new QVBoxLayout(m_ed3kMeta);
+    metaLayout->setContentsMargins(0, 0, 0, 0);
+    metaLayout->addWidget(createMetadataTab(details));
+    const int meta = add(m_ed3kMeta, "MetaData.ico", tr("Metadata"));
     const int link = add(createEd3kLinkTab(details), "eD2kLink.ico", tr("ed3k Link"));
+    m_ed3kKadAsked = false;
 
     // what an archive (its first volume, or a lone one) holds, as recorded in ed3k
     const QString name = str(details, QLatin1StringView("fileName"));
@@ -947,24 +968,62 @@ void FileDetailDialog::buildEd3kTabs(const QCborMap& details, int tabToSelect)
     if (type.compare(QLatin1StringView("Arc"), Qt::CaseInsensitive) == 0
         || type.compare(QLatin1StringView("Iso"), Qt::CaseInsensitive) == 0)
         preview = add(createArchivePreviewTab(details), "ArchivePreview.ico", tr("Archive Preview"));
+    // no table of contents in the data here: the archive record in Kad tells (the Archive tab)
+    m_archiveFound = -2;
+    if (auto* panel = preview >= 0 && m_archive ? qobject_cast<ArchivePreviewPanel*>(m_tabs->widget(preview)) : nullptr) {
+        const auto kadText = [](int found) {
+            return found > 0 ? tr("Not in the data downloaded yet. Listed in Kad: see the Archive tab.")
+                 : found == 0 ? tr("Nothing found in Kad.") : tr("Nothing found in Kad: the lookup failed.");
+        };
+        auto missing = std::make_shared<bool>(false);
+        connect(panel, &ArchivePreviewPanel::scanFinished, this, [missing] { *missing = false; });
+        connect(panel, &ArchivePreviewPanel::contentsNotFound, this, [this, panel, missing, kadText] {
+            *missing = true;
+            if (m_archiveFound > -2) {
+                panel->setStatusText(kadText(m_archiveFound));
+                return;
+            }
+            panel->setStatusText(tr("Looking up in Kad..."));
+            if (m_archive)
+                m_archive->ensureLookup();
+        });
+        connect(m_archive, &ArchiveContentsView::lookupFinished, panel, [this, panel, missing, kadText](int found) {
+            m_archiveFound = found;
+            if (*missing)
+                panel->setStatusText(kadText(found));
+        });
+    }
 
     int index = tabToSelect;
     if (m_tabIsEnum) {
         switch (tabToSelect) {
+        case FileNames:      index = names; break;
         case Comments:       index = comments; break;
         case MediaInfo:      index = media; break;
+        case Metadata:       index = meta; break;
         case Ed2kLink:       index = link; break;
         case ArchivePreview: index = preview >= 0 ? preview : 0; break;
         default:             index = 0; break;
         }
     }
-    connect(m_tabs, &QTabWidget::currentChanged, this, [this, archive](int tab) {
+    // names and tags: one Kad lookup per file, when either tab is shown
+    const QString hash = str(details, QLatin1StringView("hash"));
+    const bool kad = details.value(QLatin1StringView("kadConnected")).toBool();
+    const auto askKad = [this, names, meta, hash, name, kad](int tab) {
+        if ((tab == names || tab == meta) && !m_ed3kKadAsked && kad) {
+            m_ed3kKadAsked = true;
+            emit searchKadNotes(hash, name);
+        }
+    };
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this, archive, askKad](int tab) {
         if (tab == archive && m_archive)
             m_archive->ensureLookup();
+        askKad(tab);
     });
     m_tabs->setCurrentIndex(std::clamp(index, 0, m_tabs->count() - 1));
     if (m_archive && m_tabs->currentIndex() == archive)
         QTimer::singleShot(0, m_archive, &ArchiveContentsView::ensureLookup);
+    QTimer::singleShot(0, this, [this, askKad] { askKad(m_tabs->currentIndex()); });
     contentLayout()->addWidget(m_tabs);
     fitToContent();
 }

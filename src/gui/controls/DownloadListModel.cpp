@@ -365,7 +365,9 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             case ColSize:          return sourceFromDisplay(s.sourceFrom);
             // MFC shows the bytes received from this source in both columns; an
             // A4AF source shows neither that nor a speed (DownloadListCtrl.cpp:493-507).
+            // Not MFC: Completed counts this file only, Transferred all files.
             case ColCompleted:
+                return !s.a4af && s.completedDown() > 0 ? formatByteSize(s.completedDown()) : QString{};
             case ColTransferred:
                 return !s.a4af && s.transferredDown > 0 ? formatByteSize(s.transferredDown) : QString{};
             case ColSpeed:         return !s.a4af && s.datarate > 0 ? formatByteRate(s.datarate) : QString{};
@@ -408,7 +410,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             switch (index.column()) {
             case ColFileName:      return s.userName;
             case ColSize:          return s.sourceFrom;
-            case ColCompleted:
+            case ColCompleted:     return QVariant::fromValue(s.completedDown());
             case ColTransferred:   return QVariant::fromValue(s.transferredDown);
             case ColSpeed:         return QVariant::fromValue(s.datarate);
             // MFC Compare cases 5 and 6 (DownloadListCtrl.cpp:1788-1793): by parts on

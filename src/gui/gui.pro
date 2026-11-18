@@ -210,6 +210,7 @@ SOURCES += \
     panels/IrcPanelEd3k.cpp \
     panels/ChatChannelView.cpp \
     panels/Ed3kOwnSetsView.cpp \
+    panels/Ed3kRoomMediaView.cpp \
     panels/Ed3kRoomTab.cpp \
     panels/Ed3kRoomList.cpp \
     panels/KadPanel.cpp \
@@ -362,6 +363,7 @@ HEADERS += \
     panels/IrcPanel.h \
     panels/ChatChannelView.h \
     panels/Ed3kOwnSetsView.h \
+    panels/Ed3kRoomMediaView.h \
     panels/Ed3kRoomTab.h \
     panels/Ed3kRoomList.h \
     panels/KadPanel.h \

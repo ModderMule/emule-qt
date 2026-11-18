@@ -58,6 +58,7 @@ public:
     /// Torrent search: rows of a Usenet+torrent account (Prowlarr) that carry no
     /// torrent attribute are dropped.
     void setTorrentsOnly(bool on) { m_torrentsOnly = on; }
+    [[nodiscard]] bool torrentsOnly() const { return m_torrentsOnly; }
 
 signals:
     void resultsReady(quint32 searchId, const QList<eMule::indexer::IndexerResult>& rows);

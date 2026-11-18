@@ -5,7 +5,8 @@
 /// libs/qDonkey/docs/ed3k-tunnel.md): no port forward, no VPN.
 ///
 /// - Each accepted tunnel starts with a 48-byte preamble: "qdonkey-tunnel/1" and a pair proof
-///   HMAC-SHA256(pair secret, "qdonkey-pair" || phone node key), zeros once paired.
+///   HMAC-SHA256(pair secret, "qdonkey-pair" || phone node ID), zeros once paired (QUIC proved
+///   the ID's key).
 /// - A phone not on ipc.tunnelPeers needs a valid proof: its key is added then, the secret
 ///   used up. Pair secrets come from GetIpcIdentity {pair: true}, 10 min, in memory only.
 /// - The rest of the bytes go to IpcServer as one more remote client (token required, no
@@ -42,8 +43,8 @@ void setSession(ed3k::Ed3kSession* session);
 /// ["<node hex>@ip:port"]; with @p pair also pairSecret (hex, 10 min, one use).
 [[nodiscard]] QCborMap identity(bool pair);
 
-/// The pair proof a phone sends: HMAC-SHA256(secret, "qdonkey-pair" || key).
-[[nodiscard]] QByteArray pairProof(const QByteArray& secret, const QByteArray& phoneKey);
+/// The pair proof a phone sends: HMAC-SHA256(secret, "qdonkey-pair" || node ID, 16 bytes).
+[[nodiscard]] QByteArray pairProof(const QByteArray& secret, const QByteArray& phoneNode);
 
 /// RegisterTunnelPeer / GetTunnelPeers / RemoveTunnelPeer. False: not one of them.
 bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ipc::IpcMessage&)>& reply);

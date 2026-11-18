@@ -251,6 +251,7 @@ SOURCES += \
     webserver/WebServerMcp.cpp \
     webserver/WebServerTorrents.cpp \
     webserver/WebServerEd3k.cpp \
+    webserver/WebServerIndexer.cpp \
     webserver/StreamTokenStore.cpp \
     webserver/WebSessionManager.cpp \
     webserver/WebTemplateEngine.cpp
@@ -431,6 +432,7 @@ HEADERS += \
     utils/BlockRuns.h \
     utils/DebugUtils.h \
     utils/AtomicFile.h \
+    utils/MediaSniff.h \
     utils/OwnerOnly.h \
     utils/SystemMemory.h \
     utils/BackgroundFileWriter.h \
@@ -469,6 +471,8 @@ HEADERS += \
     webserver/ApiEventHub.h \
     webserver/HosterWebBackend.h \
     webserver/Ed3kWebBackend.h \
+    webserver/IndexerWebBackend.h \
+    webserver/ApiOpBuilder.h \
     webserver/MetaGrabWebBackend.h \
     webserver/TorrentWebBackend.h \
     webserver/UsenetWebBackend.h \

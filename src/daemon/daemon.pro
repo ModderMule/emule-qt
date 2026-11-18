@@ -121,6 +121,8 @@ SOURCES += \
     DaemonApiBackend.cpp \
     DaemonHosterWebBackend.cpp \
     DaemonEd3kWebBackend.cpp \
+    DaemonIndexerWebBackend.cpp \
+    IndexerGrab.cpp \
     DaemonMetaGrabWebBackend.cpp \
     DaemonTorrentWebBackend.cpp \
     DaemonUsenetWebBackend.cpp \
@@ -174,6 +176,8 @@ HEADERS += \
     DaemonHosterWebBackend.h \
     DaemonEd3kWebBackend.h \
     BridgeAsk.h \
+    DaemonIndexerWebBackend.h \
+    IndexerGrab.h \
     DaemonMetaGrabWebBackend.h \
     DaemonTorrentWebBackend.h \
     DaemonUsenetWebBackend.h \

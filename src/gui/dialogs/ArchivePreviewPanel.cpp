@@ -135,7 +135,7 @@ ArchivePreviewPanel::ScanOutput ArchivePreviewPanel::scanFile(const QString& fil
         case Status::ListIncomplete:    out.status = tr("File list may be incomplete."); break;
         case Status::HeadersEncrypted:  out.status = tr("Headers encrypted - unable to read archive."); break;
         case Status::InsufficientData:  out.status = tr("Insufficient data available."); break;
-        case Status::NoTableOfContents: out.status = tr("Table of contents not found."); break;
+        case Status::NoTableOfContents: out.status = tr("Table of contents not found."); out.noContents = true; break;
         }
         return out;
     }
@@ -152,6 +152,7 @@ ArchivePreviewPanel::ScanOutput ArchivePreviewPanel::scanFile(const QString& fil
                                                 : tr("Table of contents not found.");
         if (reader.encryptionBlocked())
             out.info = tr("Password protection");
+        out.noContents = !reader.encryptionBlocked();
         return out;
     }
     out.typeName = reader.formatName();
@@ -239,6 +240,13 @@ void ArchivePreviewPanel::applyScan(const ScanOutput& output)
     // Files only: a folder is not a file (MFC uArchiveFileEntries)
     m_fileCountLabel->setText(tr("Files: %1").arg(output.fileCount));
     emit scanFinished(output.fileCount);
+    if (output.noContents)
+        emit contentsNotFound();
+}
+
+void ArchivePreviewPanel::setStatusText(const QString& text)
+{
+    m_statusLabel->setText(text);
 }
 
 // ---------------------------------------------------------------------------

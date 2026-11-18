@@ -1140,6 +1140,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         // decompression error or a boundary violation does not inflate the totals.
         // uTransferredFileDataSize is the wire payload, lenWritten the decompressed bytes.
         m_transferredDown += uTransferredFileDataSize;
+        addFileDown(uTransferredFileDataSize);
         m_curSessionPayloadDown += lenWritten;
         m_transferredDownMini = true;
         curBlock->block->transferredByClient += lenWritten;
@@ -1272,6 +1273,20 @@ uint32 UpDownClient::writeHttpData(uint64 pos, const uint8* data, uint32 size)
 }
 
 // ===========================================================================
+// fileDown
+// ===========================================================================
+
+uint64 UpDownClient::fileDown(const uint8* fileHash) const
+{
+    if (!fileHash)
+        return 0;
+    std::array<uint8, 16> key{};
+    std::memcpy(key.data(), fileHash, key.size());
+    const auto it = m_fileDown.find(key);
+    return it == m_fileDown.end() ? 0 : it->second;
+}
+
+// ===========================================================================
 // addPayloadDown (protected)
 // ===========================================================================
 
@@ -1281,6 +1296,7 @@ void UpDownClient::addPayloadDown(uint64 bytes)
     // accounting never runs for them. MFC's equivalent is srchybrid/URLClient.cpp:374,389-390,
     // which books the same three things: the running total, the session payload, and credit.
     m_transferredDown += bytes;
+    addFileDown(bytes);
     m_curSessionPayloadDown += bytes;
     if (bytes > 0)
         m_transferredDownMini = true;
@@ -2547,6 +2563,19 @@ bool UpDownClient::canServeAICHRecovery(const uint8* fileHash, uint16 part,
 
     safeConnectAndSendPacket(std::make_unique<Packet>(response, OP_EMULEPROT, OP_AICHANSWER));
     return true;
+}
+
+// ===========================================================================
+// addFileDown (private)
+// ===========================================================================
+
+void UpDownClient::addFileDown(uint64 bytes)
+{
+    if (!m_reqFile || bytes == 0)
+        return;
+    std::array<uint8, 16> key{};
+    std::memcpy(key.data(), m_reqFile->fileHash(), key.size());
+    m_fileDown[key] += bytes;
 }
 
 } // namespace eMule

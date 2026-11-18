@@ -3,6 +3,7 @@
 /// @brief "Create ed3k Set…" — implementation.
 
 #include "dialogs/Ed3kOwnSetDialog.h"
+#include "dialogs/Ed3kSetsDialog.h"
 
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
@@ -190,6 +191,15 @@ void Ed3kOwnSetDialog::setupUi()
     m_kindNote = new QLabel;
     m_kindNote->setWordWrap(true);
     kindLayout->addWidget(m_kindNote);
+    // file-set.md §5.3: followers downloading by themselves take these by default
+    auto* extsRow = new QHBoxLayout;
+    extsRow->addWidget(new QLabel(tr("File types for followers:")));
+    m_extsEdit = new QLineEdit;
+    m_extsEdit->setPlaceholderText(tr("e.g. mkv mp3 jpg; empty: no suggestion"));
+    m_extsEdit->setToolTip(tr("Followers who download new files by themselves take these file types by default. "
+                              "Each follower can change them."));
+    extsRow->addWidget(m_extsEdit, 1);
+    kindLayout->addLayout(extsRow);
     mainLayout->addWidget(kindGroup);
     connect(m_kind, &QComboBox::currentIndexChanged, this, &Ed3kOwnSetDialog::onKindChanged);
     onKindChanged();
@@ -330,7 +340,8 @@ void Ed3kOwnSetDialog::onSave()
         return;
     m_saveButton->setEnabled(false);
     QPointer<Ed3kOwnSetDialog> self(this);
-    m_ipc->publishEd3kOwnSet(m_folder, files(), title(), kind(), [self](const IpcMessage& r) {
+    m_ipc->publishEd3kOwnSet(m_folder, files(), title(), kind(), Ed3kSetsDialog::parseExts(m_extsEdit->text()),
+                             [self](const IpcMessage& r) {
         if (!self)
             return;
         self->m_saveButton->setEnabled(true);

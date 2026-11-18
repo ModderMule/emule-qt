@@ -50,6 +50,7 @@ QCborMap toCbor(const ed3k::Ed3kOwnSets::Info& i)
         {QStringLiteral("error"), i.error},
         {QStringLiteral("key"), i.key},
         {QStringLiteral("offerKey"), i.offerKey},
+        {QStringLiteral("exts"), QCborArray::fromStringList(i.exts)},
     };
 }
 
@@ -71,7 +72,11 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
             reply(failure(seq, QCoreApplication::translate("eMule::Ed3kOwnSetsBridge", "Unknown kind of set.")));
             break;
         }
-        auto r = sets.create(msg.fieldString(2), msg.fieldString(0), files, ed3k::Ed3kOwnSets::Kind(kind));
+        // field 4: file types suggested to followers (file-set.md §5.3)
+        QStringList exts;
+        for (const auto& v : msg.fieldArray(4))
+            exts << v.toString();
+        auto r = sets.create(msg.fieldString(2), msg.fieldString(0), files, ed3k::Ed3kOwnSets::Kind(kind), exts);
         if (!r) {
             reply(failure(seq, r.error()));
             break;
@@ -98,6 +103,14 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
             // hops.md §1: the set under its files' key (the user agreed)
             r = sets.shareUnderKey(id, msg.fieldString(2) == QLatin1String("Anonymous") ? ::ed3k::KeyKind::Anon : ::ed3k::KeyKind::Node);
             break;
+        case 5: {
+            // file types suggested to followers (file-set.md §5.3)
+            QStringList exts;
+            for (const auto& v : msg.fieldArray(2))
+                exts << v.toString();
+            r = sets.setExts(id, exts);
+            break;
+        }
         default:
             break;
         }

@@ -31,6 +31,7 @@
 #include "IndexerCapsStore.h"
 #include "IndexerClient.h"
 #include "IndexerFeedList.h"
+#include "IndexerGrab.h"
 #include "IndexerQuery.h"
 #include "IndexerSearch.h"
 #include "IndexerSearchList.h"
@@ -1155,7 +1156,8 @@ void IpcClientHandler::handleSearchKadNotes(const IpcMessage& msg)
             sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(tr("ed3k is not connected."))));
             return;
         }
-        if (!theApp.ed3kSearchNotes || !theApp.ed3kSearchNotes(root)) {
+        // was: theApp.ed3kSearchNotes(root) alone; a download also looks up its names and tags
+        if (!Ed3kDownloadsBridge::searchKad(root) && (!theApp.ed3kSearchNotes || !theApp.ed3kSearchNotes(root))) {
             sendMessage(IpcMessage::makeResult(msg.seqId(), false,
                 QCborValue(tr("Another search is already in progress. Please try again later!"))));
             return;
@@ -5407,6 +5409,10 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setChatPlainLinks(val.toBool());
     else if (key == QStringLiteral("chatModStar"))
         thePrefs.setChatModStar(val.toBool());
+    else if (key == QStringLiteral("chatRoomMedia"))
+        thePrefs.setChatRoomMedia(val.toBool());
+    else if (key == QStringLiteral("chatRoomVideos"))
+        thePrefs.setChatRoomVideos(val.toBool());
 
     else
         return false;
@@ -6234,61 +6240,36 @@ void IpcClientHandler::handleGetIndexerCaps(const IpcMessage& msg)
 
 void IpcClientHandler::handleStartIndexerSearch(const IpcMessage& msg)
 {
-    if (!indexer::theIndexerSearchList) {
-        sendMessage(IpcMessage::makeResult(msg.seqId(), false,
-                                           QCborValue(tr("The daemon is still starting."))));
-        return;
-    }
-
     indexer::IndexerQuery query;
-    query.text = msg.fieldString(0).trimmed();
+    query.text = msg.fieldString(0);
     for (const auto& value : msg.fieldArray(1))
         query.categories.append(int(value.toInteger()));
-    if (const QString mode = msg.fieldString(2); !mode.isEmpty())
-        query.mode = mode;
+    query.mode = msg.fieldString(2);
     // fields 5-7: season, episode, IMDb id (digits only, "tt" dropped)
-    query.season = msg.fieldString(5).trimmed();
-    query.episode = msg.fieldString(6).trimmed();
-    query.imdbId = msg.fieldString(7).trimmed();
-    query.imdbId.removeIf([](QChar c) { return !c.isDigit(); });
+    query.season = msg.fieldString(5);
+    query.episode = msg.fieldString(6);
+    query.imdbId = msg.fieldString(7);
     // fields 8-9: size bounds in bytes, filtered here (no newznab parameter)
-    query.minSize = std::max<qint64>(0, msg.fieldInt(8));
-    query.maxSize = std::max<qint64>(0, msg.fieldInt(9));
+    query.minSize = msg.fieldInt(8);
+    query.maxSize = msg.fieldInt(9);
 
     QStringList only;
     for (const auto& value : msg.fieldArray(3))
         only.append(value.toString());
 
-    if (query.text.isEmpty() && query.categories.isEmpty() && query.imdbId.isEmpty()) {
-        sendMessage(IpcMessage::makeResult(
-            msg.seqId(), false, QCborValue(tr("Enter something to search for."))));
-        return;
-    }
-
     // field 4: 0 Usenet (newznab), 1 torrents (torznab)
-    const IndexerKind wanted = msg.fieldInt(4) == int(IndexerKind::Torznab) ? IndexerKind::Torznab
-                                                                           : IndexerKind::Newznab;
-    // nothing configured for this network: field 2 tells the GUI to offer the Options page
-    if (!indexer::theIndexerSearchList->hasEnabledAccount(wanted)) {
-        IpcMessage reply = IpcMessage::makeResult(
-            msg.seqId(), false,
-            QCborValue(wanted == IndexerKind::Torznab ? tr("No torrent indexer is configured.")
-                                                      : tr("No Usenet indexer is configured.")));
-        reply.append(QStringLiteral("noIndexer"));
+    const IndexerStartResult started =
+        startIndexerSearch(std::move(query), msg.fieldInt(4) == int(IndexerKind::Torznab), only);
+    if (started.id == 0) {
+        IpcMessage reply = IpcMessage::makeResult(msg.seqId(), false, QCborValue(started.error));
+        // nothing configured for this network: field 2 tells the GUI to offer the Options page
+        if (started.noIndexer)
+            reply.append(QStringLiteral("noIndexer"));
         sendMessage(std::move(reply));
         return;
     }
-
-    QString error;
-    const quint32 searchId = indexer::theIndexerSearchList->startSearch(query, wanted, only, error);
-
-    if (searchId == 0) {
-        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(error)));
-        return;
-    }
-
     sendMessage(IpcMessage::makeResult(msg.seqId(), true,
-                                       QCborValue(static_cast<qint64>(searchId))));
+                                       QCborValue(static_cast<qint64>(started.id))));
 }
 
 void IpcClientHandler::handleStopIndexerSearch(const IpcMessage& msg)
@@ -6333,22 +6314,6 @@ bool categoryExists(int category)
     return category >= 0 && category < int(thePrefs.categoryCount());
 }
 
-/// A .torrent (bencoded dictionary) rather than an .nzb. An aggregator's rows
-/// can be either kind, so the payload decides, not the account.
-/// A magnet URI handed back as text (magnet-only torznab row or a /dl redirect).
-bool isMagnetPayload(const QByteArray& payload)
-{
-    return payload.startsWith("magnet:");
-}
-
-bool isTorrentPayload(const QByteArray& payload)
-{
-    qsizetype i = 0;
-    while (i < payload.size() && QChar::isSpace(uchar(payload.at(i))))
-        ++i;
-    return i < payload.size() && payload.at(i) == 'd';
-}
-
 } // namespace
 
 void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
@@ -6385,67 +6350,27 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
 
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
-    // the row, for a replacement NZB should this one fail
-    const auto source = indexer::theIndexerSearchList->grabSource(searchId, resultId);
-
-    indexer::theIndexerSearchList->grab(
-        searchId, resultId,
-        [self, seqId, force, choices, source, kept, keptEntries, entryPassword](bool ok, const QByteArray& payload,
-                                              const QString& name, const QString& password,
-                                              const QString& error) {
+    grabIndexerResult(
+        {.searchId = searchId, .resultId = resultId, .force = force, .category = choices.category,
+         .priority = choices.priority, .paused = choices.paused, .keptFiles = kept,
+         .keptEntries = keptEntries, .entryPassword = entryPassword},
+        [self, seqId](const IndexerGrabOutcome& out) {
         if (!self)
             return;
-
-        if (!ok || payload.isEmpty()) {
-            self->sendMessage(IpcMessage::makeResult(
-                seqId, false,
-                QCborValue(error.isEmpty() ? tr("The indexer returned no NZB.") : error)));
-            return;
-        }
-
-        // Torznab row: to the Torrents tab
-        if (isTorrentPayload(payload) || isMagnetPayload(payload)) {
-            const QCborMap added = isMagnetPayload(payload)
-                                       ? BtBridge::addMagnetUri(QString::fromUtf8(payload), choices.paused)
-                                       : BtBridge::addTorrentData(payload, choices.paused, kept);
-            const int outcome = int(added.value(QStringLiteral("outcome")).toInteger(4));
-            const bool addedOk = outcome == 0 || outcome == 1;   // added, or already there
-            IpcMessage reply = IpcMessage::makeResult(
-                seqId, addedOk,
-                QCborValue(addedOk ? added.value(QStringLiteral("id")).toString()
-                                   : added.value(QStringLiteral("message")).toString()));
+        switch (out.target) {
+        case IndexerGrabOutcome::Target::Torrent: {
+            IpcMessage reply = IpcMessage::makeResult(seqId, out.ok, QCborValue(out.ok ? out.id : out.error));
             reply.append(QStringLiteral("torrent"));
             self->sendMessage(std::move(reply));
             return;
         }
-
-        if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
-            self->sendMessage(IpcMessage::makeResult(
-                seqId, false, QCborValue(tr("The Usenet engine is not running."))));
+        case IndexerGrabOutcome::Target::Usenet:
+            self->replyAddNzb(seqId, out.id, out.error, usenet::UsenetAddOutcome(out.usenetOutcome));
+            return;
+        case IndexerGrabOutcome::Target::None:
+            self->sendMessage(IpcMessage::makeResult(seqId, false, QCborValue(out.error)));
             return;
         }
-
-        QString addError;
-        usenet::UsenetAddOutcome outcome = usenet::UsenetAddOutcome::Failed;
-        // A grab is a person clicking Download, so the feed's password arrives as
-        // a Manual one and outranks the NZB's own metadata: the indexer knows
-        // the release, the NZB says whatever its poster wrote.
-        usenet::UsenetOrigin origin;
-        if (source) {
-            origin.indexerName = source->indexerName;
-            origin.guid = source->guid;
-            origin.title = source->title;
-            origin.failureUrl = indexer::IndexerClient::failureUrlFor(source->downloadUrl)
-                                    .toString(QUrl::FullyEncoded);
-        }
-        const QString itemId = usenet::theUsenetSession->queue()->addNzb(
-            payload, name, addError,
-            {.force = force, .password = password.isEmpty() ? entryPassword : password, .category = choices.category,
-             .priority = choices.priority, .paused = choices.paused, .keptFiles = kept,
-             .keptEntries = keptEntries, .origin = origin},
-            &outcome);
-        self->sendAddNzbResult(seqId, itemId, addError, outcome,
-                               usenet::UsenetAddOrigin::IndexerGrab);
     });
 }
 

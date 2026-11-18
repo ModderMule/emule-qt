@@ -17,6 +17,7 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QProcess>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
@@ -116,23 +117,53 @@ QString macAppBundle(const QString& command)
 }
 #endif
 
+/// A one-entry M3U8 naming stream @p url @p title, in a folder of this process only
+/// (0700, removed at exit: the URL holds the stream token). Empty: not a URL, or no file.
+QString titledPlaylist(const QString& url, const QString& title)
+{
+    if (!url.startsWith(QLatin1String("http://")) && !url.startsWith(QLatin1String("https://")))
+        return {};
+    static QTemporaryDir dir(QDir::temp().filePath(QStringLiteral("emuleqt-preview-XXXXXX")));
+    static int serial = 0;
+    if (!dir.isValid())
+        return {};
+    // a few files: a player still reading the last one is not cut short
+    const QString path = dir.filePath(QStringLiteral("preview-%1.m3u8").arg(serial++ % 8));
+    QString name = title;
+    name.replace(u'\r', u' ').replace(u'\n', u' ');
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return {};
+    f.write(QStringLiteral("#EXTM3U\n#EXTINF:-1,%1\n%2\n").arg(name, url).toUtf8());
+    return f.error() == QFile::NoError ? path : QString{};
+}
+
 } // namespace
 
-void launchPreview(const QString& url)
+void launchPreview(const QString& url, const QString& title)
 {
     const QString playerCmd = thePrefs.videoPlayerCommand();
     if (playerCmd.isEmpty()) {
         logWarning(QStringLiteral("No video player configured. Set it in Options → Files."));
         return;
     }
-    if (!launchPlayer(playerCmd, thePrefs.videoPlayerArgs(), url))
+    if (!launchPlayer(playerCmd, thePrefs.videoPlayerArgs(), url, title))
         logWarning(QStringLiteral("Cannot start the video player %1").arg(playerCmd));
 }
 
-bool launchPlayer(const QString& command, const QString& playerArgs, const QString& target)
+bool launchPlayer(const QString& command, const QString& playerArgs, const QString& streamTarget,
+                  const QString& title)
 {
-    if (command.isEmpty() || target.isEmpty())
+    if (command.isEmpty() || streamTarget.isEmpty())
         return false;
+
+    // VLC names a stream by its last URL segment, query included ("preview?token=…"); the
+    // #EXTINF title of a playlist wins, shown as is
+    const QString playerName = QFileInfo(command).completeBaseName().toLower();
+    QString target = streamTarget;
+    if (playerName == QStringLiteral("vlc") && !title.isEmpty())
+        if (const QString playlist = titledPlaylist(streamTarget, title); !playlist.isEmpty())
+            target = playlist;
 
     QString args = playerArgs;
     QStringList argList;
@@ -152,7 +183,6 @@ bool launchPlayer(const QString& command, const QString& playerArgs, const QStri
     // to the running app. Linux/Windows VLC supports --one-instance; --no-playlist-enqueue
     // makes the running instance play the URL instead of queueing it. There is no
     // --playlist-replace: VLC refuses to start on an unknown option.
-    const QString playerName = QFileInfo(command).completeBaseName().toLower();
     if (playerName == QStringLiteral("vlc")) {
 #ifdef Q_OS_MACOS
         // Not detached: `open` reports a missed Apple event only in its exit
@@ -182,14 +212,14 @@ void playStreamUrl(QWidget* parent, const QString& url, const QString& name)
     if (const PreviewApps& apps = previewApps(); !name.isEmpty()) {
         if (const int app = apps.appForFileName(name); app >= 0) {
             const PreviewApp& pick = apps.apps().at(static_cast<size_t>(app));
-            if (!launchPlayer(pick.command, pick.commandArgs, url))
+            if (!launchPlayer(pick.command, pick.commandArgs, url, name))
                 QMessageBox::warning(parent, QCoreApplication::translate("PreviewLauncher", "Preview"),
                                      QCoreApplication::translate("PreviewLauncher", "Failed to execute: %1 %2")
                                          .arg(pick.command, pick.commandArgs));
             return;
         }
     }
-    launchPreview(url);
+    launchPreview(url, name);
 }
 
 QString daemonHosterStreamUrl(const IpcClient* ipc, qint64 itemId, const QString& streamToken)

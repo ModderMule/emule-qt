@@ -185,6 +185,8 @@
     <ClCompile Include="DaemonApiBackend.cpp" />
     <ClCompile Include="DaemonHosterWebBackend.cpp" />
     <ClCompile Include="DaemonEd3kWebBackend.cpp" />
+    <ClCompile Include="DaemonIndexerWebBackend.cpp" />
+    <ClCompile Include="IndexerGrab.cpp" />
     <ClCompile Include="DaemonMetaGrabWebBackend.cpp" />
     <ClCompile Include="DaemonTorrentWebBackend.cpp" />
     <ClCompile Include="DaemonUsenetWebBackend.cpp" />
@@ -251,6 +253,8 @@
     <ClInclude Include="DaemonHosterWebBackend.h" />
     <ClInclude Include="DaemonEd3kWebBackend.h" />
     <ClInclude Include="BridgeAsk.h" />
+    <ClInclude Include="DaemonIndexerWebBackend.h" />
+    <ClInclude Include="IndexerGrab.h" />
     <ClInclude Include="DaemonMetaGrabWebBackend.h" />
     <ClInclude Include="MetaRowFiles.h" />
     <ClInclude Include="DaemonTorrentWebBackend.h" />

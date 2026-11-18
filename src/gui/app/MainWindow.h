@@ -311,7 +311,7 @@ protected:
     void closeEvent(QCloseEvent* event) override;
     /// Minimize-to-tray lives here. Closing hides to the tray only with closeToTray (off, as MFC).
     void changeEvent(QEvent* event) override;
-    /// Wayland: hooks the QWindow minimize request (see onWaylandMinimizeRequested)
+    /// Wayland: hooks the QWindow minimize request (see onWaylandWindowStateChanged)
     void showEvent(QShowEvent* event) override;
 
     // A .nzb dropped anywhere on the window switches to the Usenet tab and is
@@ -430,6 +430,10 @@ private:
     /// Wayland never reports minimized: Qt's own decoration minimize button only
     /// shows up as a QWindow state request. Hides to the tray from there.
     void onWaylandWindowStateChanged(Qt::WindowState state);
+    /// KWin's title bar minimize: only xdg "suspended" (Qt: window unexposed) shows it
+    void onWaylandExposeChanged(QWindow* handle);
+    /// Tray hide on Wayland, deferred; keeps max/fullscreen for the restore
+    void hideToTrayDeferred();
 
     /// Colour of the meter bar: stats colour 11, or the system scheme when that is
     /// left on "auto".

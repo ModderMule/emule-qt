@@ -200,6 +200,8 @@ QCborMap sourceToCbor(const SourceInfo& s)
         {QStringLiteral("reqFileName"), s.otherName},
         {QStringLiteral("transferredDown"), qint64(std::min<std::uint64_t>(down, INT64_MAX))},
         {QStringLiteral("sessionDown"), qint64(std::min<std::uint64_t>(down, INT64_MAX))},
+        // Completed of the row: this file only (transferredDown: all files, Client Details)
+        {QStringLiteral("fileDown"), qint64(std::min<std::uint64_t>(s_uploads->peerFileDown(s.key, s.node, s.root), INT64_MAX))},
         // only a held slot moves bytes; the 10 s average lingers after it ends
         {QStringLiteral("datarate"), s.holding && !s.otherFile ? qint64(s_uploads->downRate(s.key, s.node)) : 0},
         {QStringLiteral("availPartCount"), held},

@@ -850,6 +850,9 @@ void tst_ListSorting::sourceStatusFollowsMfc()
     full.remoteQueueFull = true;
     SourceRow cache = source("g", "Downloading");
     cache.sourceFrom = 8;   // SourceFrom::HttpCache
+    // Completed: this file only; Transferred: all files of the session (not MFC)
+    cache.transferredDown = 3 * 1024 * 1024;
+    cache.fileDown = 1024 * 1024;
     SourceRow other = source("h", "OnQueue");
     other.a4af = true;
     other.noNeededHere = true;
@@ -880,6 +883,13 @@ void tst_ListSorting::sourceStatusFollowsMfc()
     QCOMPARE(text(6), QStringLiteral("Transferring (HTTP Cache)"));
     QCOMPARE(text(7), QStringLiteral("Asked for another file"));
     QCOMPARE(text(0, DownloadListModel::ColFileName), QStringLiteral("(Unknown)"));
+
+    QCOMPARE(text(6, DownloadListModel::ColCompleted), formatByteSize(1024 * 1024));
+    QCOMPARE(text(6, DownloadListModel::ColTransferred), formatByteSize(3 * 1024 * 1024));
+    // a row without a per-file count (BT, Usenet): the total
+    SourceRow bt;
+    bt.transferredDown = 7;
+    QCOMPARE(bt.completedDown(), 7);
 
     // The A4AF row: no figures, and the bare grey bar
     QCOMPARE(text(7, DownloadListModel::ColCompleted), QString());

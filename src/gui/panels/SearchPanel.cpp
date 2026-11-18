@@ -3046,16 +3046,7 @@ void SearchPanel::onSearchPreviewPush(const IpcMessage& msg)
     }
 
     // The name comes from the row; the daemon's hash text and ours differ in case.
-    QString fileName;
-    for (const auto& tab : m_tabs) {
-        if (!tab.model)
-            continue;
-        for (int row = 0; row < tab.model->rowCount() && fileName.isEmpty(); ++row) {
-            const auto* result = tab.model->resultAt(row);
-            if (result && result->hash.compare(hash, Qt::CaseInsensitive) == 0)
-                fileName = result->fileName;
-        }
-    }
+    const QString fileName = resultFileName(hash);
     auto* dialog = new PeerPreviewDialog(fileName.isEmpty() ? userName : fileName,
                                          std::move(frames), this);
     dialog->show();
@@ -3072,7 +3063,7 @@ void SearchPanel::sendPreview(const QString& hash)
         return;
     }
 
-    launchPreview(daemonStreamUrl(m_ipc, hash, m_streamToken));
+    launchPreview(daemonStreamUrl(m_ipc, hash, m_streamToken), resultFileName(hash));
 }
 
 // ---------------------------------------------------------------------------
@@ -3889,7 +3880,14 @@ bool SearchPanel::torrentResultsShown() const
 
 void SearchPanel::dumpEd3kMenus()
 {
-    // dev aid (EMULE_DUMP_ED3K_MENUS): the menu of the open tab's ed3k results (first 3)
+    // dev aid (EMULE_DUMP_ED3K_MENUS): the menu of the open tab's ed3k results (first 3);
+    // level 2 first runs one ed3k search for EMULE_DUMP_SEARCH
+    static bool searched = false;
+    if (const QString words = qEnvironmentVariable("EMULE_DUMP_SEARCH");
+        MenuDump::level() >= 2 && !words.isEmpty() && !std::exchange(searched, true)) {
+        startSearchFromExternal(words, {}, static_cast<int>(SearchType::Ed3k), {});
+        return;
+    }
     if (!m_resultView->model() || !m_resultView->selectionModel())
         return;
     int shown = 0;
@@ -3904,6 +3902,25 @@ void SearchPanel::dumpEd3kMenus()
         m_contextMenu->hide();
         logInfo(QStringLiteral("ed3k menu Search %1: %2").arg(ref.row->fileName, MenuDump::text(m_contextMenu)));
     }
+    // ed3k link actions arrive async: the last menu again once they could have
+    if (shown)
+        QTimer::singleShot(1500, m_contextMenu, [menu = m_contextMenu] {
+            logInfo(QStringLiteral("ed3k menu Search (1.5 s later): %1").arg(MenuDump::text(menu)));
+        });
+}
+
+QString SearchPanel::resultFileName(const QString& hash) const
+{
+    for (const auto& tab : m_tabs) {
+        if (!tab.model)
+            continue;
+        for (int row = 0; row < tab.model->rowCount(); ++row) {
+            const auto* result = tab.model->resultAt(row);
+            if (result && result->hash.compare(hash, Qt::CaseInsensitive) == 0)
+                return result->fileName;
+        }
+    }
+    return {};
 }
 
 } // namespace eMule

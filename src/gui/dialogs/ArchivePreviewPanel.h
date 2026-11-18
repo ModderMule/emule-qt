@@ -42,8 +42,13 @@ public:
     /// Clear all entries and reset the panel.
     void clear();
 
+    /// Replaces the status line (an ed3k download's Kad answer after contentsNotFound()).
+    void setStatusText(const QString& text);
+
 signals:
     void scanFinished(int entryCount);
+    /// The scan found no list of contents in the data here (no table of contents).
+    void contentsNotFound();
     /// "Create preview file": rebuild a readable archive from what has arrived
     /// (MFC CArchiveRecovery::recover, ArchivePreviewDlg.cpp:323-332).
     void previewFileRequested();
@@ -67,6 +72,7 @@ public:
         QString info;         ///< "Password protection,Solid,..."
         int fileCount = 0;    ///< without directories
         bool hasCrcAndComment = false;   ///< ZIP / RAR; other formats hide the two columns
+        bool noContents = false;         ///< no table of contents in the data (contentsNotFound)
     };
     /// Read @p filePath. Runs off the GUI thread.
     [[nodiscard]] static ScanOutput scanFile(const QString& filePath, const QList<qint64>& gapPairs);

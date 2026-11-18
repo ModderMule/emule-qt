@@ -1072,7 +1072,7 @@ QFuture<QHttpServerResponse> WebServer::handleTorrentPreviewStream(
         return m_btStreamResolver ? m_btStreamResolver(id, fileIndex, wantStart, fetch) : UsenetStreamSource{};
     };
     return serveDownloadPreview(std::move(resolve), rangeHeader, kDownloadStreamWaitMs,
-                                QStringLiteral("Torrent preview"));
+                                QStringLiteral("Torrent preview"), false);
 }
 
 QFuture<QHttpServerResponse> WebServer::handleHosterPreviewStream(const QString& id, const QHttpServerRequest& req)
@@ -1087,7 +1087,7 @@ QFuture<QHttpServerResponse> WebServer::handleHosterPreviewStream(const QString&
         return m_hosterStreamResolver ? m_hosterStreamResolver(id, wantStart, fetch) : UsenetStreamSource{};
     };
     return serveDownloadPreview(std::move(resolve), rangeHeader, kDownloadStreamWaitMs,
-                                QStringLiteral("Hoster preview"));
+                                QStringLiteral("Hoster preview"), true);
 }
 
 QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
@@ -1137,7 +1137,7 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     ask.wantLength = kWantLength;
     ask.entryOrdinal = entryOrdinal;
 
-    // With seeking on, resolving is not a pure lookup — it also tells the queue
+    // Resolving is not a pure lookup (a preview fetches, seeking on or off) — it also tells the queue
     // somebody is watching this item, which is what puts its articles at the
     // front of the schedule. That is why the poll calls it again rather than
     // caching: the boost has to be refreshed for as long as a player is reading.
@@ -1145,19 +1145,20 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
         ask.fetch = fetch;
         return m_usenetStreamResolver ? m_usenetStreamResolver(ask) : UsenetStreamSource{};
     };
-    return serveDownloadPreview(std::move(resolve), rangeHeader, kStreamWaitMs, QStringLiteral("Usenet preview"));
+    return serveDownloadPreview(std::move(resolve), rangeHeader, kStreamWaitMs, QStringLiteral("Usenet preview"),
+                                true);
 }
 
 QFuture<QHttpServerResponse> WebServer::serveDownloadPreview(std::function<UsenetStreamSource(bool fetch)> resolve,
                                                              const QByteArray& rangeHeader, int waitMs,
-                                                             const QString& what)
+                                                             const QString& what, bool alwaysFetch)
 {
-    const bool seeking = m_preferences && m_preferences->downloadSeeking();
+    const bool seeking = alwaysFetch || (m_preferences && m_preferences->downloadSeeking());
     auto probe = [resolve = std::move(resolve), seeking] {
         UsenetStreamSource src = resolve(seeking);
         // off: everything mapped counts as there (serveRange caps at the file's size);
         // only a source still without pieces waits
-        if (!seeking && !src.exactEnd && !src.pieces.isEmpty())
+        if (!seeking && !src.pieces.isEmpty())
             src.availableEnd = std::numeric_limits<qint64>::max();
         return src;
     };

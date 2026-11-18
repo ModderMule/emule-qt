@@ -6,6 +6,8 @@
 /// only the file name. Runs on an 800x600 offscreen screen set up in main().
 
 #include "controls/ContentScrollArea.h"
+#include "controls/ArchiveContentsView.h"
+#include "dialogs/ArchivePreviewPanel.h"
 #include "dialogs/FileDetailDialog.h"
 #include "dialogs/FileDetailsMerge.h"
 #include "prefs/Preferences.h"
@@ -28,6 +30,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTextEdit>
+#include <QTreeWidget>
 
 using namespace eMule;
 
@@ -127,6 +130,7 @@ private slots:
     void liveRefreshSkipsOtherPages();
     void severalDownloadsRefresh();
     void ed3kGroupShowsTheJoin();
+    void ed3kDownloadHasNamesAndMetadataFromKad();
     void sharedFileShowsItsBlake3Root();
     void shrinksAndKeepsItsSizeAfterARename();
     void scrollFitShrinksContentThatFits();
@@ -454,6 +458,60 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     TestFileDetailDialog test;
     return QTest::qExec(&test, argc, argv);
+}
+
+void TestFileDetailDialog::ed3kDownloadHasNamesAndMetadataFromKad()
+{
+    QCborMap d;
+    d.insert(QStringLiteral("network"), QStringLiteral("ed3k"));
+    d.insert(QStringLiteral("hash"), QStringLiteral("ab").repeated(32));
+    d.insert(QStringLiteral("fileName"), QStringLiteral("release.rar"));
+    d.insert(QStringLiteral("fileSize"), qint64(1000));
+    d.insert(QStringLiteral("sourceNames"), QCborArray{QCborMap{{QStringLiteral("name"), QStringLiteral("other.rar")},
+                                                                {QStringLiteral("count"), 2}}});
+    FileDetailDialog dlg(d, FileDetailDialog::FileNames);
+    auto* tabs = dlg.findChild<QTabWidget*>();
+    QStringList titles;
+    for (int i = 0; i < tabs->count(); ++i)
+        titles << tabs->tabText(i);
+    QCOMPARE(titles, (QStringList{FileDetailDialog::tr("General"), FileDetailDialog::tr("File Names"),
+                                  FileDetailDialog::tr("Comments"), FileDetailDialog::tr("Media Info"),
+                                  FileDetailDialog::tr("Metadata"), FileDetailDialog::tr("ed3k Link"),
+                                  FileDetailDialog::tr("Archive"), FileDetailDialog::tr("Archive Preview")}));
+    QCOMPARE(tabs->currentIndex(), 1);
+    auto* names = tabs->widget(1)->findChild<QTreeWidget*>();
+    QVERIFY(names);
+    QCOMPARE(names->topLevelItemCount(), 1);
+    QCOMPARE(names->topLevelItem(0)->text(0), QStringLiteral("other.rar"));
+
+    // the tags of a later answer replace the Metadata page
+    QVERIFY(!tabs->widget(4)->findChild<QTreeWidget*>());
+    d.insert(QStringLiteral("tags"), QCborArray{QCborMap{{QStringLiteral("name"), QStringLiteral("Artist")},
+                                                         {QStringLiteral("type"), 2},
+                                                         {QStringLiteral("strValue"), QStringLiteral("Band")}}});
+    dlg.applyDetails(d);
+    auto* tags = tabs->widget(4)->findChild<QTreeWidget*>();
+    QVERIFY(tags);
+    QCOMPARE(tags->topLevelItem(0)->text(2), QStringLiteral("Band"));
+
+    // no table of contents in the data: the Kad record's answer instead
+    auto* preview = tabs->widget(7)->findChild<ArchivePreviewPanel*>();
+    if (!preview)
+        preview = qobject_cast<ArchivePreviewPanel*>(tabs->widget(7));
+    QVERIFY(preview);
+    auto* archive = qobject_cast<ArchiveContentsView*>(tabs->widget(6));
+    QVERIFY(archive);
+    emit preview->contentsNotFound();
+    const auto status = [preview] {
+        QStringList texts;
+        for (const auto* l : preview->findChildren<QLabel*>())
+            texts << l->text();
+        return texts;
+    };
+    QVERIFY(status().contains(FileDetailDialog::tr("Looking up in Kad...")));
+    emit archive->lookupFinished(0);
+    QVERIFY(status().contains(FileDetailDialog::tr("Nothing found in Kad.")));
+    QVERIFY(!status().contains(ArchivePreviewPanel::tr("Table of contents not found.")));
 }
 
 #include "tst_FileDetailDialog.moc"

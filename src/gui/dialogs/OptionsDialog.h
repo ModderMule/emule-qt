@@ -563,6 +563,8 @@ private:
     QCheckBox* m_chatUnreadBadgeCheck = nullptr;
     QCheckBox* m_chatPlainLinksCheck = nullptr;
     QCheckBox* m_chatModStarCheck = nullptr;
+    QCheckBox* m_chatRoomMediaCheck = nullptr;
+    QCheckBox* m_chatRoomVideosCheck = nullptr;
 
     // Security page controls
     QPushButton*  m_reloadIPFilterBtn = nullptr;

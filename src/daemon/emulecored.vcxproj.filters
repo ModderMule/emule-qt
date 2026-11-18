@@ -42,6 +42,12 @@
     <ClCompile Include="DaemonEd3kWebBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DaemonIndexerWebBackend.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IndexerGrab.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DaemonMetaGrabWebBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -219,6 +225,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="BridgeAsk.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DaemonIndexerWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IndexerGrab.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DaemonMetaGrabWebBackend.h">

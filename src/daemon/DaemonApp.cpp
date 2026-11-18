@@ -10,6 +10,7 @@
 #include "ApiEventFeeder.h"
 #include "DaemonApiBackend.h"
 #include "DaemonEd3kWebBackend.h"
+#include "DaemonIndexerWebBackend.h"
 #include "DaemonHosterWebBackend.h"
 #include "DaemonMetaGrabWebBackend.h"
 #include "DaemonTorrentWebBackend.h"
@@ -115,6 +116,7 @@
 #include "IndexerFeedList.h"
 #include "IndexerSearch.h"
 #include "IndexerSearchList.h"
+#include "IndexerGrab.h"
 #include "IndexerResult.h"
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
@@ -1493,7 +1495,7 @@ void DaemonApp::startWebServer()
     m_webServer->setTorrentBackend(m_torrentWebBackend.get());
 #endif
 
-    // The Hoster page and routes, the meta-row grabs, and the ed3k download routes.
+    // The Hoster page and routes, the meta-row grabs, the ed3k download and indexer routes.
     if (!m_hosterWebBackend)
         m_hosterWebBackend = std::make_unique<DaemonHosterWebBackend>();
     m_webServer->setHosterBackend(m_hosterWebBackend.get());
@@ -1503,6 +1505,9 @@ void DaemonApp::startWebServer()
     if (!m_ed3kWebBackend)
         m_ed3kWebBackend = std::make_unique<DaemonEd3kWebBackend>();
     m_webServer->setEd3kBackend(m_ed3kWebBackend.get());
+    if (!m_indexerWebBackend)
+        m_indexerWebBackend = std::make_unique<DaemonIndexerWebBackend>();
+    m_webServer->setIndexerBackend(m_indexerWebBackend.get());
 
     // The REST API's daemon half and its event source, kept the same way.
     if (!m_apiBackend)
@@ -1546,9 +1551,6 @@ constexpr int kUsenetPushWindowMs = 250;
 constexpr int kFeedPushWindowMs = 250;
 
 } // namespace
-
-/// Likewise: the push and the StartIndexerSearch reply must carry the same row.
-QCborMap indexerResultToCbor(const indexer::IndexerResult& result, const QString& expression);
 
 void DaemonApp::connectUsenetPushes()
 {

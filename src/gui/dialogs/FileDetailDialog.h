@@ -121,6 +121,9 @@ private:
     QTabWidget* m_tabs = nullptr;
     int         m_pendingTab = General;   ///< requested tab, until m_tabs exists
     bool        m_tabIsEnum = true;       ///< the first build: the tab is a Tab, not an index
+    int         m_archiveFound = -2;      ///< ed3k Archive tab's lookup: listed, -1 failed, -2 not yet
+    QWidget*    m_ed3kMeta = nullptr;     ///< ed3k Metadata tab: its page rebuilt per details
+    bool        m_ed3kKadAsked = false;   ///< ed3k: Search Kad sent for this file (names/tags tab opened)
 
     // ed3k Archive tab
     IpcClient*           m_ipc = nullptr;

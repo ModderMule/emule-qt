@@ -10,8 +10,11 @@
 ///   a credential: kept owner-only, never logged), with `b3`+`sz` (setFollowPinned, chaintube.md §3.2: no newer head).
 /// - The engine follows with SetPolicy::Ask: the manifest events only. Which members and
 ///   when is decided here (§2.3: the user chooses members before downloads start; §5.3 "ask,
-///   or download" per set): Policy::Download takes every new version at once, Policy::Ask
-///   keeps it pending and tells the GUI (newVersion) until applyVersion().
+///   or download" per set): Policy::Download takes every new version at once, its new members
+///   those of the file types (filter); Policy::Browse keeps a version pending and tells the
+///   GUI (newVersion) until applyVersion(), its new members unticked.
+/// - Filter: the user's file types, else the author's (FileSet.exts, §5.3), else
+///   ed3kDefaultSetExts(). Members are decided once, when first seen (path and root, `known`).
 /// - Members download one at a time per set, in the manifest's order (file-set.md §4.2; the
 ///   core keeps one file stream per uploader): added paused, resumed in turn.
 /// - The selection is the members left out (skipped paths); anything else, new members too,
@@ -32,7 +35,7 @@
 /// - Paid sets (subscription.md §8): a `paid=1` link (scope kind 3) and a catalogue whose
 ///   manifest has an offer (kind 2) are followed in Ed3kPaid (setPaid), which buys the pass;
 ///   keys arriving follow a hidden paid set again so its version opens.
-/// - A mount's new version under Policy::Ask waits like a version (pendingMounts) until
+/// - A mount's new version under Policy::Browse waits like a version (pendingMounts) until
 ///   applyVersion().
 ///
 /// was: ToDo: paid sets (`paid=1`) need a pass (subscription.md), out of scope; followed like a
@@ -79,7 +82,8 @@ class Ed3kSets : public QObject {
     Q_OBJECT
 
 public:
-    enum class Policy : int { Ask = 0, Download = 1 };
+    /// Browse: nothing downloads unless ticked; Download: new members of the filter's types at once
+    enum class Policy : int { Browse = 0, Download = 1 };
     /// What a member of the shown version is here.
     /// Locked: a sealed member downloaded, waiting for the key to open it (subscription.md §8.1)
     enum class MemberState : int { Skipped = 0, Waiting = 1, Downloading = 2, Complete = 3, Failed = 4, Paused = 5, Locked = 6 };
@@ -110,7 +114,11 @@ public:
         bool hidden = false;
         bool pinned = false;
         bool followed = false;    ///< the engine follows it now
-        Policy policy = Policy::Ask;
+        Policy policy = Policy::Browse;
+        QStringList exts;            ///< the filter in use (empty: every file)
+        bool extsByUser = false;     ///< set by the user; else the author's or the default
+        QStringList authorExts;      ///< FileSet.exts of the version shown (§5.3)
+        bool dirByUser = false;      ///< the folder chosen by the user (else <incoming>/<title>)
         std::optional<std::uint64_t> seq;          ///< the version applied
         std::optional<std::uint64_t> pendingSeq;   ///< a newer one waiting for the user
         QStringList added, changed, removed;       ///< of the pending version against the applied
@@ -134,9 +142,19 @@ public:
     void setPaid(Ed3kPaid* paid);
 
     /// Follows the set of an `ed3k:set` link. The error is user-visible (localized).
-    std::expected<std::uint32_t, QString> follow(const QString& link, Policy policy);
+    /// @p exts: the user's file types (nullopt: the author's or the default); @p dir: the
+    /// folder (empty: <incoming>/<title>).
+    std::expected<std::uint32_t, QString> follow(const QString& link, Policy policy, const std::optional<QStringList>& exts = std::nullopt,
+                                                 const QString& dir = {});
     bool unfollow(std::uint32_t id);
+    /// To Download: the members chosen again by the filter (those here or downloading stay).
     bool setPolicy(std::uint32_t id, Policy policy);
+    /// The user's file types (nullopt: back to the author's or the default); with Download
+    /// the members are chosen again as setPolicy does.
+    bool setFilter(std::uint32_t id, const std::optional<QStringList>& exts);
+    /// The folder of the set (empty: the default). Files there are moved along; refused while
+    /// a member downloads or when they cannot be moved. The error is user-visible.
+    std::expected<void, QString> setFolder(std::uint32_t id, const QString& dir);
     /// The members left out (paths); the others of the version applied are downloaded.
     bool setSkipped(std::uint32_t id, const QStringList& paths);
     /// Takes the pending version (Ask), or downloads what the selection wants of the applied one.
@@ -186,16 +204,21 @@ private:
         std::uint32_t id = 0;
         QString link;
         Link parsed;
-        Policy policy = Policy::Ask;
+        Policy policy = Policy::Browse;
         QString title;
         QString dir;
+        bool dirByUser = false;
         QSet<QString> skipped;
+        /// the user's file types; nullopt: the author's or the default
+        std::optional<QStringList> exts;
+        /// members decided already: path → root hex (a new path or root is decided once)
+        std::map<QString, QString> known;
         std::optional<Version> applied;
         std::optional<Version> pending;
         /// inner manifests by root; mounts: path → the mounted version's root
         std::map<::ed3k::Root, QByteArray> inner;
         std::map<QString, ::ed3k::Root> mounts;
-        /// mounts' new versions waiting for the user (Policy::Ask): path → root
+        /// mounts' new versions waiting for the user (Policy::Browse): path → root
         std::map<QString, ::ed3k::Root> pendingMounts;
         /// members added paused, waiting for their turn (one download per set at a time; only
         /// from a sets.json of before now: members of one source take turns in Ed3kJoinBase)
@@ -255,6 +278,17 @@ private:
     [[nodiscard]] Info infoOf(const Set& s) const;
     [[nodiscard]] QString setDir(const Set& s) const;
     [[nodiscard]] static std::optional<Link> parseLink(const QString& link);
+    /// The filter in use: the user's, the author's (§5.3), else the default.
+    [[nodiscard]] QStringList filterOf(const Set& s) const;
+    /// FileSet.exts of the version shown
+    [[nodiscard]] QStringList authorExtsOf(const Set& s) const;
+    /// The members of the version shown not decided yet: Browse leaves them out, Download
+    /// takes those of the filter.
+    void decideNew(Set& s);
+    /// Every member chosen by the filter again; those here or downloading stay chosen.
+    void chooseByFilter(Set& s);
+    /// The members of the version shown (pending, else applied), mounts' pending in place.
+    [[nodiscard]] std::vector<Ed3kSetEntry> shownMembers(const Set& s) const;
     void markChanged();
     void load();
     void save() const;

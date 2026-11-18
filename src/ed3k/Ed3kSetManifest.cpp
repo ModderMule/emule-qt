@@ -154,12 +154,18 @@ bool parseBody(QByteArrayView body, Ed3kSetManifest& out)
             return false;
         QByteArrayView b;
         std::uint64_t v = 0;
-        if (wire == 2 && (field == 1 || field == 2 || field == 3 || field == 6 || field == 12)) {
+        if (wire == 2 && (field == 1 || field == 2 || field == 3 || field == 6 || field == 12 || field == 15)) {
             if (!r.bytes(b))
                 return false;
             if (field == 12) {
                 // subscription.md §3: the SignedOffer of a paid catalogue
                 out.offer = b.toByteArray();
+            } else if (field == 15) {
+                // §5.3: a bad entry is ignored, at most 64
+                static const QRegularExpression kExt(QStringLiteral("^[a-z0-9]{1,16}$"));
+                const QString e = QString::fromUtf8(b);
+                if (out.exts.size() < 64 && kExt.match(e).hasMatch() && !out.exts.contains(e))
+                    out.exts.append(e);
             } else if (field == 1) {
                 out.title = QString::fromUtf8(b);
             } else if (field == 2) {
@@ -258,6 +264,63 @@ QString ed3kSetLocalPath(const QString& dir, const QString& path)
     if (!full.startsWith(base + QLatin1Char('/')))
         return {};
     return full;
+}
+
+QStringList ed3kNormalizeExts(const QStringList& exts)
+{
+    static const QRegularExpression kExt(QStringLiteral("^[a-z0-9]{1,16}$"));
+    QStringList out;
+    for (QString e : exts) {
+        e = e.trimmed().toLower();
+        while (e.startsWith(QLatin1Char('*')) || e.startsWith(QLatin1Char('.')))
+            e.remove(0, 1);
+        if (out.size() < 64 && kExt.match(e).hasMatch() && !out.contains(e))
+            out << e;
+    }
+    return out;
+}
+
+bool ed3kExtMatches(const QString& fileName, const QStringList& exts)
+{
+    if (exts.isEmpty())
+        return true;
+    const qsizetype dot = fileName.lastIndexOf(QLatin1Char('.'));
+    if (dot < 0)
+        return false;
+    const QString ext = fileName.mid(dot + 1).toLower();
+    if (exts.contains(ext))
+        return true;
+    // volumes of an archive: x.r00, x.7z.001
+    static const QRegularExpression kRarVolume(QStringLiteral("^r\\d\\d$"));
+    static const QRegularExpression kSplit(QStringLiteral("^\\d{3}$"));
+    if (exts.contains(QLatin1String("rar")) && kRarVolume.match(ext).hasMatch())
+        return true;
+    return kSplit.match(ext).hasMatch()
+        && (exts.contains(QLatin1String("zip")) || exts.contains(QLatin1String("rar")) || exts.contains(QLatin1String("7z")));
+}
+
+QStringList ed3kDefaultSetExts()
+{
+    return {
+        // video
+        QStringLiteral("mkv"), QStringLiteral("mp4"), QStringLiteral("m4v"), QStringLiteral("avi"), QStringLiteral("mov"),
+        QStringLiteral("wmv"), QStringLiteral("mpg"), QStringLiteral("mpeg"), QStringLiteral("ts"), QStringLiteral("m2ts"),
+        QStringLiteral("webm"), QStringLiteral("flv"), QStringLiteral("vob"), QStringLiteral("ogv"),
+        // audio
+        QStringLiteral("mp3"), QStringLiteral("flac"), QStringLiteral("ogg"), QStringLiteral("opus"), QStringLiteral("m4a"),
+        QStringLiteral("aac"), QStringLiteral("wav"), QStringLiteral("wma"), QStringLiteral("ape"), QStringLiteral("mka"),
+        QStringLiteral("aiff"),
+        // archives
+        QStringLiteral("zip"), QStringLiteral("rar"), QStringLiteral("7z"), QStringLiteral("tar"), QStringLiteral("gz"),
+        QStringLiteral("bz2"), QStringLiteral("xz"), QStringLiteral("zst"), QStringLiteral("iso"), QStringLiteral("par2"),
+        QStringLiteral("sfv"),
+        // images
+        QStringLiteral("jpg"), QStringLiteral("jpeg"), QStringLiteral("png"), QStringLiteral("gif"), QStringLiteral("webp"),
+        QStringLiteral("bmp"), QStringLiteral("tif"), QStringLiteral("tiff"), QStringLiteral("heic"),
+        // subtitles, text
+        QStringLiteral("srt"), QStringLiteral("ass"), QStringLiteral("ssa"), QStringLiteral("sub"), QStringLiteral("idx"),
+        QStringLiteral("txt"), QStringLiteral("nfo"),
+    };
 }
 
 } // namespace eMule::ed3k

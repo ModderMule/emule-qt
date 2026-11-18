@@ -217,6 +217,13 @@ const IndexerSearch* IndexerSearchList::search(quint32 searchId) const
     return it == m_searches.constEnd() ? nullptr : *it;
 }
 
+QList<quint32> IndexerSearchList::searchIds() const
+{
+    QList<quint32> ids = m_searches.keys();
+    std::ranges::sort(ids);
+    return ids;
+}
+
 void IndexerSearchList::grab(quint32 searchId, const QString& resultId, GrabCallback done)
 {
     const auto it = m_searches.constFind(searchId);

@@ -1119,6 +1119,13 @@ enum class IpcMsgType : int {
     /// [node id hex] -> [ok] — unpairs a phone; its open tunnel closes
     RemoveTunnelPeer        = 1235,
 
+    // -- ed3k set options (Ed3kSetsBridge.cpp; the rest of the sets at 1110-1119)
+    /// [id, exts ([ext]; null: back to the author's or the default)] -> [ok] — the file types a
+    /// set with policy download takes (file-set.md §5.3)
+    SetEd3kSetFilter        = 1240,
+    /// [id, dir ("" the default)] -> [ok] — refused once a file of the set is downloaded
+    SetEd3kSetFolder        = 1241,
+
     // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,
     // name, size, done, speed, state (Ed3kHosterJoin::State), reason (Ed3kHosterJoin::Reason, the
     // GUI words it), reasonArg (technical, not localized), waitUntil (ms), verified, file, root,
@@ -1240,6 +1247,19 @@ enum class IpcMsgType : int {
     /// [admit text (ed3k-admit:...)] -> [ok, {room}] — newcomer of a closed room
     ImportEd3kRoomAdmit     = 1129,
 
+    // -- ed3k room media and history (room.md §2.6, §4.3, §4.6): Ed3kRoomsBridge. A root is hex (64).
+    /// [room, mediaMax (bytes, 0 none), keepHours, keepPosts] -> [ok] — owner; rows carry
+    /// mediaMax, keepHours, keepPosts as read (clamped)
+    SetEd3kRoomLimits       = 1058,
+    /// [room, token, offset, total, data (≤ 4 MiB), text, replyTo, name, width, height] ->
+    ///   [ok, {more: true}] until offset + data = total, then [ok, ids] — a post with a file,
+    ///   sent in parts (MaxPayloadSize); token: the GUI's, one per file
+    PostEd3kRoomMedia       = 1059,
+    /// [root, offset] -> [ok, {type, size, offset, data (≤ 4 MiB)}] — a cached file, opened
+    GetEd3kRoomMedia        = 1069,
+    /// [room, root] -> [ok] — fetch now (a click), whatever the hourly limit says
+    FetchEd3kRoomMedia      = 1071,
+
     // -- ed3k filters + rooms polish (batch 13): Ed3kFiltersBridge / Ed3kRoomsBridge. Failure as
     // their blocks above.
     /// [title, on: bool] -> [ok, {link}] — publish the own filter list as a set (filter-list
@@ -1254,7 +1274,9 @@ enum class IpcMsgType : int {
     // -- ed3k sets and live (batch 12): followed sets (file-set.md §5.3) and live streams
     // (live.md), src/daemon/Ed3kSetsBridge.cpp. Set ids are numbers, roots and streams hex.
     // A set: {id, link ("" for a hidden one: a credential), title, author (key hex), hidden,
-    // pinned, followed, policy (0 ask, 1 download), seq / pendingSeq (-1 none), added, changed,
+    // pinned, followed, policy (0 browse: new files unticked, 1 download: new files of the
+    // filter), exts (the filter in use), extsByUser, authorExts (FileSet.exts, file-set.md §5.3),
+    // dirByUser, seq / pendingSeq (-1 none), added, changed,
     // removed (paths of the pending version), dir, error, totalSize, members: [{path, root,
     // size, skipped, state (0 skipped, 1 waiting, 2 downloading, 3 complete, 4 failed,
     // 5 paused, 6 sealed: downloaded, waits for the key (batch 14)), done}], parts: [{author, seq, dir, name, files, size}]}. A stream: {id,
@@ -1262,7 +1284,7 @@ enum class IpcMsgType : int {
     // neighbours, segments, bytes, viewers, url}. Failure: [false, {error: string (localized)}].
     /// [] -> [ok, {running, sets: [set]}]
     GetEd3kSets             = 1110,
-    /// [link (ed3k:set), policy] -> [ok, {id}]
+    /// [link (ed3k:set), policy, exts ([ext]; null: the author's or the default), dir ("" default)] -> [ok, {id}]
     FollowEd3kSet           = 1111,
     /// [id] -> [ok] — the member files stay
     UnfollowEd3kSet         = 1112,
@@ -1358,14 +1380,16 @@ enum class IpcMsgType : int {
     // none yet), kind, published, building, scope (paid, "" not sold), sold, stopped, link (open
     // and paid only: a hidden set's link is a credential, GetEd3kOwnSetLink), error, key ("Node" /
     // "Anonymous", "" none yet), offerKey (hops.md §1: a version was refused for files under that
-    // key; action 4 shares the set there after the user agreed, "" none)}.
+    // key; action 4 shares the set there after the user agreed, "" none), exts (file types
+    // suggested to followers, file-set.md §5.3)}.
     /// [] -> [ok, {running, sets: [set]}]
     GetEd3kOwnSets          = 1145,
-    /// [folder ("" = files), files: [path], title, kind] -> [ok, {id, link}] — published at once
+    /// [folder ("" = files), files: [path], title, kind, exts: [ext]] -> [ok, {id, link}] — published at once
     /// (a paid one waits for SellEd3k); link "" for a hidden set
     PublishEd3kOwnSet       = 1146,
     /// [action (1 publish a new version: folder scanned again, seq + 1; 2 unpublish; 3 retitle;
-    /// 4 share under key: title = "Node" / "Anonymous"), id, title (3, 4)] -> [ok]
+    /// 4 share under key: title = "Node" / "Anonymous"; 5 file types: [ext] in place of title),
+    /// id, title (3, 4)] -> [ok]
     Ed3kOwnSetControl       = 1147,
     /// [id] -> [ok, {link, hidden}] — a hidden set's carries `s` (a credential: never logged)
     GetEd3kOwnSetLink       = 1148,
@@ -1609,7 +1633,8 @@ enum class IpcMsgType : int {
     // -- ed3k rooms (batch 12), see GetEd3kRooms
     /// [] — the rooms, an info, a nick or a room's state changed (a state push): GetEd3kRooms
     PushEd3kRoomsChanged   = 1160,
-    /// [room, {id, author, authorId, nick, moderator, sent, text, replyTo}] — a post to show once
+    /// [room, {id, author, authorId, nick, moderator, sent, text, replyTo, media: {root, size,
+    ///   type, name, width, height, state} (§2.6, only with media)}] — a post to show once
     PushEd3kRoomPost       = 1161,
     /// [room, ids: array] — posts dropped by a ban
     PushEd3kRoomPostsRemoved = 1162,
@@ -1617,6 +1642,8 @@ enum class IpcMsgType : int {
     PushEd3kRoomPresence   = 1163,
     /// [room, kind (Ed3kRooms::Notice), value, flag: bool, who (node hex, member key base32, "")]
     PushEd3kRoomNotice     = 1164,
+    /// [room, root, state (Ed3kRoomMedia::State)] — a post's media changed
+    PushEd3kRoomMedia      = 1166,
 
     // -- My ed3k Sets (batch 15), see GetEd3kOwnSets
     /// [{...GetEd3kOwnSets...}] — own sets, their versions or sales changed (a state push)

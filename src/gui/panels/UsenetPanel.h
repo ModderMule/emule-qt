@@ -178,7 +178,7 @@ private:
     [[nodiscard]] QPair<QString, int> previewTarget() const;
 
     /// Build the preview URL for one inner file and hand it to the player.
-    void launchEntry(const QString& itemId, int fileIndex, int entry);
+    void launchEntry(const QString& itemId, int fileIndex, int entry, const QString& entryName);
 
     /// Why the current selection cannot be previewed, when the daemon said so.
     /// Empty when the answer is "not yet" rather than "not ever".

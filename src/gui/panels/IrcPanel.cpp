@@ -27,6 +27,10 @@
 
 #include <QApplication>
 #include <QAudioOutput>
+#include <QBuffer>
+#include <QClipboard>
+#include <QImage>
+#include <QMimeData>
 #include <QDir>
 #include <QFile>
 #include <QIdentityProxyModel>
@@ -185,6 +189,26 @@ bool IrcPanel::eventFilter(QObject* obj, QEvent* event)
             autoCompleteNick();
             return true;
         }
+        // a pasted image goes to a room taking media (§2.6), the line stays its caption
+        if (ke->matches(QKeySequence::Paste)) {
+            const QMimeData* mime = QApplication::clipboard()->mimeData();
+            const IrcChannel* ch = activeChannel();
+            if (mime && mime->hasImage() && !mime->hasText() && ch && ch->room && ch->room->mediaMax() > 0) {
+                QByteArray data;
+                for (const QString& f : {QStringLiteral("image/gif"), QStringLiteral("image/webp")})
+                    if (mime->hasFormat(f)) {
+                        data = mime->data(f);   // animated stays animated
+                        break;
+                    }
+                if (data.isEmpty()) {
+                    QBuffer buf(&data);
+                    buf.open(QIODevice::WriteOnly);
+                    qvariant_cast<QImage>(mime->imageData()).save(&buf, "PNG");
+                }
+                postMediaToRoom(ch->room, data, QStringLiteral("pasted.png"));
+                return true;
+            }
+        }
     }
     return QWidget::eventFilter(obj, event);
 }
@@ -263,6 +287,7 @@ void IrcPanel::onSendClicked()
 void IrcPanel::onTabChanged(int /*index*/)
 {
     updateNickList();
+    updateAttachButton();
 
     // Reset activity color for the newly active tab
     const int idx = m_tabWidget->currentIndex();
@@ -950,7 +975,16 @@ void IrcPanel::setupUi()
     sep2->setStyleSheet(QStringLiteral("color: gray;"));
     bottomLayout->addWidget(sep2);
 
-    // Input + Send
+    // Input + Send; a room taking media gets an attach button (room.md §2.6)
+    m_attachBtn = new QToolButton(this);
+    m_attachBtn->setIcon(skinIcon(QStringLiteral(":/icons/FileTypePicture.ico")));
+    m_attachBtn->setIconSize(QSize(20, 20));
+    m_attachBtn->setAutoRaise(true);
+    m_attachBtn->setToolTip(tr("Send an image or video (or paste an image into the line)"));
+    m_attachBtn->hide();
+    connect(m_attachBtn, &QToolButton::clicked, this, &IrcPanel::attachToRoom);
+    bottomLayout->addWidget(m_attachBtn);
+
     m_input = new QLineEdit(this);
     m_input->setPlaceholderText(tr("Type a message..."));
     m_input->installEventFilter(this);

@@ -2089,6 +2089,7 @@ void Ed3kJoinBase::onBlock(const ffi::event::Block& b)
     for (const auto& [node, h] : turns().holders)
         if (h.join == this && h.stream == b.stream) {
             m_session.addPeerBytes(node.first, node.second, 0, b.data.size());
+            m_session.addPeerFileDown(node.first, node.second, b.root, b.data.size());
             break;
         }
     if (!d.inMemory) {

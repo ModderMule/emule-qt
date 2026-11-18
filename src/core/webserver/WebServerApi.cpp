@@ -6,6 +6,7 @@
 /// table. A route that is not here does not exist.
 
 #include "webserver/WebServer.h"
+#include "webserver/ApiOpBuilder.h"
 
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
@@ -50,25 +51,11 @@
 namespace eMule {
 
 using namespace api;
+using namespace api::build;
 
 namespace {
 
 using L = QLatin1StringView;
-
-[[nodiscard]] QString s(const char* text) { return QString::fromUtf8(text); }
-
-[[nodiscard]] Operation make(const char* id, Method method, const char* path, const char* tag,
-                             const char* summary, const char* description = "")
-{
-    Operation op;
-    op.id = s(id);
-    op.method = method;
-    op.path = s(path);
-    op.tag = s(tag);
-    op.summary = s(summary);
-    op.description = s(description);
-    return op;
-}
 
 [[nodiscard]] Result fromStatus(const ops::Status& st,
                                 const QJsonObject& body = {{QStringLiteral("ok"), true}})
@@ -1414,6 +1401,7 @@ void WebServer::buildApiTable()
     addTorrentOperations();
     addEd3kOperations();
     addHosterOperations();
+    addIndexerOperations();
 
     // --- Streams (token in the query, not the API key; routed outside the table) ---
     {
@@ -1465,10 +1453,10 @@ void WebServer::buildApiTable()
         Operation op = make("hoster.preview", Method::Get, "/api/v1/hoster/{id}/preview",
                             "Streams", "Byte-range stream of a hoster download",
                             "For media players. Authenticated by ?token=, the stream token. Video "
-                            "and audio files only, not archives (406). With \"Enable seeking in "
-                            "downloads\" on, a range not yet on disk waits up to 60 seconds; ed3k "
-                            "peers of a file with a known root fetch it first, the hoster's own "
-                            "stream stays in file order. Off, the file is served as it is.");
+                            "and audio files only, not archives (406). A range not yet on disk "
+                            "waits up to 60 seconds, \"Enable seeking in downloads\" on or off; "
+                            "ed3k peers of a file with a known root fetch it first, the hoster's "
+                            "own stream stays in file order.");
         op.flags = ReadOnly | RawStream;
         op.params = {pathStr(s("id"), s("Hoster item id.")),
                      queryStr(s("token"), s("Stream token.")).req()};
@@ -1699,9 +1687,9 @@ void WebServer::addUsenetOperations()
     {
         Operation op = make("usenet.preview", Method::Get, "/api/v1/usenet/{id}/{fileIndex}/preview",
                             "Streams", "Byte-range stream of a Usenet file",
-                            "Authenticated by ?token=, the stream token. With \"Enable seeking in "
-                            "downloads\" on, a range not yet on disk waits up to 15 seconds and "
-                            "its articles are fetched first; off, the file is served as it is.");
+                            "Authenticated by ?token=, the stream token. A range not yet on disk "
+                            "waits up to 15 seconds and its articles are fetched first, \"Enable "
+                            "seeking in downloads\" on or off.");
         op.flags = ReadOnly | RawStream;
         op.params = {idParam(), pathInt(s("fileIndex"), s("Index of the file in the NZB.")).atLeast(0),
                      queryStr(s("token"), s("Stream token.")).req()};

@@ -1125,10 +1125,13 @@ void UsenetPanel::onPreview()
     auto* dialog = new UsenetArchiveEntryDialog(m_ipc, itemId, fileIndex, this);
     m_entryDialog = dialog;
     connect(dialog, &UsenetArchiveEntryDialog::entryChosen, this,
-            [this, itemId, fileIndex](int entry) { launchEntry(itemId, fileIndex, entry); });
+            [this, dialog, itemId, fileIndex](int entry) {
+                launchEntry(itemId, fileIndex, entry, dialog->entryName(entry));
+            });
 }
 
-void UsenetPanel::launchEntry(const QString& itemId, int fileIndex, int entry)
+void UsenetPanel::launchEntry(const QString& itemId, int fileIndex, int entry,
+                              const QString& entryName)
 {
     const QString url = daemonUsenetStreamUrl(m_ipc, itemId, fileIndex, m_streamToken, entry);
     if (url.isEmpty()) {
@@ -1137,7 +1140,13 @@ void UsenetPanel::launchEntry(const QString& itemId, int fileIndex, int entry)
         return;
     }
 
-    launchPreview(url);
+    // the player shows the archive member's name, else the file's
+    QString title = entryName;
+    if (const UsenetItemRow* row = title.isEmpty() ? m_model->findById(itemId) : nullptr)
+        for (const auto& f : row->files)
+            if (f.index == fileIndex)
+                title = f.name;
+    launchPreview(url, title);
 }
 
 void UsenetPanel::updateActions()

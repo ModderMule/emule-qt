@@ -27,6 +27,7 @@
 ///   State::Rooms (rooms.dat) and reports them again at the join; it serves them to joiners.
 
 #include "Ed3kFfi.h"
+#include "Ed3kRoomMedia.h"
 #include "Ed3kStore.h"
 
 #include <QByteArray>
@@ -76,6 +77,7 @@ public:
         std::uint64_t sent = 0;
         QString text;
         std::optional<::ed3k::PostId> replyTo;
+        std::optional<Ed3kRoomMedia::Media> media;   ///< §2.6, valid by the core
     };
     /// One room as the GUI shows it.
     struct Room {
@@ -107,6 +109,10 @@ public:
         ::ed3k::KeyKind key = ::ed3k::KeyKind::Node;
         /// anonymous room while hiding is off: listed, not joined
         bool waitingHide = false;
+        /// room info's media and history limits (§2.1, as read: clamped)
+        std::uint64_t mediaMax = 0;
+        std::uint32_t keepHours = 24;
+        std::uint32_t keepPosts = 1000;
 
         [[nodiscard]] bool isModerator(const ::ed3k::Key32& member) const;
         /// This member may admit, ban and start generations.
@@ -135,6 +141,13 @@ public:
     ::ed3k::Result<std::vector<::ed3k::PostId>> post(const ::ed3k::Room& room, const QString& text,
                                                       std::optional<::ed3k::PostId> replyTo = {});
     ::ed3k::Result<> setNick(const ::ed3k::Room& room, const QString& nick);
+    /// A post with a file (§2.6): sealed in a room with a secret, cached, held; its id.
+    ::ed3k::Result<::ed3k::PostId> postMedia(const ::ed3k::Room& room, const QString& text, std::optional<::ed3k::PostId> replyTo,
+                                             const QByteArray& bytes, const QString& name, std::uint32_t width, std::uint32_t height);
+    /// Owner: media and history limits (§2.1); 0 media = none.
+    ::ed3k::Result<> setLimits(const ::ed3k::Room& room, std::uint64_t mediaMax, std::uint32_t keepHours, std::uint32_t keepPosts);
+    [[nodiscard]] Ed3kRoomMedia& media() { return *m_media; }
+    [[nodiscard]] const Ed3kRoomMedia& media() const { return *m_media; }
     /// Owner: a new room info (ED3K_ROOM_CLOSED, _MODERATED) and the moderators.
     ::ed3k::Result<> setInfo(const ::ed3k::Room& room, const QString& title, const QString& about, std::uint32_t flags,
                              const std::vector<::ed3k::Key32>& mods);
@@ -216,6 +229,8 @@ private:
     /// The saved info (title, about, closed, moderated, mods) into @p r while it has none.
     static void applySavedInfo(Room& r, const Saved& s);
     void onPost(const ::ed3k::event::RoomPost& p);
+    /// The limits of @p r's held room info (§2.1) into it.
+    void readLimits(Room& r);
     /// Posts kept per room: ed3k.roomHistoryMax while stored, else kHistory.
     [[nodiscard]] static std::size_t historyMax();
     [[nodiscard]] static bool historyStored();
@@ -246,6 +261,7 @@ private:
     std::map<::ed3k::Room, Saved> m_saved;   ///< what is joined again at start
     std::set<::ed3k::Room> m_dirtyPosts;      ///< rooms whose posts wait for writeDirtyPosts
     QTimer* m_postsTimer = nullptr;
+    Ed3kRoomMedia* m_media = nullptr;
     bool m_historyStored = true;      ///< what applyHistoryPrefs saw last
     std::size_t m_historyMax = 0;
 };

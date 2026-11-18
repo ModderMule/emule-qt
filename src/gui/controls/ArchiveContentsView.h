@@ -59,6 +59,8 @@ public:
 
 signals:
     void lookupRequested();
+    /// The lookup ended: archives found listed, -1 when it failed.
+    void lookupFinished(int found);
     void nestedLookupRequested(const QString& name, const QString& rootHex);
     void downloadEntriesRequested(const QCborArray& entries);
     void downloadArchiveRequested(const QHash<QString, QStringList>& entries, const QString& password);

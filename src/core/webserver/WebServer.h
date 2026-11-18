@@ -11,6 +11,7 @@
 #include "utils/Types.h"
 #include "webserver/ApiRegistry.h"
 #include "webserver/Ed3kWebBackend.h"
+#include "webserver/IndexerWebBackend.h"
 #include "webserver/HosterWebBackend.h"
 #include "webserver/MetaGrabWebBackend.h"
 #include "webserver/StreamTokenStore.h"
@@ -128,8 +129,8 @@ struct UsenetStreamRequest {
     /// which is what a URL carrying no `entry=` gets.
     int entryOrdinal = -1;
 
-    /// "Enable seeking in downloads" (Preferences::downloadSeeking): the requested range is
-    /// fetched first and the item boosted. False: only an archive's headers are asked for.
+    /// the requested range is fetched first and the item boosted (a preview read always,
+    /// seeking on or off). False: a lookup, only an archive's headers are asked for.
     bool fetch = true;
 };
 
@@ -146,8 +147,6 @@ struct UsenetStreamSource {
     /// file exists — it is preallocated — but reading it would return zeros, so
     /// it must not be served as content.
     qint64 availableEnd = 0;
-    /// availableEnd holds with seeking off too (a hoster tail fetch), not "all on disk"
-    bool exactEnd = false;
 
     bool complete = false;
 
@@ -221,7 +220,8 @@ public:
     void setBtStreamResolver(BtStreamResolver resolver) { m_btStreamResolver = std::move(resolver); }
 
     /// Hoster preview (/api/v1/hoster/<id>/preview): hoster item @p id read from @p offset;
-    /// @p fetch = seeking on, as BtStreamResolver; off may still answer exactEnd (tail fetch).
+    /// @p fetch: a preview read (always, seeking on or off) has the range fetched first;
+    /// false: a lookup (preview-link).
     /// Unset: the route answers 503.
     using HosterStreamResolver = std::function<UsenetStreamSource(const QString& id, qint64 offset, bool fetch)>;
     void setHosterStreamResolver(HosterStreamResolver resolver) { m_hosterStreamResolver = std::move(resolver); }
@@ -247,6 +247,8 @@ public:
 
     /// The /api/v1/ed3k routes and ed3k search rows. Optional and not owned: without it they answer 503.
     void setEd3kBackend(Ed3kWebBackend* backend) { m_ed3kBackend = backend; }
+    /// The newznab/torznab searches behind /api/v1/indexer. Not owned; may be null.
+    void setIndexerBackend(IndexerWebBackend* backend) { m_indexerBackend = backend; }
 
     /// Source of GET /api/v1/events. Optional and not owned; outlives this server.
     void setEventHub(ApiEventHub* hub) { m_eventHub = hub; }
@@ -320,6 +322,7 @@ private:
     void addTorrentOperations();   // WebServerTorrents.cpp; empty without BitTorrent
     void addEd3kOperations();      // WebServerEd3k.cpp: ed3k downloads
     void addHosterOperations();    // WebServerEd3k.cpp: hoster downloads
+    void addIndexerOperations();   // WebServerIndexer.cpp: newznab/torznab searches
     void registerApiRoutes();
     void registerEventRoute();
     void registerDocsRoutes();
@@ -397,14 +400,14 @@ private:
                                                     const QByteArray& rangeHeader, int waitMs,
                                                     const QString& what);
 
-    /// Preview of an unfinished download (BitTorrent, Usenet, hoster) under "Enable seeking
-    /// in downloads": on, @p resolve(true) has the range fetched first and the answer waits
-    /// for its bytes (serveWhenAvailable); off, @p resolve(false) and the file as it is on
-    /// disk, gaps read as zeros. Off still waits for a source with no pieces yet (a Usenet
-    /// archive whose headers are read).
+    /// Preview of an unfinished download: @p alwaysFetch (Usenet, hoster: a click is a request
+    /// for those bytes, both are fast) or "Enable seeking in downloads" (BitTorrent): @p
+    /// resolve(true) has the range fetched first and the answer waits for its bytes
+    /// (serveWhenAvailable); else @p resolve(false) and the file as it is on disk, gaps read
+    /// as zeros, a source with no pieces yet still waited for.
     QFuture<QHttpServerResponse> serveDownloadPreview(std::function<UsenetStreamSource(bool fetch)> resolve,
                                                       const QByteArray& rangeHeader, int waitMs,
-                                                      const QString& what);
+                                                      const QString& what, bool alwaysFetch);
 
     /// Answer a Range request for @p path, serving nothing past @p availableEnd.
     ///
@@ -750,6 +753,7 @@ private:
     HosterWebBackend* m_hosterBackend = nullptr;
     MetaGrabWebBackend* m_metaGrabBackend = nullptr;
     Ed3kWebBackend* m_ed3kBackend = nullptr;
+    IndexerWebBackend* m_indexerBackend = nullptr;
 
     // REST operation table, and its daemon-side half (not owned)
     api::Registry m_api;

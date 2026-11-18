@@ -3341,7 +3341,7 @@
         },
         "/api/v1/hoster/{id}/preview": {
             "get": {
-                "description": "For media players. Authenticated by ?token=, the stream token. Video and audio files only, not archives (406). With \"Enable seeking in downloads\" on, a range not yet on disk waits up to 60 seconds; ed3k peers of a file with a known root fetch it first, the hoster's own stream stays in file order. Off, the file is served as it is.",
+                "description": "For media players. Authenticated by ?token=, the stream token. Video and audio files only, not archives (406). A range not yet on disk waits up to 60 seconds, \"Enable seeking in downloads\" on or off; ed3k peers of a file with a known root fetch it first, the hoster's own stream stays in file order.",
                 "operationId": "hoster.preview",
                 "parameters": [
                     {
@@ -3651,6 +3651,640 @@
                 "tags": [
                     "Streams"
                 ]
+            }
+        },
+        "/api/v1/indexer/searches": {
+            "get": {
+                "description": "Every newznab/torznab search, the app's own included: running says whether accounts are still paging, count is the rows so far.",
+                "operationId": "indexer.searches",
+                "parameters": [
+                    {
+                        "description": "Rows per page.",
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "default": 100,
+                            "description": "Rows per page.",
+                            "maximum": 1000,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Rows to skip.",
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "default": 0,
+                            "description": "Rows to skip.",
+                            "minimum": 0,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "List indexer searches",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_searches_list"
+            },
+            "post": {
+                "description": "Asks every enabled newznab (network usenet) or torznab (network torrent) account at once; rows arrive as each answers, so poll the results until running is false. Needs a query, categories or an IMDb id. 409 when no indexer serves the network.",
+                "operationId": "indexer.start",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "categories": {
+                                        "description": "newznab category ids, e.g. 2000 movies, 5000 TV.",
+                                        "items": {
+                                            "type": "integer"
+                                        },
+                                        "maxItems": 50,
+                                        "minItems": 0,
+                                        "type": "array"
+                                    },
+                                    "episode": {
+                                        "description": "tvsearch: episode number.",
+                                        "maxLength": 10,
+                                        "minLength": 0,
+                                        "type": "string"
+                                    },
+                                    "imdb": {
+                                        "description": "IMDb id, with or without \"tt\".",
+                                        "maxLength": 20,
+                                        "minLength": 0,
+                                        "type": "string"
+                                    },
+                                    "indexers": {
+                                        "description": "Only these indexer names (GET /indexers); default all.",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "maxItems": 50,
+                                        "minItems": 0,
+                                        "type": "array"
+                                    },
+                                    "maxSize": {
+                                        "description": "Largest size in bytes; 0 = no limit.",
+                                        "minimum": 0,
+                                        "type": "integer"
+                                    },
+                                    "minSize": {
+                                        "description": "Smallest size in bytes.",
+                                        "minimum": 0,
+                                        "type": "integer"
+                                    },
+                                    "mode": {
+                                        "default": "search",
+                                        "description": "search; tvsearch and movie take season/episode and imdb.",
+                                        "enum": [
+                                            "search",
+                                            "tvsearch",
+                                            "movie"
+                                        ],
+                                        "type": "string"
+                                    },
+                                    "network": {
+                                        "default": "usenet",
+                                        "description": "usenet (newznab) or torrent (torznab).",
+                                        "enum": [
+                                            "usenet",
+                                            "torrent"
+                                        ],
+                                        "type": "string"
+                                    },
+                                    "query": {
+                                        "description": "Words to search for.",
+                                        "maxLength": 255,
+                                        "minLength": 0,
+                                        "type": "string"
+                                    },
+                                    "season": {
+                                        "description": "tvsearch: season number.",
+                                        "maxLength": 10,
+                                        "minLength": 0,
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": false
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "Search the indexers",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_search_start"
+            }
+        },
+        "/api/v1/indexer/searches/{id}": {
+            "delete": {
+                "operationId": "indexer.remove",
+                "parameters": [
+                    {
+                        "description": "Id returned by POST /indexer/searches.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Id returned by POST /indexer/searches.",
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Stop an indexer search and drop its results",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_search_remove"
+            },
+            "get": {
+                "operationId": "indexer.get",
+                "parameters": [
+                    {
+                        "description": "Id returned by POST /indexer/searches.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Id returned by POST /indexer/searches.",
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "One indexer search",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_search_get"
+            }
+        },
+        "/api/v1/indexer/searches/{id}/download": {
+            "post": {
+                "description": "Fetches the row's .nzb, .torrent or magnet (one of the indexer's daily grabs) and adds it: an NZB to the Usenet queue, a torrent to Torrents. Answers once it is added. 409 asks a question — already downloaded — that \"force\" answers.",
+                "operationId": "indexer.download",
+                "parameters": [
+                    {
+                        "description": "Id returned by POST /indexer/searches.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Id returned by POST /indexer/searches.",
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "category": {
+                                        "default": 0,
+                                        "description": "Category index from GET /categories; 0 = none.",
+                                        "minimum": 0,
+                                        "type": "integer"
+                                    },
+                                    "force": {
+                                        "default": false,
+                                        "description": "Usenet: add even though downloaded before.",
+                                        "type": "boolean"
+                                    },
+                                    "paused": {
+                                        "default": false,
+                                        "description": "Add paused.",
+                                        "type": "boolean"
+                                    },
+                                    "priority": {
+                                        "default": 0,
+                                        "description": "Usenet: -2 (lowest) to 2 (highest).",
+                                        "maximum": 2,
+                                        "minimum": -2,
+                                        "type": "integer"
+                                    },
+                                    "result": {
+                                        "description": "The row's id from the results.",
+                                        "maxLength": 1024,
+                                        "minLength": 1,
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "result"
+                                ],
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Download an indexer result",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_download"
+            }
+        },
+        "/api/v1/indexer/searches/{id}/results": {
+            "get": {
+                "description": "In arrival order. isUsenet false: a torrent row. grabs and seeders say how popular a release is; password: the indexer flags an archive password; confidence and fakeReasons judge the row.",
+                "operationId": "indexer.results",
+                "parameters": [
+                    {
+                        "description": "Id returned by POST /indexer/searches.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Id returned by POST /indexer/searches.",
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Rows per page.",
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "default": 100,
+                            "description": "Rows per page.",
+                            "maximum": 1000,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Rows to skip.",
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "default": 0,
+                            "description": "Rows to skip.",
+                            "minimum": 0,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Results of an indexer search",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_search_results"
+            }
+        },
+        "/api/v1/indexer/searches/{id}/stop": {
+            "post": {
+                "description": "The rows so far stay.",
+                "operationId": "indexer.stop",
+                "parameters": [
+                    {
+                        "description": "Id returned by POST /indexer/searches.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Id returned by POST /indexer/searches.",
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Stop an indexer search",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_search_stop"
+            }
+        },
+        "/api/v1/indexers": {
+            "get": {
+                "description": "newznab (usenet) and torznab (torrent) accounts set up in Options; \"both\" serves either search. Names go in the \"indexers\" of a search.",
+                "operationId": "indexers.list",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "List the configured indexers",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexers_list"
             }
         },
         "/api/v1/kad": {
@@ -6840,7 +7474,7 @@
         },
         "/api/v1/usenet/{id}/{fileIndex}/preview": {
             "get": {
-                "description": "Authenticated by ?token=, the stream token. With \"Enable seeking in downloads\" on, a range not yet on disk waits up to 15 seconds and its articles are fetched first; off, the file is served as it is.",
+                "description": "Authenticated by ?token=, the stream token. A range not yet on disk waits up to 15 seconds and its articles are fetched first, \"Enable seeking in downloads\" on or off.",
                 "operationId": "usenet.preview",
                 "parameters": [
                     {
@@ -7027,6 +7661,9 @@
         },
         {
             "name": "Hoster"
+        },
+        {
+            "name": "Indexers"
         }
     ]
 }
