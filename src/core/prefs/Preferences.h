@@ -1693,7 +1693,7 @@ public:
     [[nodiscard]] bool ed3kArchiveContents() const;
     void setEd3kArchiveContents(bool val);
     /// LAN peers' ed3k file data outside the upload/download limits (lan-discovery.md §3
-    /// MAY). Default off: limits hold for every peer, as eD2K's.
+    /// MAY). Default on; off: limits hold for every peer, as eD2K's.
     [[nodiscard]] bool ed3kLanUnlimited() const;
     void setEd3kLanUnlimited(bool val);
     /// Own ed3k sets' folders watched: a changed folder publishes a new version. Default on.
