@@ -30,6 +30,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 
 #include "search/SearchFile.h"
 
@@ -102,6 +103,26 @@ public:
     [[nodiscard]] bool notesRunning(const QByteArray& root) const { return m_noteTimeouts.contains(root); }
     static constexpr std::size_t kNotesKept = 256;
 
+    /// The names and media tags others publish for @p root (32 B), for the File Names and
+    /// Metadata tabs of a download: KEYWORD records hold them, no Kad record of the root
+    /// does (§10.1), so keyword searches for the longest words of @p name, @p size only,
+    /// kept where the root matches. False: no node, no word to search, or one runs for it.
+    bool searchNames(const QByteArray& root, const QString& name, std::uint64_t size);
+    /// One name found by searchNames, with the media tags its records carried.
+    struct FoundName {
+        QString name;
+        int publishers = 0;
+        std::uint32_t duration = 0;
+        std::uint32_t bitrate = 0;
+        QString artist, album, title, codec;
+    };
+    /// Names found for @p root this run (the last kNotesKept roots), most publishers first.
+    [[nodiscard]] std::vector<FoundName> namesOf(const QByteArray& root) const;
+    /// A names lookup of @p root runs.
+    [[nodiscard]] bool namesRunning(const QByteArray& root) const { return m_nameTimeouts.contains(root); }
+    /// The words searchNames asks for: the @p count longest distinct ones of @p name (3+ chars).
+    [[nodiscard]] static QStringList nameWords(const QString& name, int count = 2);
+
     /// Sources of one root over the records of an answer (one record per publisher).
     struct Availability {
         std::uint32_t complete = 0;
@@ -154,6 +175,9 @@ private:
     void onChannelFile(uint32 searchID, std::unique_ptr<SearchFile> row, const std::optional<QByteArray>& file);
     /// The notes lookup of @p root ended (answer or timeout): rows no longer show it running.
     void endNotes(const QByteArray& root);
+    /// A KadFound of a names lookup: records of @p root kept per name.
+    void onNamesFound(const QByteArray& root, const ::ed3k::event::KadFound& found);
+    void endNames(const QByteArray& root);
     /// A listed root or MD4 (Ed3kSession::declined) hides the row (by decline.txt), else m_judge.
     [[nodiscard]] Verdict judge(const ::ed3k::FoundFile& found) const;
 
@@ -166,6 +190,15 @@ private:
     /// notesOf: root → publisher → note; m_notesOrder: roots, oldest first
     std::map<QByteArray, std::map<QByteArray, FoundNote>> m_found;
     std::deque<QByteArray> m_notesOrder;
+    struct NameRecords {
+        FoundName shown;
+        std::set<QByteArray> publishers;
+    };
+    std::map<std::uint64_t, QByteArray> m_nameLookups;   ///< names lookups by lookupKey(): the root
+    std::map<QByteArray, std::unique_ptr<QTimer>> m_nameTimeouts;   ///< by root
+    /// namesOf: root → name → records; m_namesOrder: roots, oldest first
+    std::map<QByteArray, std::map<QString, NameRecords>> m_names;
+    std::deque<QByteArray> m_namesOrder;
     ResultSink m_results;
     FinishSink m_finished;
     Judge m_judge;

@@ -1534,6 +1534,16 @@ uint64 DownloadQueue::ratioLimitedDownload(uint64 maxDownBytes, uint64 maxUpByte
     return SpeedRules::ratioLimitedDownloadBytes(maxDownBytes, maxUpBytes);
 }
 
+uint64 DownloadQueue::ratioUploadBytes()
+{
+    if (thePrefs.isDynUpEnabled() && theApp.uploadQueue
+        && theApp.uploadQueue->waitingUserCount() > 0 && theApp.uploadQueue->datarate() > 0)
+        return theApp.uploadQueue->datarate();
+    if (thePrefs.maxUploadLimit() != UNLIMITED)
+        return static_cast<uint64>(thePrefs.maxUploadLimit()) * 1024;
+    return 0;
+}
+
 void DownloadQueue::sortByPriority()
 {
     std::ranges::sort(m_items, [](const PartFile* a, const PartFile* b) {
@@ -1753,12 +1763,7 @@ void DownloadQueue::process()
     // On top of that the upload decides how much may come down (MFC
     // CPreferences::GetMaxDownloadInBytesPerSec(true)): the measured rate while USS is
     // steering it and somebody is waiting, else the configured limit.
-    uint64 maxUpBytes = 0;   // 0 = unlimited
-    if (thePrefs.isDynUpEnabled() && theApp.uploadQueue
-        && theApp.uploadQueue->waitingUserCount() > 0 && theApp.uploadQueue->datarate() > 0)
-        maxUpBytes = theApp.uploadQueue->datarate();
-    else if (thePrefs.maxUploadLimit() != UNLIMITED)
-        maxUpBytes = static_cast<uint64>(thePrefs.maxUploadLimit()) * 1024;
+    const uint64 maxUpBytes = ratioUploadBytes();
     const uint64 maxDownBytes = ratioLimitedDownload(
         static_cast<uint64>(thePrefs.maxDownloadForEd2k()) * 1024, maxUpBytes);
     if (maxDownBytes > 0 && m_datarate > 1500) {

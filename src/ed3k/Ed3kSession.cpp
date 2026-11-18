@@ -271,6 +271,7 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     // noteBytesSentOutsideTheLoop), socket-modes.md "Mode A in eMuleQt" (done: setLimits()
     // from BandwidthCoordinator, which also reports traffic() to the throttler)
     applyLimits();
+    applyEd2kCap();
     // was: ToDo: an upload queue and slots for ed3k (done: the engine's policy, eMule's score;
     // its slot count from BandwidthCoordinator, counted with eD2K's)
     applyUploadSlots();
@@ -454,6 +455,11 @@ Ed3kTraffic Ed3kSession::traffic() const
 void Ed3kSession::setLimits(std::uint64_t upBytesPerSec, std::uint64_t downBytesPerSec)
 {
     // the coordinator's tick also carries a changed LAN switch
+    // the coordinator's tick also carries a changed eD2K switch (CAP_ED2K)
+    if (m_engine && m_ed2kCap != wantEd2kCap()) {
+        applyEd2kCap();
+        pump();
+    }
     if (m_limits.up == upBytesPerSec && m_limits.down == downBytesPerSec && m_lanUnlimited == thePrefs.ed3kLanUnlimited())
         return;
     m_limits = {upBytesPerSec, downBytesPerSec};
@@ -680,6 +686,17 @@ Ed3kSession::PeerBytes Ed3kSession::peerBytes(::ed3k::KeyKind key, const ::ed3k:
     return it == m_peerBytes.end() ? PeerBytes{} : it->second;
 }
 
+void Ed3kSession::addPeerFileDown(::ed3k::KeyKind key, const ::ed3k::NodeId& node, const ::ed3k::Root& root, std::uint64_t down)
+{
+    m_peerFileDown[{key, node, root}] += down;
+}
+
+std::uint64_t Ed3kSession::peerFileDown(::ed3k::KeyKind key, const ::ed3k::NodeId& node, const ::ed3k::Root& root) const
+{
+    const auto it = m_peerFileDown.find({key, node, root});
+    return it == m_peerFileDown.end() ? 0 : it->second;
+}
+
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
@@ -891,10 +908,9 @@ void Ed3kSession::applyLimits()
 {
     if (!m_engine)
         return;
-    // 0 = none; others at least 16 KiB/s (ed3k_set_limits)
-    static constexpr std::uint64_t kFloor = 16 * 1024;
-    const auto floored = [](std::uint64_t v) { return v == 0 ? 0 : std::max(v, kFloor); };
-    const ffi::Limits l{floored(m_limits.up), floored(m_limits.down)};
+    // was: raised to 16 KiB/s here; 0 = none, the engine raises others to 1 KiB/s and ties the
+    // download to a low upload (Protocol.md §12 ratio)
+    const ffi::Limits l{m_limits.up, m_limits.down};
     if (auto ok = m_engine->setLimits(now(), l); !ok)
         logEd3kWarning(QStringLiteral("ed3k: limits not set (error %1)").arg(errorName(ok.error())));
     // was: packmule's default, LAN peers outside the limits; now they hold as for eD2K
@@ -902,6 +918,21 @@ void Ed3kSession::applyLimits()
     if (auto ok = m_engine->setLanUnlimited(now(), m_lanUnlimited); !ok)
         logEd3kWarning(QStringLiteral("ed3k: LAN limit switch not set (error %1)").arg(errorName(ok.error())));
     growSendBuffer();
+}
+
+bool Ed3kSession::wantEd2kCap()
+{
+    return thePrefs.ed3kAdvertiseEd2k() && !thePrefs.disableEd2k();
+}
+
+void Ed3kSession::applyEd2kCap()
+{
+    if (!m_engine)
+        return;
+    // Protocol.md §2 CAP_ED2K: this client also speaks eD2K, while its eD2K side runs
+    m_ed2kCap = wantEd2kCap();
+    if (auto ok = m_engine->setEd2k(now(), m_ed2kCap); !ok)
+        logEd3kWarning(QStringLiteral("ed3k: eD2K capability not set (error %1)").arg(errorName(ok.error())));
 }
 
 void Ed3kSession::applyIndexLinks()

@@ -1716,6 +1716,7 @@ void TransferPanel::requestDownloadSources(const QString& hash)
             src.remoteQueueRank = m.value(QStringLiteral("remoteQueueRank")).toInteger();
             src.remoteQueueFull = m.value(QStringLiteral("remoteQueueFull")).toBool();
             src.transferredDown = m.value(QStringLiteral("transferredDown")).toInteger();
+            src.fileDown        = m.value(QStringLiteral("fileDown")).toInteger(-1);
             src.sessionDown     = m.value(QStringLiteral("sessionDown")).toInteger();
             src.datarate        = m.value(QStringLiteral("datarate")).toInteger();
             src.availPartCount  = static_cast<int>(m.value(QStringLiteral("availPartCount")).toInteger());
@@ -2074,7 +2075,8 @@ void TransferPanel::sendPreview(const QString& hash)
         logWarning(tr("Preview not available — web server is not running or stream token not received."));
         return;
     }
-    launchPreview(url);
+    const DownloadRow* dl = m_downloadModel->findByHash(hash);
+    launchPreview(url, dl ? dl->fileName : QString{});
 }
 
 void TransferPanel::previewWith(const QString& hash, int appIndex)
@@ -2095,7 +2097,8 @@ void TransferPanel::previewWith(const QString& hash, int appIndex)
         const QString url = streamUrl(hash);
         if (url.isEmpty())
             logWarning(tr("Preview not available — web server is not running or stream token not received."));
-        else if (!launchPlayer(app.command, app.commandArgs, url))
+        else if (const DownloadRow* dl = m_downloadModel->findByHash(hash);
+                 !launchPlayer(app.command, app.commandArgs, url, dl ? dl->fileName : QString{}))
             failed();
         return;
     }
@@ -2260,7 +2263,7 @@ void TransferPanel::openDownload(const QString& hash)
     // Media files stream into the configured player; everything else is handed
     // to the system default handler (browser download / associated app).
     if (ft == ED2KFileType::Video || ft == ED2KFileType::Audio)
-        launchPreview(url);
+        launchPreview(url, fileName);
     else
         QDesktopServices::openUrl(QUrl(url));
 }

@@ -169,7 +169,12 @@ void BandwidthCoordinator::tick()
     // replaced: eD2K yields what ed3k receives of their share
     // thePrefs.setEd2kDownloadBudget(down.ed2kBudgetKb);
     // s.ed2kDownKb = down.ed2kBudgetKb >= 0 ? down.ed2kBudgetKb : maxDown;
-    const qint64 emuleDownKb = down.ed2kBudgetKb >= 0 ? down.ed2kBudgetKb : qint64(maxDown);   // 0 = none
+    // was: const qint64 emuleDownKb = down.ed2kBudgetKb >= 0 ? down.ed2kBudgetKb : qint64(maxDown);
+    // eMule's share, under the UL:DL ratio eD2K keeps (ed3k Protocol.md §12 MUST); 0 = none
+    qint64 emuleDownKb = down.ed2kBudgetKb >= 0 ? down.ed2kBudgetKb : qint64(maxDown);
+    if (ed3kRunning)
+        emuleDownKb = qint64(DownloadQueue::ratioLimitedDownload(quint64(emuleDownKb) * 1024,
+                                                                 DownloadQueue::ratioUploadBytes()) / 1024);
     qint64 ed2kBudgetKb = down.ed2kBudgetKb;
     if (ed3kRunning && emuleDownKb > 0 && m_ed3kDownRate > 0)
         ed2kBudgetKb = std::max<qint64>(1, emuleDownKb - m_ed3kDownRate / 1024);

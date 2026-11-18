@@ -31,6 +31,7 @@ class ApiEventFeeder;
 class ApiEventHub;
 class DaemonApiBackend;
 class DaemonEd3kWebBackend;
+class DaemonIndexerWebBackend;
 class DaemonHosterWebBackend;
 class DaemonMetaGrabWebBackend;
 class DaemonTorrentWebBackend;
@@ -218,6 +219,7 @@ private:
     std::unique_ptr<DaemonHosterWebBackend> m_hosterWebBackend;
     std::unique_ptr<DaemonMetaGrabWebBackend> m_metaGrabWebBackend;
     std::unique_ptr<DaemonEd3kWebBackend> m_ed3kWebBackend;
+    std::unique_ptr<DaemonIndexerWebBackend> m_indexerWebBackend;
     std::unique_ptr<DaemonApiBackend> m_apiBackend;
     /// Events for GET /api/v1/events; outlive a web-server restart.
     ApiEventHub* m_eventHub = nullptr;

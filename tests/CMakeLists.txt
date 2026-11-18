@@ -636,9 +636,10 @@ if(EMULE_ED3K)
         SOURCES tst_Ed3kRooms.cpp
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kRoomsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/panels/Ed3kRoomTab.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/panels/Ed3kRoomMediaView.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/panels/ChatChannelView.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/LogTextView.cpp"
-        LIBRARIES eMule::Ed3k eMule::Ipc Qt6::Widgets)
+        LIBRARIES eMule::Ed3k eMule::Ipc Qt6::Widgets Qt6::Multimedia)
     target_include_directories(tst_Ed3kRooms PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon" "${CMAKE_SOURCE_DIR}/src/gui")
     set_tests_properties(tst_Ed3kRooms PROPERTIES TIMEOUT 240)
     # ed3k keyword search (Ed3kSearch): one node publishes a file, another finds it

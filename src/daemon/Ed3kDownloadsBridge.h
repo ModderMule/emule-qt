@@ -31,6 +31,9 @@ namespace Ed3kDownloadsBridge {
 void setDownloads(ed3k::Ed3kDownloads* downloads);
 /// The notes search (Comments of a download's Details); null when absent.
 void setSearch(ed3k::Ed3kSearch* search);
+/// "Search Kad" of a download's Details (or its File Names / Metadata tab opened): its notes
+/// and the names and media tags others publish for it. False: neither started.
+[[nodiscard]] bool searchKad(const QByteArray& root);
 
 /// Whether an opcode is one of 1140-1149.
 [[nodiscard]] bool isDownloadsRequest(Ipc::IpcMsgType type);

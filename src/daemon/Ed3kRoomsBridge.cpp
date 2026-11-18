@@ -10,9 +10,12 @@
 #include "Ed3kHide.h"
 #include "Ed3kRooms.h"
 
+#include <QDateTime>
 #include <QObject>
 #include <QUrl>
 #include <QUrlQuery>
+
+#include <map>
 #endif
 
 namespace eMule::Ed3kRoomsBridge {
@@ -51,9 +54,20 @@ QString memberIdOf(const ffi::Key32& key)
     return id ? hexOf(*id) : QString();
 }
 
-QCborMap postToCbor(const Rooms::Post& p)
+constexpr qsizetype kMediaChunk = 4 << 20;   // under MaxPayloadSize
+constexpr qint64 kUploadTtlSecs = 300;
+
+/// A post's file coming from the GUI in parts (PostEd3kRoomMedia), by token.
+struct Upload {
+    QByteArray data;
+    qint64 total = 0;
+    qint64 touched = 0;
+};
+std::map<QString, Upload> s_uploads;
+
+QCborMap postToCbor(const Rooms& rooms, const Rooms::Post& p)
 {
-    return QCborMap{
+    QCborMap m{
         {QStringLiteral("id"), hexOf(p.id)},
         {QStringLiteral("author"), Rooms::keyText(p.author)},
         {QStringLiteral("authorId"), hexOf(p.authorId)},
@@ -63,6 +77,33 @@ QCborMap postToCbor(const Rooms::Post& p)
         {QStringLiteral("text"), p.text},
         {QStringLiteral("replyTo"), p.replyTo ? hexOf(*p.replyTo) : QString()},
     };
+    // §2.6: never the file key
+    if (p.media)
+        m.insert(QStringLiteral("media"), QCborMap{
+            {QStringLiteral("root"), hexOf(p.media->root)},
+            {QStringLiteral("size"), qint64(p.media->size)},
+            {QStringLiteral("type"), p.media->type},
+            {QStringLiteral("name"), p.media->name},
+            {QStringLiteral("width"), qint64(p.media->width)},
+            {QStringLiteral("height"), qint64(p.media->height)},
+            {QStringLiteral("state"), int(rooms.media().state(p.media->root))},
+        });
+    return m;
+}
+
+std::optional<ffi::PostId> replyOf(const QString& hex, bool* bad)
+{
+    *bad = false;
+    if (hex.isEmpty())
+        return std::nullopt;
+    const QByteArray b = QByteArray::fromHex(hex.toLatin1());
+    if (b.size() != 16) {
+        *bad = true;
+        return std::nullopt;
+    }
+    ffi::PostId id{};
+    std::copy(b.cbegin(), b.cend(), reinterpret_cast<char*>(id.data()));
+    return id;
 }
 
 /// `dn` of a room link (room.md §1.3), empty without.
@@ -121,6 +162,9 @@ QCborMap roomToCbor(const Rooms& rooms, const Rooms::Room& r)
         {QStringLiteral("notAdmitted"), r.notAdmitted},
         {QStringLiteral("key"), ed3k::Ed3kHide::keyName(r.key)},   // hops.md §1: shown
         {QStringLiteral("waitingHide"), r.waitingHide},
+        {QStringLiteral("mediaMax"), qint64(r.mediaMax)},
+        {QStringLiteral("keepHours"), qint64(r.keepHours)},
+        {QStringLiteral("keepPosts"), qint64(r.keepPosts)},
     };
 }
 
@@ -164,6 +208,20 @@ void answer(const IpcMessage& msg, Rooms& rooms, const std::function<void(const 
             fail(room.error());
         return;
     }
+    if (msg.type() == IpcMsgType::GetEd3kRoomMedia) {
+        const auto root = ed3k::Ed3kRoomMedia::rootFrom(msg.fieldString(0));
+        const auto bytes = root ? rooms.media().read(*root) : std::nullopt;
+        if (!bytes) {
+            fail(ffi::Error::NotFound);
+            return;
+        }
+        const qint64 offset = std::clamp<qint64>(msg.fieldInt(1), 0, bytes->size());
+        ok(QCborMap{{QStringLiteral("type"), ed3k::Ed3kRoomMedia::sniffType(*bytes)},
+                    {QStringLiteral("size"), qint64(bytes->size())},
+                    {QStringLiteral("offset"), offset},
+                    {QStringLiteral("data"), bytes->mid(offset, kMediaChunk)}});
+        return;
+    }
     if (msg.type() == IpcMsgType::ImportEd3kRoomAdmit) {
         if (const auto room = rooms.importAdmit(msg.fieldString(0)))
             ok(QCborMap{{QStringLiteral("room"), Rooms::roomHex(*room)}});
@@ -192,7 +250,7 @@ void answer(const IpcMessage& msg, Rooms& rooms, const std::function<void(const 
     case IpcMsgType::GetEd3kRoomPosts: {
         QCborArray posts;
         for (const auto& p : rooms.find(*room)->posts)
-            posts.append(postToCbor(p));
+            posts.append(postToCbor(rooms, p));
         ok(posts);
         break;
     }
@@ -223,6 +281,59 @@ void answer(const IpcMessage& msg, Rooms& rooms, const std::function<void(const 
     case IpcMsgType::SetEd3kRoomNick:
         done(rooms.setNick(*room, msg.fieldString(1)));
         break;
+    case IpcMsgType::SetEd3kRoomLimits:
+        done(rooms.setLimits(*room, std::uint64_t(std::max<qint64>(0, msg.fieldInt(1))), std::uint32_t(std::max<qint64>(0, msg.fieldInt(2))),
+                             std::uint32_t(std::max<qint64>(0, msg.fieldInt(3)))));
+        break;
+    case IpcMsgType::FetchEd3kRoomMedia: {
+        const auto root = ed3k::Ed3kRoomMedia::rootFrom(msg.fieldString(1));
+        if (!root) {
+            fail(ffi::Error::Argument);
+            break;
+        }
+        done(rooms.media().fetch(*room, *root));
+        break;
+    }
+    case IpcMsgType::PostEd3kRoomMedia: {
+        const qint64 now = QDateTime::currentSecsSinceEpoch();
+        std::erase_if(s_uploads, [now](const auto& u) { return u.second.touched + kUploadTtlSecs < now; });
+        const QString token = msg.fieldString(1);
+        const qint64 offset = msg.fieldInt(2);
+        const qint64 total = msg.fieldInt(3);
+        const QByteArray data = msg.field(4).toByteArray();
+        if (token.isEmpty() || total <= 0 || total > qint64(ed3k::Ed3kRoomMedia::kMaxSize) || data.size() > kMediaChunk) {
+            fail(ffi::Error::Argument);
+            break;
+        }
+        Upload& u = s_uploads[token];
+        if (u.data.size() != offset || (u.total && u.total != total) || offset + data.size() > total) {
+            s_uploads.erase(token);
+            fail(ffi::Error::Argument);
+            break;
+        }
+        u.total = total;
+        u.touched = now;
+        u.data += data;
+        if (u.data.size() < total) {
+            ok(QCborMap{{QStringLiteral("more"), true}});
+            break;
+        }
+        const QByteArray file = std::move(u.data);
+        s_uploads.erase(token);
+        bool bad = false;
+        const auto replyTo = replyOf(msg.fieldString(6), &bad);
+        if (bad) {
+            fail(ffi::Error::Argument);
+            break;
+        }
+        const auto id = rooms.postMedia(*room, msg.fieldString(5), replyTo, file, msg.fieldString(7),
+                                        std::uint32_t(std::max<qint64>(0, msg.fieldInt(8))), std::uint32_t(std::max<qint64>(0, msg.fieldInt(9))));
+        if (id)
+            ok(QCborArray{hexOf(*id)});
+        else
+            fail(id.error());
+        break;
+    }
     case IpcMsgType::SetEd3kRoomInfo: {
         std::vector<ffi::Key32> mods;
         for (const QCborValue& v : msg.fieldArray(4)) {
@@ -287,7 +398,9 @@ void setRooms(ed3k::Ed3kRooms* rooms)
 bool isRoomsRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    return (t >= 1120 && t <= 1129) || type == IpcMsgType::MuteEd3kRoomMember;   // batch 13: mute
+    return (t >= 1120 && t <= 1129) || type == IpcMsgType::MuteEd3kRoomMember   // batch 13: mute
+        || type == IpcMsgType::SetEd3kRoomLimits || type == IpcMsgType::PostEd3kRoomMedia
+        || type == IpcMsgType::GetEd3kRoomMedia || type == IpcMsgType::FetchEd3kRoomMedia;
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -327,7 +440,7 @@ void connectPushes(ed3k::Ed3kRooms& rooms, std::function<void(const IpcMessage&)
             return;
         IpcMessage m(IpcMsgType::PushEd3kRoomPost, 0);
         m.append(hex(room));
-        m.append(postToCbor(*it));
+        m.append(postToCbor(*r, *it));
         broadcast(m);
     });
     QObject::connect(&rooms, &Rooms::postsRemoved, &rooms, [broadcast, hex](const QByteArray& room, const QList<QByteArray>& ids) {
@@ -359,6 +472,14 @@ void connectPushes(ed3k::Ed3kRooms& rooms, std::function<void(const IpcMessage&)
                          if (member.size() == qsizetype(k.size()))
                              std::copy(member.cbegin(), member.cend(), reinterpret_cast<char*>(k.data()));
                          m.append(member.size() == qsizetype(k.size()) ? memberIdOf(k) : QString());
+                         broadcast(m);
+                     });
+    QObject::connect(&rooms.media(), &ed3k::Ed3kRoomMedia::stateChanged, &rooms,
+                     [broadcast, hex](const QByteArray& room, const QByteArray& root, int state) {
+                         IpcMessage m(IpcMsgType::PushEd3kRoomMedia, 0);
+                         m.append(hex(room));
+                         m.append(hex(root));
+                         m.append(qint64(state));
                          broadcast(m);
                      });
     QObject::connect(&rooms, &Rooms::notice, &rooms,

@@ -19,7 +19,9 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPushButton>
+#include <QShowEvent>
 #include <QTextBlock>
+#include <QTextBrowser>
 #include <QTextDocument>
 #include <QUrl>
 
@@ -61,6 +63,37 @@ Ed3kRoomTab::Ed3kRoomTab(const QString& room, std::function<void(const QString&)
     // a post's menu: reply, mute (the log's own entries stay)
     log()->viewport()->installEventFilter(this);
     buildMemberKeyBar();
+    // §2.6: media under its post; a click on it is ours, not a link to open
+    m_media = new Ed3kRoomMediaView(log(), this);
+    connect(m_media, &Ed3kRoomMediaView::fetchRequested, this, &Ed3kRoomTab::mediaFetchRequested);
+    connect(log(), &QTextBrowser::anchorClicked, this, [this](const QUrl& href) {
+        if (const QString root = Ed3kRoomMediaView::rootOfLink(href.toString()); !root.isEmpty())
+            m_media->clicked(root, this);
+    });
+}
+
+void Ed3kRoomTab::setMediaState(const QString& root, int state)
+{
+    bool any = false;
+    for (Post& p : m_posts)
+        if (p.media.root == root) {
+            p.media.state = state;
+            any = true;
+        }
+    if (any && m_media->setState(root, state))
+        redraw();
+}
+
+void Ed3kRoomTab::showEvent(QShowEvent* event)
+{
+    ChatChannelView::showEvent(event);
+    m_media->setActive(true);
+}
+
+void Ed3kRoomTab::hideEvent(QHideEvent* event)
+{
+    ChatChannelView::hideEvent(event);
+    m_media->setActive(false);
 }
 
 void Ed3kRoomTab::setRow(const QCborMap& row)
@@ -230,6 +263,15 @@ Ed3kRoomTab::Post Ed3kRoomTab::postFrom(const QCborMap& map)
     p.sent = map.value(QStringLiteral("sent")).toInteger();
     p.text = map.value(QStringLiteral("text")).toString();
     p.replyTo = map.value(QStringLiteral("replyTo")).toString();
+    if (const QCborMap m = map.value(QStringLiteral("media")).toMap(); !m.isEmpty()) {
+        p.media.root = m.value(QStringLiteral("root")).toString().toLower();
+        p.media.size = m.value(QStringLiteral("size")).toInteger();
+        p.media.type = m.value(QStringLiteral("type")).toString();
+        p.media.name = m.value(QStringLiteral("name")).toString();
+        p.media.width = int(m.value(QStringLiteral("width")).toInteger());
+        p.media.height = int(m.value(QStringLiteral("height")).toInteger());
+        p.media.state = int(m.value(QStringLiteral("state")).toInteger());
+    }
     return p;
 }
 
@@ -361,7 +403,10 @@ QString Ed3kRoomTab::render(const Post& p) const
     }
     // was: (p.moderator ? "@" : "") + shownName(..): the renderer draws a star now
     const QString shown = shownName(p.nick, p.author);
-    return m_render ? m_render(p, shown, p.author == memberKey(), reply) : p.text.toHtmlEscaped();
+    QString html = m_render ? m_render(p, shown, p.author == memberKey(), reply) : p.text.toHtmlEscaped();
+    if (!p.media.root.isEmpty())
+        html += m_media->html(p.media);
+    return html;
 }
 
 void Ed3kRoomTab::buildMemberKeyBar()

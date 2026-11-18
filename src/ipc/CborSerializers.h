@@ -682,10 +682,15 @@ inline void insertDownloadSeed(QCborMap& m, const SearchFile& f)
 [[nodiscard]] inline QCborArray downloadSourcesToCbor(const PartFile& file)
 {
     QCborArray clients;
-    for (const auto* c : file.srcList())
-        clients.append(toCbor(*c));
+    // fileDown: Completed of the row, this file only (transferredDown: all files, Client Details)
+    for (const auto* c : file.srcList()) {
+        QCborMap m = toCbor(*c);
+        m.insert(QStringLiteral("fileDown"), static_cast<qint64>(c->fileDown(file.fileHash())));
+        clients.append(m);
+    }
     for (const auto* c : file.a4afSrcList()) {
         QCborMap m = toCbor(*c);
+        m.insert(QStringLiteral("fileDown"), static_cast<qint64>(c->fileDown(file.fileHash())));
         m.insert(QStringLiteral("a4af"), true);
         m.insert(QStringLiteral("noNeededHere"), c->isInNoNeededList(&file));
         m.insert(QStringLiteral("swapSuspended"), c->reqFile() && c->isSwapSuspended(c->reqFile()));
@@ -714,11 +719,16 @@ namespace eMule::Ipc {
 [[nodiscard]] inline QCborMap callbackRoutesToCbor(const UpDownClient& c, AppContext& app)
 {
     QCborMap m;
-    // Kad buddy, as the hello / source exchange / Kad source gave it
-    if (!c.buddyAddress().isNull() && c.buddyPort() != 0)
-        m.insert(QStringLiteral("buddy"), Endpoint(c.buddyAddress(), c.buddyPort()).toString());
-    if (!c.buddyIPv6().isNull())
-        m.insert(QStringLiteral("buddyIPv6"), c.buddyIPv6().toString());
+    // Kad buddy, as the hello / source exchange / Kad source gave it: country + port only,
+    // its IP is a third party's
+    if (!c.buddyAddress().isNull() && c.buddyPort() != 0) {
+        m.insert(QStringLiteral("buddyPort"), c.buddyPort());
+        m.insert(QStringLiteral("buddyCC"), countryCodeOf(c.buddyAddress()));
+    }
+    if (!c.buddyIPv6().isNull()) {
+        m.insert(QStringLiteral("buddyIPv6"), true);
+        m.insert(QStringLiteral("buddy6CC"), countryCodeOf(c.buddyIPv6()));
+    }
     m.insert(QStringLiteral("buddyID"), c.hasValidBuddyID());
     m.insert(QStringLiteral("buddyRelayable"), c.buddyIDRelayable());
 

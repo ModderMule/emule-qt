@@ -299,6 +299,7 @@
     <ClCompile Include="panels\IrcPanelEd3k.cpp" />
     <ClCompile Include="panels\ChatChannelView.cpp" />
     <ClCompile Include="panels\Ed3kOwnSetsView.cpp" />
+    <ClCompile Include="panels\Ed3kRoomMediaView.cpp" />
     <ClCompile Include="panels\Ed3kRoomTab.cpp" />
     <ClCompile Include="panels\Ed3kRoomList.cpp" />
     <ClCompile Include="controls\KadContactHistogram.cpp" />
@@ -546,6 +547,7 @@
     <QtMoc Include="panels\IrcPanel.h" />
     <QtMoc Include="panels\ChatChannelView.h" />
     <QtMoc Include="panels\Ed3kOwnSetsView.h" />
+    <QtMoc Include="panels\Ed3kRoomMediaView.h" />
     <QtMoc Include="panels\Ed3kRoomTab.h" />
     <QtMoc Include="panels\Ed3kRoomList.h" />
     <QtMoc Include="controls\KadContactHistogram.h" />

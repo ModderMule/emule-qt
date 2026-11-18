@@ -414,6 +414,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_chatUnreadBadgeCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_chatPlainLinksCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_chatModStarCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_chatRoomMediaCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_chatRoomVideosCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Security page
     connect(m_filterServersByIPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -2467,9 +2469,9 @@ QWidget* OptionsDialog::createFilesPage()
 
     m_downloadSeekingCheck = new QCheckBox(tr("Enable seeking in downloads"), miscGroup);
     m_downloadSeekingCheck->setToolTip(
-        tr("Preview of an unfinished download (eD2K, ed3k, web sources, BitTorrent, Usenet, hoster "
-           "video and audio files): when the player seeks, the parts there are downloaded first and "
-           "the player waits for them. Off: the file is played as it is on disk."));
+        tr("Preview of an unfinished download (eD2K, ed3k, web sources, BitTorrent): when the player "
+           "seeks, the parts there are downloaded first and the player waits for them. Off: the file "
+           "is played as it is on disk. Usenet and hoster previews always fetch what the player reads."));
     m_downloadSeekingCheck->setVisible(thePrefs.showExtControls());
     miscLayout->addWidget(m_downloadSeekingCheck);
 
@@ -3112,6 +3114,18 @@ QWidget* OptionsDialog::createMessagesPage()
     chatLayout->addWidget(m_chatPlainLinksCheck);
     m_chatModStarCheck = new QCheckBox(tr("Mark ed3k room moderators by a star instead of \"@\""), chatGroup);
     chatLayout->addWidget(m_chatModStarCheck);
+    // room.md §6: off = a file line, a click fetches
+    m_chatRoomMediaCheck = new QCheckBox(tr("Show images in ed3k rooms"), chatGroup);
+    m_chatRoomMediaCheck->setToolTip(tr("Images come from your room neighbours only. Off: the file name shows, a click downloads it"));
+    chatLayout->addWidget(m_chatRoomMediaCheck);
+    m_chatRoomVideosCheck = new QCheckBox(tr("Auto download videos (played muted)"), chatGroup);
+    {
+        auto* row = new QHBoxLayout;
+        row->setContentsMargins(20, 0, 0, 0);
+        row->addWidget(m_chatRoomVideosCheck);
+        chatLayout->addLayout(row);
+    }
+    connect(m_chatRoomMediaCheck, &QCheckBox::toggled, m_chatRoomVideosCheck, &QWidget::setEnabled);
     layout->addWidget(chatGroup);
 
     // --- Comments group ---
@@ -7673,6 +7687,9 @@ void OptionsDialog::loadSettings()
     m_chatUnreadBadgeCheck->setChecked(thePrefs.chatUnreadBadge());
     m_chatPlainLinksCheck->setChecked(thePrefs.chatPlainLinks());
     m_chatModStarCheck->setChecked(thePrefs.chatModStar());
+    m_chatRoomMediaCheck->setChecked(thePrefs.chatRoomMedia());
+    m_chatRoomVideosCheck->setChecked(thePrefs.chatRoomVideos());
+    m_chatRoomVideosCheck->setEnabled(thePrefs.chatRoomMedia());
 
     // The GUI acts on this one (LogWidget, IpcClient), so its own copy is the truth;
     // GetPreferences never carried it, which loaded the box unticked every time.
@@ -7928,6 +7945,8 @@ void OptionsDialog::saveSettings()
     thePrefs.setChatUnreadBadge(m_chatUnreadBadgeCheck->isChecked());
     thePrefs.setChatPlainLinks(m_chatPlainLinksCheck->isChecked());
     thePrefs.setChatModStar(m_chatModStarCheck->isChecked());
+    thePrefs.setChatRoomMedia(m_chatRoomMediaCheck->isChecked());
+    thePrefs.setChatRoomVideos(m_chatRoomVideosCheck->isChecked());
 
     // Statistics page — always save locally for immediate GUI effect
     thePrefs.setGraphsUpdateSec(static_cast<uint32>(m_statsGraphUpdateSlider->value()));
@@ -8641,6 +8660,10 @@ void OptionsDialog::saveSettings()
         req.append(m_chatPlainLinksCheck->isChecked());
         req.append(QStringLiteral("chatModStar"));
         req.append(m_chatModStarCheck->isChecked());
+        req.append(QStringLiteral("chatRoomMedia"));
+        req.append(m_chatRoomMediaCheck->isChecked());
+        req.append(QStringLiteral("chatRoomVideos"));
+        req.append(m_chatRoomVideosCheck->isChecked());
 
         // ed3k group (Ed3kOptionsPages)
         m_ed3kPages->appendTo(req);

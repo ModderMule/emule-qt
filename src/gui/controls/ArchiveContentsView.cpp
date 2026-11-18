@@ -173,6 +173,7 @@ void ArchiveContentsView::setResult(const QCborMap& result)
     if (m_queued && !m_editable)
         m_status->setText(m_status->text() + u' ' + tr("The download is unpacked already: its extraction cannot change."));
     updateButtons();
+    emit lookupFinished(found);
 }
 
 void ArchiveContentsView::setError(const QString& error)
@@ -181,6 +182,7 @@ void ArchiveContentsView::setError(const QString& error)
     m_requested = false;   // another try when shown again
     m_status->setText(error.isEmpty() ? tr("The lookup failed.") : error);
     updateButtons();
+    emit lookupFinished(-1);
 }
 
 void ArchiveContentsView::setNestedResult(const QString& rootHex, const QCborMap& result)

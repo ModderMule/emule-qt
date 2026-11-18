@@ -613,15 +613,7 @@ UsenetStreamSource streamFrom([[maybe_unused]] const QString& id, [[maybe_unused
     }
     src.totalSize = qint64(item->size);
     if (!fetch) {
-        // a player clicked open reads the end (MP4 index): the tail fetch runs regardless of
-        // seeking, a preview is the only thing that starts it
-        if (const auto tail = s_join->previewTail(n, std::uint64_t(offset))) {
-            src.availableEnd = qint64(*tail);
-            src.exactEnd = true;
-            src.pieces = {{item->file, 0, 0, qint64(item->size)}};
-            return src;
-        }
-        src.pieces = {{item->file, 0, 0, 0}};   // whatever is on disk
+        src.pieces = {{item->file, 0, 0, 0}};   // a lookup: whatever is on disk
         return src;
     }
     const auto held = s_join->playFrom(n, std::uint64_t(offset));

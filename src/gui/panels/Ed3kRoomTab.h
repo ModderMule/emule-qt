@@ -15,6 +15,7 @@
 ///   Copy, to send to a moderator, and Import admit.
 
 #include "panels/ChatChannelView.h"
+#include "panels/Ed3kRoomMediaView.h"
 
 #include <QCborMap>
 #include <QMap>
@@ -47,6 +48,7 @@ public:
         QString text;
         QString replyTo;    ///< post id, empty none
         QString authorId;   ///< member ID hex (§1.1)
+        Ed3kRoomMediaView::Ref media;   ///< §2.6; root empty: none
     };
     /// Draws one post: @p shown the member as listed, @p own our own post.
     /// The moderator star as an inline image of the log (§6); the post renderer puts it first.
@@ -121,6 +123,13 @@ public:
     void showMemberKeyBar(bool on);
     /// "Import admit" makes sense: the room is known closed or moderated, or refused us (#17).
     [[nodiscard]] bool admitImportable() const;
+    /// The room takes media (§2.6): its largest file, bytes; 0 none.
+    [[nodiscard]] qint64 mediaMax() const { return m_row.value(QStringLiteral("mediaMax")).toInteger(); }
+    /// How a ready file's bytes come (IPC); they go to setMediaBytes.
+    void setMediaLoader(std::function<void(const QString& root)> load) { m_media->setLoader(std::move(load)); }
+    /// PushEd3kRoomMedia: a post's media changed.
+    void setMediaState(const QString& root, int state);
+    void setMediaBytes(const QString& root, const QByteArray& bytes) { m_media->setBytes(root, bytes); }
 
 signals:
     /// The post menu: answer @p id with the next post.
@@ -129,9 +138,13 @@ signals:
     void muteRequested(const QString& memberId, bool on);
     /// The bar: import an admit.
     void importAdmitRequested();
+    /// A click asks for a post's file (FetchEd3kRoomMedia).
+    void mediaFetchRequested(const QString& root);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 
 public:
     /// The log again from the posts held: after a mute or a changed chat option.
@@ -155,6 +168,7 @@ private:
     QWidget* m_keyBar = nullptr;
     QLineEdit* m_keyEdit = nullptr;
     QPushButton* m_importBtn = nullptr;
+    Ed3kRoomMediaView* m_media = nullptr;
 };
 
 } // namespace eMule

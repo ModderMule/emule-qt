@@ -106,12 +106,12 @@ bool sameBytes(const QByteArray& a, const QByteArray& b)
     return a.size() == b.size() && CRYPTO_memcmp(a.constData(), b.constData(), size_t(a.size())) == 0;
 }
 
-/// A secret whose proof for @p key is @p proof: used up and true
-bool takeSecretFor(const QByteArray& key, const QByteArray& proof)
+/// A secret whose proof for @p node is @p proof: used up and true
+bool takeSecretFor(const QByteArray& node, const QByteArray& proof)
 {
     dropExpiredSecrets();
     for (auto it = secrets().begin(); it != secrets().end(); ++it) {
-        if (sameBytes(pairProof(it->first, key), proof)) {
+        if (sameBytes(pairProof(it->first, node), proof)) {
             secrets().erase(it);
             return true;
         }
@@ -291,7 +291,7 @@ private:
             return;
         }
         if (!p.known) {
-            if (!takeSecretFor(p.key, proof)) {
+            if (!takeSecretFor(p.peer, proof)) {
                 logWarning(QStringLiteral("ed3k tunnel %1: phone %2 not paired and no valid pair proof, closed")
                                .arg(p.id).arg(QString::fromLatin1(p.peer.toHex().left(12))));
                 closeTunnel(p.id);
@@ -463,9 +463,9 @@ void reapply()
 #endif
 }
 
-QByteArray pairProof(const QByteArray& secret, const QByteArray& phoneKey)
+QByteArray pairProof(const QByteArray& secret, const QByteArray& phoneNode)
 {
-    const QByteArray message = QByteArrayLiteral("qdonkey-pair") + phoneKey;
+    const QByteArray message = QByteArrayLiteral("qdonkey-pair") + phoneNode;
     return QMessageAuthenticationCode::hash(message, secret, QCryptographicHash::Sha256);
 }
 

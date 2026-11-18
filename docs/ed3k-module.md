@@ -295,7 +295,7 @@ follows `verbose` or `kadVerboseLog`.
   MFC original.
 - **Bandwidth** (socket-modes.md "Mode A in eMuleQt"). ed3k rides on eD2K's share of
   `BandwidthCoordinator`:
-  - `Ed3kSession::setLimits` (→ `ed3k_set_limits`, raised to its 16 KiB/s floor) gets the
+  - `Ed3kSession::setLimits` (→ `ed3k_set_limits`, raised to its 1 KiB/s floor, download tied to a low upload by the §12 ratio) gets the
     whole eD2K share each tick (0 = none); it is kept across restarts. At `stop()` the
     coordinator hands it the global line.
   - Every 500 ms the coordinator reads `traffic()` (`wire_sent` / `wire_recv` of
@@ -554,6 +554,12 @@ node stops. `applyEd3kConfig` switches it with the pref.
   parts and eD2K links stay eD2K-only.
 - **Web Services:** `#ed3kroot` (64 hex) beside eD2K's macros; an entry naming a hash the row
   lacks is left out (`#hashid` on ed3k rows without a known MD4, `#ed3kroot` on eD2K rows).
+  Shared rows send `ed3kRoot` for every file hashed for ed3k (`Ed3kHideBridge::sharedRoot`), so
+  a dual file gets both. Dev aid `EMULE_DUMP_ED3K_MENUS=1` (utils/MenuDump.h): Transfers, Shared
+  Files and Search log the menus of their ed3k rows every 20 s (open the page with `--tab`);
+  `=2` also runs Swap A4AF and Source Limit (its dialog, 70000 entered) once, and one ed3k search
+  for `EMULE_DUMP_SEARCH=<words>`; Search logs the last menu again 1.5 s later (ed3k link actions
+  come async). Stopping the GUI shuts down a local sandbox core too.
 - **Landed files kept out of eD2K** (hoster/Usenet "share landed files" off): `DaemonApp::
   syncEd3kAliasOnly` → `setAliasOnlyFiles`: read once for MD4 + root (`hashInBackground(withEd2k)`)
   while eD2K is enabled, only their `ed2k` ALIAS published (the join shares the root; refused

@@ -229,6 +229,15 @@ public:
     int importEd3kRoomAdmit(const QString& text, ResponseCallback callback = nullptr);
     /// Mutes a member ID of a room here alone (room.md §6); false unmutes.
     int muteEd3kRoomMember(const QString& room, const QString& memberId, bool on, ResponseCallback callback = nullptr);
+    /// Owner: media and history limits of a room (room.md §2.1); mediaMax 0 = no media.
+    int setEd3kRoomLimits(const QString& room, qint64 mediaMax, int keepHours, int keepPosts, ResponseCallback callback = nullptr);
+    /// A post with a file (room.md §2.6), sent in parts; @p callback gets the last answer.
+    void postEd3kRoomMedia(const QString& room, const QString& text, const QString& replyTo, const QByteArray& data,
+                           const QString& name, int width, int height, ResponseCallback callback = nullptr);
+    /// A cached room file, opened, in parts; @p done(ok, type, data).
+    void getEd3kRoomMedia(const QString& root, std::function<void(bool, const QString&, const QByteArray&)> done);
+    /// Fetch a post's file now (a click).
+    int fetchEd3kRoomMedia(const QString& room, const QString& root, ResponseCallback callback = nullptr);
 
     // -- My ed3k Sets (the user's own sets, IPC 1145-1148, batch 15) -------------
     // Ids: FileSet.id as 32 hex digits; kinds 1 open, 2 hidden, 3 paid. Failure: [false, {error}].
@@ -237,10 +246,13 @@ public:
     ///     scope, sold, stopped, link, error}]}
     int requestEd3kOwnSets(ResponseCallback callback);
     /// @p folder (every file below it) or @p files -> {id, link} (a paid one: SellEd3k next)
+    /// @p exts: file types suggested to followers (file-set.md §5.3)
     int publishEd3kOwnSet(const QString& folder, const QStringList& files, const QString& title, int kind,
-                          ResponseCallback callback = nullptr);
+                          const QStringList& exts, ResponseCallback callback = nullptr);
     /// action 1 new version, 2 unpublish, 3 retitle (@p title)
     int controlEd3kOwnSet(int action, const QString& id, const QString& title = {}, ResponseCallback callback = nullptr);
+    /// action 5: the file types suggested to followers (a published set gets a new version)
+    int setEd3kOwnSetExts(const QString& id, const QStringList& exts, ResponseCallback callback = nullptr);
     /// -> {link, hidden}: a hidden set's link is a credential (never log it)
     int requestEd3kOwnSetLink(const QString& id, ResponseCallback callback);
 
@@ -265,7 +277,13 @@ public:
     ///     pendingSeq, added, changed, removed, dir, error, totalSize, members, parts}]}
     void requestEd3kSets(const QObject* owner, ResponseCallback callback);
     /// An ed3k:set link -> {id}
-    int followEd3kSet(const QString& link, int policy, ResponseCallback callback = nullptr);
+    /// @p exts: the user's file types (nullopt: the author's or the default); @p dir: "" default
+    int followEd3kSet(const QString& link, int policy, const std::optional<QStringList>& exts = std::nullopt, const QString& dir = {},
+                      ResponseCallback callback = nullptr);
+    /// the file types of a set downloading by itself (nullopt: the author's or the default)
+    int setEd3kSetFilter(qint64 id, const std::optional<QStringList>& exts, ResponseCallback callback = nullptr);
+    /// "" the default; refused once a file of the set is downloaded
+    int setEd3kSetFolder(qint64 id, const QString& dir, ResponseCallback callback = nullptr);
     int unfollowEd3kSet(qint64 id, ResponseCallback callback = nullptr);
     int setEd3kSetPolicy(qint64 id, int policy, ResponseCallback callback = nullptr);
     /// The members (paths) left out
@@ -483,6 +501,8 @@ signals:
     void ed3kRoomPresence(const Ipc::IpcMessage& msg);
     /// [room, kind, value, flag, who] — Ed3kRooms::Notice.
     void ed3kRoomNotice(const Ipc::IpcMessage& msg);
+    /// [room, root, state] — a post's media changed (Ed3kRoomMedia::State).
+    void ed3kRoomMedia(const Ipc::IpcMessage& msg);
     /// [{claims, rate, delay, address}] — the stake claims of own burns changed (credit.md §6.7).
     void ed3kStakeClaimsChanged(const Ipc::IpcMessage& msg);
     /// [{what, state, revert, tx}] — a stake transaction moved.

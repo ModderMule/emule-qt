@@ -65,6 +65,7 @@ private:
     QLabel* m_sharedLabel = nullptr;
     QLabel* m_setLabel = nullptr;
     QLineEdit* m_nameEdit = nullptr;
+    QLineEdit* m_extsEdit = nullptr;   ///< file types suggested to followers (§5.3)
     QComboBox* m_kind = nullptr;
     QPushButton* m_termsButton = nullptr;
     QLabel* m_kindNote = nullptr;

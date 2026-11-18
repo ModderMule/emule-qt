@@ -63,6 +63,7 @@ private slots:
     void aSharedFileIsFound();
     void aSharedFilesNoteAndMediaAreFound();
     void clipUtf8KeepsWholeCharacters();
+    void nameWordsAreTheLongestOnes();
     void aNoteAuthorShowsItsNodeId();
     void withoutANodeTheSearchEnds();
     void aChannelSearchTakesChannelFilesOnly();
@@ -332,8 +333,27 @@ void tst_Ed3kSearch::aSharedFilesNoteAndMediaAreFound()
     QCOMPARE(notes.front().rating, 4u);
     QCOMPARE(notes.front().text, QStringLiteral("clean rip"));
     QCOMPARE(notes.front().nick, QStringLiteral("Mule"));
+
+    // File Names / Metadata of a download: KEYWORD records of the root, by the name's words
+    QVERIFY(search.searchNames(rootBytes, QStringLiteral("Silver.Harbour.mp3"), std::uint64_t(data.size())));
+    QVERIFY(search.namesRunning(rootBytes));
+    QTRY_VERIFY_WITH_TIMEOUT(!search.namesRunning(rootBytes), 60000);
+    const auto names = search.namesOf(rootBytes);
+    QCOMPARE(names.size(), std::size_t(1));
+    QCOMPARE(names.front().name, QStringLiteral("silver harbour.mp3"));
+    QCOMPARE(names.front().publishers, 1);
+    QCOMPARE(names.front().artist, QStringLiteral("Harbour Band"));
+    QCOMPARE(names.front().duration, 215u);
     a.disconnect(this);
     shared.stop();
+}
+
+void tst_Ed3kSearch::nameWordsAreTheLongestOnes()
+{
+    QCOMPARE(Ed3kSearch::nameWords(QStringLiteral("Silver.Harbour.mp3")), (QStringList{QStringLiteral("harbour"), QStringLiteral("silver")}));
+    // short words and the extension left out, repeats once
+    QCOMPARE(Ed3kSearch::nameWords(QStringLiteral("a to be-or-NOT be.not.avi"), 3), (QStringList{QStringLiteral("not")}));
+    QVERIFY(Ed3kSearch::nameWords(QStringLiteral("ab.mkv")).isEmpty());
 }
 
 void tst_Ed3kSearch::clipUtf8KeepsWholeCharacters()

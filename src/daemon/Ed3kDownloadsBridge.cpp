@@ -323,6 +323,24 @@ void setSearch([[maybe_unused]] ed3k::Ed3kSearch* search)
 #endif
 }
 
+bool searchKad([[maybe_unused]] const QByteArray& root)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_search || root.size() != 32)
+        return false;
+    bool started = s_search->searchNotes(root);
+    if (s_downloads) {
+        ffi::Root r;
+        std::copy_n(reinterpret_cast<const std::uint8_t*>(root.constData()), r.bytes.size(), r.bytes.begin());
+        if (const auto info = s_downloads->info(r); info && !info->name.isEmpty())
+            started = s_search->searchNames(root, info->name, info->size) || started;
+    }
+    return started;
+#else
+    return false;
+#endif
+}
+
 std::optional<QCborMap> detailsOf([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] bool generalOnly)
 {
 #ifdef EMULE_HAVE_ED3K
@@ -393,6 +411,38 @@ std::optional<QCborMap> detailsOf([[maybe_unused]] const QString& hexRoot, [[may
         }
     m.insert(QStringLiteral("comments"), comments);
     m.insert(QStringLiteral("notesSearchRunning"), s_search && s_search->notesRunning(rootBytes));
+    // File Names and Metadata: what KEYWORD records of this root carry (Ed3kSearch::searchNames)
+    QCborArray names;
+    QCborArray tags;
+    if (s_search) {
+        const auto found = s_search->namesOf(rootBytes);
+        for (const auto& n : found)
+            names.append(QCborMap{{QStringLiteral("name"), n.name}, {QStringLiteral("count"), qint64(n.publishers)}});
+        // per tag the value of the most published name that has one; eD2K's tag types (2 string, 3 uint32)
+        const auto text = [&tags, &found](const QString& tag, QString ed3k::Ed3kSearch::FoundName::*field) {
+            for (const auto& n : found)
+                if (!(n.*field).isEmpty()) {
+                    tags.append(QCborMap{{QStringLiteral("name"), tag}, {QStringLiteral("type"), 2}, {QStringLiteral("strValue"), n.*field}});
+                    return;
+                }
+        };
+        const auto number = [&tags, &found](const QString& tag, std::uint32_t ed3k::Ed3kSearch::FoundName::*field) {
+            for (const auto& n : found)
+                if (n.*field != 0) {
+                    tags.append(QCborMap{{QStringLiteral("name"), tag}, {QStringLiteral("type"), 3}, {QStringLiteral("intValue"), qint64(n.*field)}});
+                    return;
+                }
+        };
+        text(QStringLiteral("Artist"), &ed3k::Ed3kSearch::FoundName::artist);
+        text(QStringLiteral("Album"), &ed3k::Ed3kSearch::FoundName::album);
+        text(QStringLiteral("Title"), &ed3k::Ed3kSearch::FoundName::title);
+        number(QStringLiteral("Length"), &ed3k::Ed3kSearch::FoundName::duration);
+        number(QStringLiteral("Bitrate"), &ed3k::Ed3kSearch::FoundName::bitrate);
+        text(QStringLiteral("Codec"), &ed3k::Ed3kSearch::FoundName::codec);
+    }
+    m.insert(QStringLiteral("sourceNames"), names);
+    m.insert(QStringLiteral("tags"), tags);
+    m.insert(QStringLiteral("namesSearchRunning"), s_search && s_search->namesRunning(rootBytes));
     m.insert(QStringLiteral("kadConnected"), theApp.ed3kConnected && theApp.ed3kConnected());
     // Media Info: read from the file once its head is here (eD2K reads it at completion)
     if (info->state == State::Complete || info->previewPossible) {

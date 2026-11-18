@@ -325,6 +325,9 @@
     <ClCompile Include="panels\Ed3kOwnSetsView.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="panels\Ed3kRoomMediaView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="panels\Ed3kRoomTab.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -931,6 +934,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="panels\Ed3kOwnSetsView.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\Ed3kRoomMediaView.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="panels\Ed3kRoomTab.h">

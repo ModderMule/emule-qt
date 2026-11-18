@@ -43,6 +43,7 @@
 #include <deque>
 #include <functional>
 #include <map>
+#include <tuple>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -277,6 +278,9 @@ public:
     };
     void addPeerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node, std::uint64_t up, std::uint64_t down);
     [[nodiscard]] PeerBytes peerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const;
+    /// Verified blocks of @p root from a peer (the Transfers row's Completed; peerBytes: all files).
+    void addPeerFileDown(::ed3k::KeyKind key, const ::ed3k::NodeId& node, const ::ed3k::Root& root, std::uint64_t down);
+    [[nodiscard]] std::uint64_t peerFileDown(::ed3k::KeyKind key, const ::ed3k::NodeId& node, const ::ed3k::Root& root) const;
     /// Download speed from a peer in B/s: verified blocks over the last 10 s (blocks are 256 KiB, a 1 s count flickers).
     [[nodiscard]] std::uint64_t downRate(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const;
 
@@ -304,6 +308,9 @@ private:
     /// RpcRequest to the configured endpoint; false: none for its class and operator.
     bool startRpc(const ::ed3k::event::RpcRequest& r);
     void applyLimits();
+    /// CAP_ED2K in the Hello: thePrefs.ed3kAdvertiseEd2k while eD2K is not switched off.
+    void applyEd2kCap();
+    [[nodiscard]] static bool wantEd2kCap();
     /// SO_SNDBUF of the socket with the upload limit (SendBufferSizer); never shrinks
     void growSendBuffer();
     void applyUploadSlots();
@@ -376,7 +383,8 @@ private:
     QStringList m_creditRpc;
     QStringList m_chaintubeRpc;
     ::ed3k::Limits m_limits{};
-    bool m_lanUnlimited = false;   ///< last told to the engine (thePrefs.ed3kLanUnlimited)
+    bool m_lanUnlimited = true;   ///< last told to the engine (thePrefs.ed3kLanUnlimited)
+    bool m_ed2kCap = false;   ///< CAP_ED2K last told to the engine
     eMule::SendBufferSizer m_sendBufSizer;
     std::uint32_t m_uploadSlots = 0;
     int m_logLevel = -1;   ///< ed3k::LogLevel set on this engine; -1 = none yet
@@ -384,6 +392,7 @@ private:
     std::unique_ptr<Ed3kHide> m_hide;
     ::ed3k::KeyKind m_eventKey = ::ed3k::KeyKind::Node;
     std::map<std::pair<::ed3k::KeyKind, ::ed3k::NodeId>, PeerBytes> m_peerBytes;
+    std::map<std::tuple<::ed3k::KeyKind, ::ed3k::NodeId, ::ed3k::Root>, std::uint64_t> m_peerFileDown;
     /// downRate(): recent blocks per peer, and when its burst began
     struct RecentDown {
         std::deque<std::pair<qint64, std::uint64_t>> blocks;   ///< ms since start, bytes

@@ -14,6 +14,7 @@
 #include "utils/Opcodes.h"
 
 #include <QPointer>
+#include <QRegularExpression>
 
 #include <algorithm>
 
@@ -98,6 +99,72 @@ bool Ed3kSearch::searchNotes(const QByteArray& root)
             m_session.pump();
     });
     return true;
+}
+
+bool Ed3kSearch::searchNames(const QByteArray& root, const QString& name, std::uint64_t size)
+{
+    auto* e = m_session.engine();
+    if (!e || root.size() != 32 || m_nameTimeouts.contains(root))
+        return false;
+    const QStringList words = nameWords(name);
+    if (words.isEmpty())
+        return false;
+    const bool anon = m_session.hide().keyForUse() == ::ed3k::KeyKind::Anon;
+    ::ed3k::Filter filter;
+    filter.minSize = size;
+    filter.maxSize = size;
+    int started = 0;
+    for (const QString& word : words) {
+        const QByteArray text = word.toUtf8();
+        const std::string_view query(text.constData(), std::size_t(text.size()));
+        auto lookup = anon ? e->anonSearch(m_session.now(), query, filter) : e->search(m_session.now(), query, filter);
+        if (!lookup) {
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k names search \"%1\" refused (error %2)").arg(word).arg(int(lookup.error())); });
+            continue;
+        }
+        m_nameLookups[lookupKey(*lookup, anon ? ::ed3k::KeyKind::Anon : ::ed3k::KeyKind::Node)] = root;
+        ++started;
+    }
+    if (started == 0)
+        return false;
+    auto timeout = std::make_unique<QTimer>();
+    timeout->setSingleShot(true);
+    connect(timeout.get(), &QTimer::timeout, this, [this, root] {
+        std::erase_if(m_nameLookups, [&root](const auto& kv) { return kv.second == root; });
+        endNames(root);
+    });
+    timeout->start(kTimeoutMs);
+    m_nameTimeouts[root] = std::move(timeout);
+    logEd3kDebug([&]() -> QString { return QStringLiteral(">>> ed3k names search %1: %2").arg(QString::fromLatin1(root.toHex()), words.join(u' ')); });
+    QTimer::singleShot(0, this, [this] {
+        if (m_session.isRunning())
+            m_session.pump();
+    });
+    return true;
+}
+
+std::vector<Ed3kSearch::FoundName> Ed3kSearch::namesOf(const QByteArray& root) const
+{
+    std::vector<FoundName> out;
+    if (const auto it = m_names.find(root); it != m_names.end())
+        for (const auto& [name, rec] : it->second) {
+            out.push_back(rec.shown);
+            out.back().publishers = int(rec.publishers.size());
+        }
+    std::ranges::stable_sort(out, std::greater{}, &FoundName::publishers);
+    return out;
+}
+
+QStringList Ed3kSearch::nameWords(const QString& name, int count)
+{
+    // the keywords a publisher derives: words of letters and digits, the extension left out
+    const QString base = name.contains(u'.') ? name.left(name.lastIndexOf(u'.')) : name;
+    QStringList words;
+    for (const QString& w : base.toLower().split(QRegularExpression(QStringLiteral("[^\\p{L}\\p{N}]+")), Qt::SkipEmptyParts))
+        if (w.size() >= 3 && !words.contains(w))
+            words << w;
+    std::ranges::stable_sort(words, std::greater{}, &QString::size);
+    return words.mid(0, count);
 }
 
 std::map<QByteArray, Ed3kSearch::Availability> Ed3kSearch::availabilityOf(const std::vector<::ed3k::FoundFile>& files)
@@ -347,6 +414,12 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, 
         QTimer::singleShot(0, this, [this, root] { endNotes(root); });
         return;
     }
+    if (const auto n = m_nameLookups.find(lookupKey(found->lookup, key)); n != m_nameLookups.end()) {
+        const QByteArray root = n->second;
+        m_nameLookups.erase(n);
+        onNamesFound(root, *found);
+        return;
+    }
     // was: const auto it = m_lookups.find(found->lookup);
     const auto it = m_lookups.find(lookupKey(found->lookup, key));
     if (it == m_lookups.end())
@@ -516,6 +589,54 @@ Ed3kSearch::Verdict Ed3kSearch::judge(const ::ed3k::FoundFile& found) const
         return v;
     }
     return m_judge ? m_judge(found) : Verdict{};
+}
+
+void Ed3kSearch::onNamesFound(const QByteArray& root, const ::ed3k::event::KadFound& found)
+{
+    int kept = 0;
+    for (const auto& f : found.files) {
+        if (bytesOf(f.root.bytes) != root || f.name.empty())
+            continue;
+        if (!m_names.contains(root)) {
+            m_namesOrder.push_back(root);
+            if (m_namesOrder.size() > kNotesKept) {
+                m_names.erase(m_namesOrder.front());
+                m_namesOrder.pop_front();
+            }
+        }
+        const QString name = QString::fromUtf8(f.name.data(), qsizetype(f.name.size()));
+        NameRecords& rec = m_names[root][name];
+        rec.shown.name = name;
+        rec.publishers.insert(bytesOf(f.publisher.bytes));
+        // a claim of the publisher (§5.4): the first one that names a tag
+        const auto take = [](QString& field, const std::string& v) {
+            if (field.isEmpty() && !v.empty())
+                field = QString::fromUtf8(v.data(), qsizetype(v.size()));
+        };
+        take(rec.shown.artist, f.artist);
+        take(rec.shown.album, f.album);
+        take(rec.shown.title, f.title);
+        take(rec.shown.codec, f.codec);
+        if (rec.shown.duration == 0)
+            rec.shown.duration = f.duration;
+        if (rec.shown.bitrate == 0)
+            rec.shown.bitrate = f.bitrate;
+        ++kept;
+    }
+    logEd3kDebug([&]() -> QString { return QStringLiteral("<<< ed3k names search %1: %2 record(s) of the root").arg(QString::fromLatin1(root.toHex())).arg(kept); });
+    // the last of its lookups ends it; from the event loop, not inside the pump
+    const bool more = std::ranges::any_of(m_nameLookups, [&root](const auto& kv) { return kv.second == root; });
+    if (!more)
+        QTimer::singleShot(0, this, [this, root] { endNames(root); });
+}
+
+void Ed3kSearch::endNames(const QByteArray& root)
+{
+    // may run from the timer's own timeout: not deleted under its emit
+    if (const auto it = m_nameTimeouts.find(root); it != m_nameTimeouts.end()) {
+        it->second.release()->deleteLater();
+        m_nameTimeouts.erase(it);
+    }
 }
 
 } // namespace eMule::ed3k

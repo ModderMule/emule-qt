@@ -1274,7 +1274,8 @@ void MainWindow::restoreWindow(const QString& activationToken)
     // minimized, and activation needs a token from the user's click. From the tray
     // the window just stayed down. With a token the compositor raises it (Qt reads
     // the variable in requestActivate); without one, remap it: a new map comes up.
-    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
+    const bool wayland = QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
+    if (wayland) {
         if (!activationToken.isEmpty())
             qputenv("XDG_ACTIVATION_TOKEN", activationToken.toUtf8());
         else if (isVisible() && !isActiveWindow() && !QApplication::activeModalWidget())
@@ -1292,11 +1293,15 @@ void MainWindow::restoreWindow(const QString& activationToken)
     // stale pixels of another app (issue #24). Map it iconic first, then de-iconify.
     if (!isVisible() && QGuiApplication::platformName() == QLatin1String("xcb"))
         show();
+    // Wayland: mapping already activates (QWaylandXdgSurface::requestActivateOnShow,
+    // takes the token too); activateWindow() on top asked for a 2nd token
+    const bool mapsNow = !isVisible();
     m_restoreRequested.start();
     setWindowState(state);
     show();
     raise();
-    activateWindow();
+    if (!(wayland && mapsNow))
+        activateWindow();
 }
 
 void MainWindow::updateClickNLoad()
@@ -1359,6 +1364,10 @@ void MainWindow::showEvent(QShowEvent* event)
         return;
     if (QWindow* handle = windowHandle()) {
         connect(handle, &QWindow::windowStateChanged, this, &MainWindow::onWaylandWindowStateChanged);
+        // KWin sends "suspended" for minimized windows only (not for other desktops or
+        // Show Desktop); mutter also for other workspaces, so KDE only
+        if (qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(QLatin1String("KDE"), Qt::CaseInsensitive))
+            handle->installEventFilter(this);
         m_waylandMinimizeHooked = true;
     }
 }
@@ -1401,6 +1410,10 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
     if (obj == qApp) {
         if (event->type() == QEvent::Quit)
             m_quitRequested = true;
+        return false;
+    }
+    if (event->type() == QEvent::Expose && obj == windowHandle()) {
+        onWaylandExposeChanged(windowHandle());
         return false;
     }
     if (event->type() == QEvent::MouseButtonDblClick) {
@@ -3494,10 +3507,25 @@ void MainWindow::onWaylandWindowStateChanged(Qt::WindowState state)
 {
     // Qt sends xdg_toplevel.set_minimized and at once reports the window as not
     // minimized (the protocol has no such state), so changeEvent() never sees it.
-    // This signal is the only trace. A compositor-side minimize (server-side title
-    // bar on KDE/sway, GNOME's Super+H) leaves none: the window just goes down.
+    // This signal is the only trace. A compositor-side minimize leaves none (sway,
+    // GNOME's Super+H); KWin's is caught in onWaylandExposeChanged.
     if (state != Qt::WindowMinimized || !trayInUse() || !thePrefs.minimizeToTray())
         return;
+    hideToTrayDeferred();
+}
+
+void MainWindow::onWaylandExposeChanged(QWindow* handle)
+{
+    // Runs before QWidgetWindow updates WA_Mapped: set = was exposed. hide() clears it
+    // before unmapping, and a fresh map stays unexposed until configured.
+    if (handle->isExposed() || !testAttribute(Qt::WA_Mapped) || !isVisible() || !trayInUse()
+        || !thePrefs.minimizeToTray())
+        return;
+    hideToTrayDeferred();
+}
+
+void MainWindow::hideToTrayDeferred()
+{
     // Widget state still holds maximized here; Qt's "not minimized" report comes later
     const Qt::WindowStates keep = windowState() & (Qt::WindowMaximized | Qt::WindowFullScreen);
     // Deferred: the request comes from inside the decoration's mouse handler, and

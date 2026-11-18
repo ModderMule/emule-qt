@@ -139,8 +139,9 @@ using Kind = PrefSpec::Kind;
     t << flag("autoSharedFilesPriority", "New shared files get automatic upload priority.");
     t << flag("transferFullChunks", "Upload whole chunks to one client before switching.");
     t << flag("previewPrio", "Download the first and last part first so a preview is possible.");
-    t << flag("downloadSeeking", "Preview of an unfinished download (eD2K, ed3k, BitTorrent, Usenet, "
-        "hoster): a seek in the player fetches the parts there first and waits for them.");
+    t << flag("downloadSeeking", "Preview of an unfinished download (eD2K, ed3k, BitTorrent): a seek "
+        "in the player fetches the parts there first and waits for them. Usenet and hoster previews "
+        "always do.");
     t << flag("startNextPausedFile", "Start the next paused download when one completes.");
     t << flag("startNextPausedFileSameCat", "Prefer the same category when starting the next "
               "paused download.");
@@ -287,6 +288,7 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kArchiveContents", "Publish what archives unpacked here hold, so others can see and pick their files "
                                      "before downloading (hoster.md §6.1).");
     t << advanced(flag("ed3kLanUnlimited", "ed3k peers on the LAN are not held to the upload and download limits."));
+    t << advanced(flag("ed3kAdvertiseEd2k", "Tell ed3k peers this client also speaks eD2K, while eD2K is not switched off."));
     t << flag("ed3kOwnSetsWatch", "Watch the folders of own ed3k sets: a change publishes a new version of the set.");
     t << advanced(text("ed3kCreditRpc", 4096, "JSON-RPC endpoints of the credit ledger (https URLs, separated by "
                                               "spaces; operator n = the n-th). Empty = off."));

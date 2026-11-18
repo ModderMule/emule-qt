@@ -948,21 +948,18 @@ private slots:
             const std::uint64_t size = std::uint64_t(r.resolver.data.size());
             const std::uint64_t at = size - 200 * 1024 - 5;
             if (url == free) {
-                QVERIFY(!r.join->previewTail(ids[0], at));   // seeking off: the file as it is
                 QCOMPARE(*r.join->playFrom(ids[0], at), at);
                 QTest::qWait(500);
                 QCOMPARE(r.resolver.opens, 1);
                 QCOMPARE(*r.join->playFrom(ids[0], at), at);
                 continue;
             }
-            // direct: a preview with seeking off (previewTail); premium: seeking on (playFrom)
-            QCOMPARE(url == direct ? *r.join->previewTail(ids[0], at) : *r.join->playFrom(ids[0], at), at);
+            QCOMPARE(*r.join->playFrom(ids[0], at), at);
             QCOMPARE(r.resolver.opens, 2);
             QCOMPARE(r.resolver.lastHave, at);
             QCOMPARE(r.resolver.lastPrefill.size(), qsizetype(at));   // sparse, as long as the offset
             QTRY_COMPARE_WITH_TIMEOUT(*r.join->playFrom(ids[0], at), size, 10000);
-            QCOMPARE(*r.join->previewTail(ids[0], at), size);
-            QVERIFY(!r.join->previewTail(ids[0], 1000));   // behind the stream: on disk
+            QCOMPARE(*r.join->playFrom(ids[0], 1000), r.join->item(ids[0])->done);   // behind: the stream's
             QFile f(r.join->item(ids[0])->file);
             QVERIFY(f.open(QIODevice::ReadOnly));
             QVERIFY(f.seek(qint64(at)));

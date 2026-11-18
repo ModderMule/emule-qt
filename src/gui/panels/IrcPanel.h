@@ -279,6 +279,13 @@ private:
     void setEd3kModerator(Ed3kRoomTab* tab, const QString& memberKey, bool on);
     /// The keys banned now, to lift (room.md §2.3).
     void showEd3kBans(Ed3kRoomTab* tab);
+    /// §2.6: the attach button shows in a room tab that takes media.
+    void updateAttachButton();
+    /// A picked file posted with the input line as caption (room.md §2.6).
+    void attachToRoom();
+    /// @p data (a file or a pasted image) posted to @p tab; false: refused with a message.
+    bool postMediaToRoom(Ed3kRoomTab* tab, const QByteArray& data, const QString& name);
+    void onEd3kRoomMedia(const Ipc::IpcMessage& msg);
     /// §2.5: the next post of @p tab answers @p postId.
     void replyInEd3kRoom(Ed3kRoomTab* tab, const QString& postId);
     /// §6: a member ID muted (or unmuted) here alone; kept by the daemon.
@@ -319,6 +326,7 @@ private:
     QToolButton* m_resetBtn = nullptr;
     QLineEdit* m_input = nullptr;
     QPushButton* m_sendBtn = nullptr;
+    QToolButton* m_attachBtn = nullptr;   ///< ed3k room media (§2.6)
 
     // Channel state
     QMap<QString, IrcChannel> m_channels; // keyed by lowercase name

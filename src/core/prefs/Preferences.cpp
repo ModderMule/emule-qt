@@ -639,6 +639,8 @@ struct Preferences::Data {
     bool chatUnreadBadge = true;    // red "!" on the toolbar buttons + status bar icon
     bool chatPlainLinks = false;    // links in chats as plain text (privacy)
     bool chatModStar = false;       // room moderators: gold star, else "@"
+    bool chatRoomMedia = true;      // room images shown (fetched by themselves)
+    bool chatRoomVideos = false;    // room videos fetched by themselves too
 
     // Security (extended)
     bool useSecureIdent = true;  // Enable secure identity (RSA key exchange)
@@ -864,10 +866,14 @@ struct Preferences::Data {
     int ed3kDeletedFileDays = 365;        // deleted volumes' ALIAS records kept out (alias.md §3)
     bool ed3kRoomHistoryStore = true;     // recent room posts kept on disk across restarts
     int ed3kRoomHistoryMax = 5000;        // posts kept per room (memory + disk)
+    int ed3kRoomMediaCacheMiB = 200;      // room media disk cache
+    int ed3kRoomMediaPerHour = 60;        // media fetched by itself per room and hour
     bool ed3kJointDownloads = true;    // eD2K downloads from ed3k too (§14.4)
     bool ed3kShareUsenetPosts = true;  // off = hold back, usenet.md §6
     bool ed3kArchiveContents = true;   // hoster.md §6.1 contents records
-    bool ed3kLanUnlimited = false;     // LAN peers outside the limits (lan-discovery.md §3 MAY)
+    // was: false (limits held for LAN peers too); packmule's default again
+    bool ed3kLanUnlimited = true;      // LAN peers outside the limits (lan-discovery.md §3 MAY)
+    bool ed3kAdvertiseEd2k = true;     // CAP_ED2K in the ed3k Hello while eD2K runs (Protocol.md §2)
     bool ed3kOwnSetsWatch = true;      // own sets' folders watched: a change publishes a new version
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
     QStringList ed3kDeclineUrls;       // decline lists fetched from URLs; empty = none
@@ -2806,6 +2812,13 @@ void Preferences::setEd3kRoomHistoryMax(int val)
 {
     set(&Data::ed3kRoomHistoryMax, std::clamp(val, kMinEd3kRoomHistoryMax, kMaxEd3kRoomHistoryMax));
 }
+int Preferences::ed3kRoomMediaCacheMiB() const { return get(&Data::ed3kRoomMediaCacheMiB); }
+void Preferences::setEd3kRoomMediaCacheMiB(int val)
+{
+    set(&Data::ed3kRoomMediaCacheMiB, std::clamp(val, kMinEd3kRoomMediaCacheMiB, kMaxEd3kRoomMediaCacheMiB));
+}
+int Preferences::ed3kRoomMediaPerHour() const { return get(&Data::ed3kRoomMediaPerHour); }
+void Preferences::setEd3kRoomMediaPerHour(int val) { set(&Data::ed3kRoomMediaPerHour, std::clamp(val, 0, 100000)); }
 bool Preferences::ed3kJointDownloads() const { return get(&Data::ed3kJointDownloads); }
 void Preferences::setEd3kJointDownloads(bool val) { set(&Data::ed3kJointDownloads, val); }
 bool Preferences::ed3kShareUsenetPosts() const { return get(&Data::ed3kShareUsenetPosts); }
@@ -2813,6 +2826,8 @@ void Preferences::setEd3kShareUsenetPosts(bool val) { set(&Data::ed3kShareUsenet
 bool Preferences::ed3kArchiveContents() const { return get(&Data::ed3kArchiveContents); }
 bool Preferences::ed3kLanUnlimited() const { return get(&Data::ed3kLanUnlimited); }
 void Preferences::setEd3kLanUnlimited(bool val) { set(&Data::ed3kLanUnlimited, val); }
+bool Preferences::ed3kAdvertiseEd2k() const { return get(&Data::ed3kAdvertiseEd2k); }
+void Preferences::setEd3kAdvertiseEd2k(bool val) { set(&Data::ed3kAdvertiseEd2k, val); }
 void Preferences::setEd3kArchiveContents(bool val) { set(&Data::ed3kArchiveContents, val); }
 bool Preferences::ed3kOwnSetsWatch() const { return get(&Data::ed3kOwnSetsWatch); }
 void Preferences::setEd3kOwnSetsWatch(bool val) { set(&Data::ed3kOwnSetsWatch, val); }
@@ -3717,6 +3732,10 @@ bool Preferences::chatPlainLinks() const { return get(&Data::chatPlainLinks); }
 void Preferences::setChatPlainLinks(bool val) { set(&Data::chatPlainLinks, val); }
 bool Preferences::chatModStar() const { return get(&Data::chatModStar); }
 void Preferences::setChatModStar(bool val) { set(&Data::chatModStar, val); }
+bool Preferences::chatRoomMedia() const { return get(&Data::chatRoomMedia); }
+void Preferences::setChatRoomMedia(bool val) { set(&Data::chatRoomMedia, val); }
+bool Preferences::chatRoomVideos() const { return get(&Data::chatRoomVideos); }
+void Preferences::setChatRoomVideos(bool val) { set(&Data::chatRoomVideos, val); }
 
 bool Preferences::indicateRatings() const { return get(&Data::indicateRatings); }
 
@@ -4429,6 +4448,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kShareUsenetPosts"), ed3kShareUsenetPosts());
     prefs.insert(QStringLiteral("ed3kArchiveContents"), ed3kArchiveContents());
     prefs.insert(QStringLiteral("ed3kLanUnlimited"), ed3kLanUnlimited());
+    prefs.insert(QStringLiteral("ed3kAdvertiseEd2k"), ed3kAdvertiseEd2k());
     prefs.insert(QStringLiteral("ed3kOwnSetsWatch"), ed3kOwnSetsWatch());
     prefs.insert(QStringLiteral("ed3kCreditRpc"), ed3kCreditRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
@@ -4848,6 +4868,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kShareUsenetPosts = p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true);
     m_data->ed3kArchiveContents = p.value(QStringLiteral("ed3kArchiveContents")).toBool(true);
     m_data->ed3kLanUnlimited = p.value(QStringLiteral("ed3kLanUnlimited")).toBool(m_data->ed3kLanUnlimited);
+    m_data->ed3kAdvertiseEd2k = p.value(QStringLiteral("ed3kAdvertiseEd2k")).toBool(m_data->ed3kAdvertiseEd2k);
     m_data->ed3kOwnSetsWatch = p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true);
     m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
@@ -5759,6 +5780,8 @@ bool Preferences::load(const QString& filePath)
             m_data->chatUnreadBadge = ch["chatUnreadBadge"].as<bool>(m_data->chatUnreadBadge);
             m_data->chatPlainLinks = ch["chatPlainLinks"].as<bool>(m_data->chatPlainLinks);
             m_data->chatModStar = ch["chatModStar"].as<bool>(m_data->chatModStar);
+            m_data->chatRoomMedia = ch["chatRoomMedia"].as<bool>(m_data->chatRoomMedia);
+            m_data->chatRoomVideos = ch["chatRoomVideos"].as<bool>(m_data->chatRoomVideos);
         }
 
         // Search
@@ -6281,10 +6304,14 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kRoomHistoryStore = e3["roomHistoryStore"].as<bool>(m_data->ed3kRoomHistoryStore);
             m_data->ed3kRoomHistoryMax = std::clamp(e3["roomHistoryMax"].as<int>(m_data->ed3kRoomHistoryMax),
                                                     kMinEd3kRoomHistoryMax, kMaxEd3kRoomHistoryMax);
+            m_data->ed3kRoomMediaCacheMiB = std::clamp(e3["roomMediaCacheMiB"].as<int>(m_data->ed3kRoomMediaCacheMiB),
+                                                       kMinEd3kRoomMediaCacheMiB, kMaxEd3kRoomMediaCacheMiB);
+            m_data->ed3kRoomMediaPerHour = std::clamp(e3["roomMediaPerHour"].as<int>(m_data->ed3kRoomMediaPerHour), 0, 100000);
             m_data->ed3kJointDownloads = e3["jointDownloads"].as<bool>(m_data->ed3kJointDownloads);
             m_data->ed3kShareUsenetPosts = e3["shareUsenetPosts"].as<bool>(m_data->ed3kShareUsenetPosts);
             m_data->ed3kArchiveContents = e3["archiveContents"].as<bool>(m_data->ed3kArchiveContents);
             m_data->ed3kLanUnlimited = e3["lanUnlimited"].as<bool>(m_data->ed3kLanUnlimited);
+            m_data->ed3kAdvertiseEd2k = e3["advertiseEd2k"].as<bool>(m_data->ed3kAdvertiseEd2k);
             m_data->ed3kOwnSetsWatch = e3["ownSetsWatch"].as<bool>(m_data->ed3kOwnSetsWatch);
             const auto urls = [](const YAML::Node& n) {
                 QStringList out;
@@ -7399,6 +7426,8 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "chatUnreadBadge" << YAML::Value << m_data->chatUnreadBadge;
     out << YAML::Key << "chatPlainLinks" << YAML::Value << m_data->chatPlainLinks;
     out << YAML::Key << "chatModStar" << YAML::Value << m_data->chatModStar;
+    out << YAML::Key << "chatRoomMedia" << YAML::Value << m_data->chatRoomMedia;
+    out << YAML::Key << "chatRoomVideos" << YAML::Value << m_data->chatRoomVideos;
     out << YAML::EndMap;
 
     // Search
@@ -7795,10 +7824,13 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "deletedFileDays" << YAML::Value << m_data->ed3kDeletedFileDays;
     out << YAML::Key << "roomHistoryStore" << YAML::Value << m_data->ed3kRoomHistoryStore;
     out << YAML::Key << "roomHistoryMax" << YAML::Value << m_data->ed3kRoomHistoryMax;
+    out << YAML::Key << "roomMediaCacheMiB" << YAML::Value << m_data->ed3kRoomMediaCacheMiB;
+    out << YAML::Key << "roomMediaPerHour" << YAML::Value << m_data->ed3kRoomMediaPerHour;
     out << YAML::Key << "jointDownloads" << YAML::Value << m_data->ed3kJointDownloads;
     out << YAML::Key << "shareUsenetPosts" << YAML::Value << m_data->ed3kShareUsenetPosts;
     out << YAML::Key << "archiveContents" << YAML::Value << m_data->ed3kArchiveContents;
     out << YAML::Key << "lanUnlimited" << YAML::Value << m_data->ed3kLanUnlimited;
+    out << YAML::Key << "advertiseEd2k" << YAML::Value << m_data->ed3kAdvertiseEd2k;
     out << YAML::Key << "ownSetsWatch" << YAML::Value << m_data->ed3kOwnSetsWatch;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;

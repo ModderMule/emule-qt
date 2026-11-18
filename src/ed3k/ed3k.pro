@@ -40,6 +40,7 @@ SOURCES += \
     Ed3kFilters.cpp \
     Ed3kUploads.cpp \
     Ed3kFriends.cpp \
+    Ed3kRoomMedia.cpp \
     Ed3kRooms.cpp \
     Ed3kSets.cpp \
     Ed3kPlainCopies.cpp \
@@ -83,6 +84,7 @@ HEADERS += \
     Ed3kUploads.h \
     Ed3kFfi.h \
     Ed3kFriends.h \
+    Ed3kRoomMedia.h \
     Ed3kRooms.h \
     Ed3kSets.h \
     Ed3kPlainCopies.h \

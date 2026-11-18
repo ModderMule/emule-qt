@@ -304,16 +304,12 @@ public:
 
     [[nodiscard]] QList<Item> items() const;
     [[nodiscard]] std::optional<Item> item(quint32 id) const;
-    /// Preview with seeking on: item @p id read from @p offset; the end of the bytes held from
-    /// there (@p offset: none yet). Rooted: the blocks from the first missing one go first to
-    /// ed3k peers for PartFile::kStreamFocusMs. The hoster's own link streams in file order and
-    /// is not moved; a rootless read far ahead near the end starts a tail fetch (previewTail).
-    /// nullopt: no such item.
+    /// Preview read (seeking on or off, a click asks for these bytes): item @p id read from
+    /// @p offset; the end of the bytes held from there (@p offset: none yet). Rooted: the blocks
+    /// from the first missing one go first to ed3k peers for PartFile::kStreamFocusMs. The
+    /// hoster's own link streams in file order and is not moved; a rootless read far ahead near
+    /// the end starts a tail fetch (tailHeld). nullopt: no such item.
     [[nodiscard]] std::optional<std::uint64_t> playFrom(quint32 id, std::uint64_t offset);
-    /// Preview, seeking on or off: rootless item @p id read from @p offset ahead of its stream
-    /// near the end starts a tail fetch (startTail). The end of the bytes held from there, which
-    /// a tail fetch holds or is fetching; nullopt: not such a read (the file as it is).
-    [[nodiscard]] std::optional<std::uint64_t> previewTail(quint32 id, std::uint64_t offset);
     /// The links @p id publishes or held back (SharedLink).
     [[nodiscard]] QList<SharedLink> sharedLinks(quint32 id) const;
     /// http(s) links in @p text, one per line or separated by spaces (tests).
@@ -521,7 +517,8 @@ private:
     /// Tail fetch: a player reads rootless @p e far ahead of its stream near the end (an MP4's
     /// index): a second open of the link from @p offset, its bytes copied into the item's file.
     void startTail(Entry& e, std::uint64_t offset);
-    /// previewTail() of @p e
+    /// Rootless @p e read from @p offset: the end a tail fetch holds or is fetching there (one
+    /// started if the read is near the end, ahead of the stream); nullopt: the stream's bytes.
     [[nodiscard]] std::optional<std::uint64_t> tailHeld(Entry& e, std::uint64_t offset);
     /// Whether a second open of @p e's link costs only its bytes (direct file, premium).
     [[nodiscard]] bool tailAllowed(const Entry& e) const;

@@ -45,6 +45,8 @@ public:
 
     /// The ordinal the user picked, or -1 for "whichever the daemon prefers".
     [[nodiscard]] int chosenEntry() const { return m_chosen; }
+    /// The listed name of archive member @p entry; empty: not listed.
+    [[nodiscard]] QString entryName(int entry) const;
 
     /// Apply one ListUsenetArchiveEntries reply. Public because it is the whole
     /// of this dialog worth testing without a daemon behind it.

@@ -427,6 +427,7 @@
     <ClCompile Include="webserver\WebServerMcp.cpp" />
     <ClCompile Include="webserver\WebServerTorrents.cpp" />
     <ClCompile Include="webserver\WebServerEd3k.cpp" />
+    <ClCompile Include="webserver\WebServerIndexer.cpp" />
     <ClCompile Include="webserver\StreamTokenStore.cpp" />
     <ClCompile Include="webserver\WebSessionManager.cpp" />
     <ClCompile Include="webserver\WebTemplateEngine.cpp" />
@@ -555,6 +556,8 @@
     <ClInclude Include="webserver\OpenApiWriter.h" />
     <ClInclude Include="webserver\HosterWebBackend.h" />
     <ClInclude Include="webserver\Ed3kWebBackend.h" />
+    <ClInclude Include="webserver\IndexerWebBackend.h" />
+    <ClInclude Include="webserver\ApiOpBuilder.h" />
     <ClInclude Include="webserver\MetaGrabWebBackend.h" />
     <ClInclude Include="webserver\TorrentWebBackend.h" />
     <ClInclude Include="webserver\UsenetWebBackend.h" />
@@ -626,6 +629,7 @@
     <QtMoc Include="files\PartFileSizeLookup.h" />
     <QtMoc Include="files\PartFileWriteThread.h" />
     <ClInclude Include="utils\AtomicFile.h" />
+    <ClInclude Include="utils\MediaSniff.h" />
     <ClInclude Include="utils\OwnerOnly.h" />
     <ClInclude Include="utils\SystemMemory.h" />
     <ClInclude Include="utils\BackgroundFileWriter.h" />

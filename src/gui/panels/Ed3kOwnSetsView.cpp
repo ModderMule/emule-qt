@@ -3,6 +3,7 @@
 /// @brief "My ed3k Sets" — implementation.
 
 #include "panels/Ed3kOwnSetsView.h"
+#include "dialogs/Ed3kSetsDialog.h"
 
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
@@ -126,6 +127,7 @@ void Ed3kOwnSetsView::addSetActions(QMenu* menu, const QString& id)
     menu->addAction(tr("Publish New Version"), this, [this, id] { control(1, id); })->setEnabled(have && (!paid || sold));
     menu->addAction(menuIcon("eD2kLink.ico"), tr("Copy Link"), this, [this, id] { copyLink(id); })->setEnabled(have && (!paid || sold));
     menu->addAction(tr("Rename..."), this, [this, id] { rename(id); })->setEnabled(have);
+    menu->addAction(tr("File Types for Followers..."), this, [this, id] { editExts(id); })->setEnabled(have);
     if constexpr (kEd3kSellingShown) {
         menu->addSeparator();
         // a hidden set is not sold (paid hidden sets are not offered)
@@ -260,6 +262,27 @@ void Ed3kOwnSetsView::rename(const QString& id)
                               .trimmed();
     if (ok && !title.isEmpty())
         control(3, id, title);
+}
+
+void Ed3kOwnSetsView::editExts(const QString& id)
+{
+    if (!m_ipc)
+        return;
+    QStringList now;
+    for (const auto& v : rowOf(id).value(QStringLiteral("exts")).toArray())
+        now << v.toString();
+    bool ok = false;
+    // file-set.md §5.3: followers downloading by themselves take these by default
+    const QString text = QInputDialog::getText(this, tr("File Types for Followers"),
+                                               tr("Followers who download new files by themselves take these file "
+                                                  "types by default (e.g. mkv mp3 jpg). Empty: no suggestion."),
+                                               QLineEdit::Normal, Ed3kSetsDialog::extsText(now), &ok);
+    if (!ok)
+        return;
+    m_ipc->setEd3kOwnSetExts(id, Ed3kSetsDialog::parseExts(text), [self = QPointer(this)](const IpcMessage& r) {
+        if (self && !r.fieldBool(0))
+            self->showError(tr("The file types were not set."), r);
+    });
 }
 
 void Ed3kOwnSetsView::sell(const QString& id)
