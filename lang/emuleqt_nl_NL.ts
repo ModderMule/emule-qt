@@ -1421,7 +1421,7 @@ Heeft commentaren</translation>
 <context>
     <name>Rating</name>
     <message>
-        <location filename="../src/core/utils/OtherFunctions.cpp" line="+590"/>
+        <location filename="../src/core/utils/OtherFunctions.cpp" line="+591"/>
         <source>Not rated</source>
         <translation>Niet beoordeeld</translation>
     </message>
@@ -5610,7 +5610,7 @@ Geüpload:	%12</translation>
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+236"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+237"/>
         <location line="+129"/>
         <location line="+160"/>
         <source>▸ Contacts (0)</source>
@@ -6650,7 +6650,7 @@ Een nieuwe anonieme sleutel maken?</translation>
         </translation>
     </message>
     <message>
-        <location line="+229"/>
+        <location line="+230"/>
         <location line="+316"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
@@ -14872,12 +14872,32 @@ TCP-poort: %3</translation>
 <context>
     <name>eMule::KadGraphBase</name>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+110"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+121"/>
         <source>Automatically show active searches</source>
         <translation>Automatisch actieve zoekopdrachten tonen</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+29"/>
+        <source>IP</source>
+        <translation>IP</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Resolving…</source>
+        <translation>Omzetten…</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Not found</source>
+        <translation>Niet gevonden</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hostname</source>
+        <translation>Hostnaam</translation>
+    </message>
+    <message>
+        <location line="+43"/>
         <source>Loading...</source>
         <translation>Laden...</translation>
     </message>
@@ -14886,7 +14906,7 @@ TCP-poort: %3</translation>
         <translation type="vanished">Adres</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-56"/>
         <source>Country</source>
         <translation>Land</translation>
     </message>
@@ -14912,7 +14932,7 @@ TCP-poort: %3</translation>
         <translation>Dit verzoek heeft geen doel: de contacten brengen nergens dichterbij.</translation>
     </message>
     <message>
-        <location line="+59"/>
+        <location line="+64"/>
         <source>Select an incoming search to see who asked us and which closer contacts we handed out.</source>
         <translation>Selecteer een inkomende zoekopdracht om te zien wie het vroeg en welke dichterbij gelegen contacten we doorgaven.</translation>
     </message>
@@ -14988,7 +15008,7 @@ TCP-poort: %3</translation>
         <translation type="vanished">Adres</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Protocol Version</source>
         <translation>Protocolversie</translation>
     </message>
@@ -15270,12 +15290,12 @@ TCP-poort: %3</translation>
         <translation type="vanished">Geen zoekopdracht geselecteerd</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+380"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+411"/>
         <source>Distance</source>
         <translation>Afstand</translation>
     </message>
     <message>
-        <location line="-251"/>
+        <location line="-252"/>
         <source>Time</source>
         <translation>Tijd</translation>
     </message>
@@ -15331,7 +15351,7 @@ TCP-poort: %3</translation>
         <translation>Node-ID</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>Protocol Version</source>
         <translation>Protocolversie</translation>
     </message>
@@ -15443,7 +15463,7 @@ TCP-poort: %3</translation>
 <context>
     <name>eMule::KadPanelBase</name>
     <message>
-        <location filename="../src/gui/panels/KadPanelBase.cpp" line="+101"/>
+        <location filename="../src/gui/panels/KadPanelBase.cpp" line="+110"/>
         <location line="+2"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ Contacten (0)</translation>
@@ -15451,18 +15471,18 @@ TCP-poort: %3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+265"/>
+        <location line="+268"/>
         <source>▸ Search Details</source>
         <translation>▸ Zoekdetails</translation>
     </message>
     <message>
-        <location line="-231"/>
+        <location line="-232"/>
         <source>▸ Outgoing Searches (0)</source>
         <translation>▸ Uitgaande zoekopdrachten (0)</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+207"/>
+        <location line="+208"/>
         <source>▸ Incoming Searches (0)</source>
         <translation>▸ Inkomende zoekopdrachten (0)</translation>
     </message>
@@ -16181,12 +16201,12 @@ TCP-poort: %3</translation>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+145"/>
-        <location line="+866"/>
+        <location line="+868"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-725"/>
+        <location line="-727"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt afsluiten</translation>
     </message>
@@ -16242,12 +16262,12 @@ U gebruikt %2. De website van eMule Qt openen?</translation>
     <message>
         <location line="+21"/>
         <location line="+7"/>
-        <location line="+1225"/>
+        <location line="+1236"/>
         <source>Version Check</source>
         <translation>Versiecontrole</translation>
     </message>
     <message>
-        <location line="-1231"/>
+        <location line="-1242"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>U gebruikt de nieuwste versie van eMule Qt (v%1).</translation>
     </message>
@@ -16306,12 +16326,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1743"/>
+        <location line="+1754"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1734"/>
+        <location line="-1745"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K-server: %1  (%2 gebruikers)</translation>
     </message>
@@ -16352,12 +16372,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1660"/>
+        <location line="+1671"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1616"/>
+        <location line="-1627"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: verbonden</translation>
     </message>
@@ -16427,12 +16447,12 @@ Router: %6</translation>
         <translation>verborgen (%1/%2 paden)</translation>
     </message>
     <message>
-        <location line="+2596"/>
+        <location line="+2607"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Gebruikers: %1 | Bestanden: %2</translation>
     </message>
     <message>
-        <location line="-2550"/>
+        <location line="-2559"/>
         <source>Up: %1(%2)</source>
         <translation>Uit: %1(%2)</translation>
     </message>
@@ -16561,17 +16581,17 @@ De core is losgekoppeld: hij blijft draaien met alle downloads en uploads. Open 
         <translation>Logregel</translation>
     </message>
     <message>
-        <location line="+195"/>
+        <location line="+200"/>
         <source>eMule Log</source>
         <translation>eMule-log</translation>
     </message>
     <message>
-        <location line="+101"/>
+        <location line="+104"/>
         <source>Clipboard</source>
         <translation>Klembord</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+14"/>
         <source>Open Incoming Folder...</source>
         <translation>Map met binnenkomende bestanden openen...</translation>
     </message>
@@ -16591,7 +16611,7 @@ De core is losgekoppeld: hij blijft draaien met alle downloads en uploads. Open 
         <translation>eMule-instellingenwizard voor eerste keer...</translation>
     </message>
     <message>
-        <location line="-859"/>
+        <location line="-870"/>
         <source>Unlimited</source>
         <translation>Onbeperkt</translation>
     </message>
@@ -16620,7 +16640,7 @@ Dubbelklik om te wijzigen</translation>
         <translation>Poorttest mislukt: een probe kwam niet door</translation>
     </message>
     <message>
-        <location line="+653"/>
+        <location line="+664"/>
         <source>IP Filter...</source>
         <translation>IP-filter...</translation>
     </message>
@@ -24827,13 +24847,13 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <location line="+1278"/>
         <location line="+21"/>
         <location line="+626"/>
-        <location line="+1562"/>
+        <location line="+1565"/>
         <location line="+0"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
     <message>
-        <location line="-3467"/>
+        <location line="-3470"/>
         <source>Close All Searches</source>
         <translation>Alle zoekopdrachten sluiten</translation>
     </message>
@@ -25253,13 +25273,13 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2188"/>
+        <location line="+2191"/>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
     <message>
-        <location line="-2188"/>
-        <location line="+2188"/>
+        <location line="-2191"/>
+        <location line="+2191"/>
         <source>Paused</source>
         <translation>Gepauzeerd</translation>
     </message>
@@ -25272,7 +25292,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation type="vanished">Torrent downloaden</translation>
     </message>
     <message>
-        <location line="-2319"/>
+        <location line="-2322"/>
         <location line="+150"/>
         <source>Save Torrent File...</source>
         <translation>Torrentbestand opslaan...</translation>
@@ -25862,7 +25882,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+271"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+272"/>
         <source>Invalid URL: %1</source>
         <translation>Ongeldige URL: %1</translation>
     </message>
@@ -25904,12 +25924,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
     </message>
     <message>
         <location line="+2"/>
-        <location line="+451"/>
+        <location line="+452"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-398"/>
+        <location line="-399"/>
         <source>Connect To</source>
         <translation>Verbinden met</translation>
     </message>
@@ -25925,12 +25945,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
     </message>
     <message>
         <location line="+1"/>
-        <location line="+567"/>
+        <location line="+559"/>
         <source>Normal</source>
         <translation>Normaal</translation>
     </message>
     <message>
-        <location line="-566"/>
+        <location line="-558"/>
         <source>High</source>
         <translation>Hoog</translation>
     </message>
@@ -25990,7 +26010,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Zoeken...</translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+56"/>
         <source>▸ Servers (0)</source>
         <translation>▸ Servers (0)</translation>
     </message>
@@ -26011,12 +26031,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
     </message>
     <message>
         <location line="+10"/>
-        <location line="+172"/>
+        <location line="+163"/>
         <source>Name:</source>
         <translation>Naam:</translation>
     </message>
     <message>
-        <location line="-165"/>
+        <location line="-156"/>
         <source>Add to list</source>
         <translation>Toevoegen aan lijst</translation>
     </message>
@@ -26041,7 +26061,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Mijn info</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+74"/>
         <source>eD2K Network</source>
         <translation>eD2K-netwerk</translation>
     </message>
@@ -31859,95 +31879,95 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     </message>
     <message>
         <location line="-358"/>
-        <location line="+2327"/>
+        <location line="+2330"/>
         <location line="+198"/>
         <source>Low</source>
         <translation>Laag</translation>
     </message>
     <message>
-        <location line="-2524"/>
-        <location line="+2326"/>
+        <location line="-2527"/>
+        <location line="+2329"/>
         <location line="+199"/>
         <source>Normal</source>
         <translation>Normaal</translation>
     </message>
     <message>
-        <location line="-2524"/>
-        <location line="+2325"/>
+        <location line="-2527"/>
+        <location line="+2328"/>
         <location line="+200"/>
         <source>High</source>
         <translation>Hoog</translation>
     </message>
     <message>
-        <location line="-2521"/>
-        <location line="+2525"/>
+        <location line="-2524"/>
+        <location line="+2528"/>
         <source>Very Low</source>
         <translation>Zeer laag</translation>
     </message>
     <message>
-        <location line="-2523"/>
-        <location line="+2525"/>
+        <location line="-2526"/>
+        <location line="+2528"/>
         <source>Very High</source>
         <translation>Zeer hoog</translation>
     </message>
     <message>
-        <location line="-2523"/>
-        <location line="+2526"/>
+        <location line="-2526"/>
+        <location line="+2529"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2515"/>
+        <location line="-2518"/>
         <location line="+311"/>
         <location line="+532"/>
-        <location line="+1477"/>
+        <location line="+1480"/>
         <source>Pause</source>
         <translation>Pauzeren</translation>
     </message>
     <message>
-        <location line="-2311"/>
+        <location line="-2314"/>
         <location line="+302"/>
         <location line="+538"/>
-        <location line="+1473"/>
+        <location line="+1476"/>
         <source>Stop</source>
         <translation>Stoppen</translation>
     </message>
     <message>
-        <location line="-2304"/>
+        <location line="-2307"/>
         <location line="+293"/>
         <location line="+544"/>
-        <location line="+1469"/>
+        <location line="+1472"/>
         <source>Resume</source>
         <translation>Hervatten</translation>
     </message>
     <message>
-        <location line="-2013"/>
+        <location line="-2016"/>
         <location line="+550"/>
-        <location line="+1465"/>
+        <location line="+1468"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
     <message>
-        <location line="-2283"/>
+        <location line="-2286"/>
         <location line="+266"/>
         <location line="+555"/>
-        <location line="+693"/>
+        <location line="+696"/>
         <source>Open File</source>
         <translation>Bestand openen</translation>
     </message>
     <message>
-        <location line="-1505"/>
+        <location line="-1508"/>
         <location line="+2"/>
         <location line="+255"/>
         <location line="+20"/>
         <location line="+549"/>
-        <location line="+737"/>
+        <location line="+740"/>
         <source>Preview</source>
         <translation>Voorvertoning</translation>
     </message>
     <message>
-        <location line="-1555"/>
+        <location line="-1558"/>
         <location line="+249"/>
         <location line="+20"/>
         <source>Preview with</source>
@@ -31967,7 +31987,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <location line="+9"/>
         <location line="+215"/>
         <location line="+21"/>
-        <location line="+2233"/>
+        <location line="+2236"/>
         <location line="+18"/>
         <location line="+123"/>
         <location line="+16"/>
@@ -31975,7 +31995,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Details...</translation>
     </message>
     <message>
-        <location line="-2617"/>
+        <location line="-2620"/>
         <location line="+206"/>
         <location line="+21"/>
         <source>Comments...</source>
@@ -31988,14 +32008,14 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1596"/>
+        <location line="+1599"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Delen importeren in bestand...</translation>
     </message>
     <message>
-        <location line="-1602"/>
+        <location line="-1605"/>
         <location line="+185"/>
         <location line="+17"/>
         <source>Mass Rename...</source>
@@ -32022,19 +32042,19 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1494"/>
+        <location line="+1497"/>
         <location line="+1489"/>
         <source>Source Limit...</source>
         <translation>Bronlimiet...</translation>
     </message>
     <message>
-        <location line="-2980"/>
-        <location line="+2976"/>
+        <location line="-2983"/>
+        <location line="+2979"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>Alle A4AF-bronnen naar dit bestand wisselen</translation>
     </message>
     <message>
-        <location line="-2974"/>
+        <location line="-2977"/>
         <source>cannot swap sources.</source>
         <translation>bronnen kunnen niet worden gewisseld.</translation>
     </message>
@@ -32057,7 +32077,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>eD2K-links...</translation>
     </message>
     <message>
-        <location line="+2902"/>
+        <location line="+2905"/>
         <source>Paste eD2K Links</source>
         <translation>eD2K-verwijzingen plakken</translation>
     </message>
@@ -32066,9 +32086,9 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation type="vanished">ed3k-sets...</translation>
     </message>
     <message>
-        <location line="-2867"/>
+        <location line="-2870"/>
         <location line="+69"/>
-        <location line="+2241"/>
+        <location line="+2244"/>
         <location line="+17"/>
         <location line="+113"/>
         <location line="+93"/>
@@ -32076,7 +32096,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Zoeken...</translation>
     </message>
     <message>
-        <location line="-2525"/>
+        <location line="-2528"/>
         <location line="+64"/>
         <location line="+7"/>
         <location line="+10"/>
@@ -32147,12 +32167,12 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     </message>
     <message>
         <location line="+11"/>
-        <location line="+1466"/>
+        <location line="+1469"/>
         <source>Priority</source>
         <translation>Prioriteit</translation>
     </message>
     <message>
-        <location line="-1429"/>
+        <location line="-1432"/>
         <source>Open Folder</source>
         <translation>Map openen</translation>
     </message>
@@ -32215,7 +32235,7 @@ De bronnen zien dan het adres van deze node; wachtrijplaatsen gaan verloren.</nu
         <translation>ed3k-sleutel</translation>
     </message>
     <message>
-        <location line="+345"/>
+        <location line="+348"/>
         <source>not connected</source>
         <translation>niet verbonden</translation>
     </message>

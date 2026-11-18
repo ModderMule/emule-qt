@@ -45,8 +45,9 @@ public:
     /// 0 = Outgoing Searches, 1 = Incoming Searches.
     void switchToBottomTab(int index);
 
-    /// Display options changed: "Resolve downloaders' hostnames" for the contacts.
-    virtual void applyDisplayOptions() = 0;
+    /// Display options changed: "Resolve downloaders' hostnames" for the graph tips;
+    /// subclasses add their contacts.
+    virtual void applyDisplayOptions();
 
 protected:
     explicit KadPanelBase(QWidget* parent = nullptr);

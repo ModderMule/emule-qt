@@ -130,6 +130,7 @@ Ed3kKadPanel::~Ed3kKadPanel() = default;
 
 void Ed3kKadPanel::applyDisplayOptions()
 {
+    KadPanelBase::applyDisplayOptions();
     m_contactsModel->setResolveHostnames(theUiState.resolvePeerHostnames());
 }
 

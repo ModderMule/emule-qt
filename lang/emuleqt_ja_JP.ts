@@ -1483,7 +1483,7 @@ Download it again?</source>
 <context>
     <name>Rating</name>
     <message>
-        <location filename="../src/core/utils/OtherFunctions.cpp" line="+590"/>
+        <location filename="../src/core/utils/OtherFunctions.cpp" line="+591"/>
         <source>Not rated</source>
         <translation>未評価</translation>
     </message>
@@ -5860,7 +5860,7 @@ ED2K ハッシュ:	%2
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+236"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+237"/>
         <location line="+129"/>
         <location line="+160"/>
         <source>▸ Contacts (0)</source>
@@ -6896,7 +6896,7 @@ Make a new anonymous key?</source>
         </translation>
     </message>
     <message>
-        <location line="+229"/>
+        <location line="+230"/>
         <location line="+316"/>
         <source>Connect</source>
         <translation>接続</translation>
@@ -15194,12 +15194,32 @@ TCP ポート: %3</translation>
 <context>
     <name>eMule::KadGraphBase</name>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+110"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+121"/>
         <source>Automatically show active searches</source>
         <translation>アクティブな検索を自動表示</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+29"/>
+        <source>IP</source>
+        <translation>IP</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Resolving…</source>
+        <translation>解決中…</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Not found</source>
+        <translation>見つかりません</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hostname</source>
+        <translation>ホスト名</translation>
+    </message>
+    <message>
+        <location line="+43"/>
         <source>Loading...</source>
         <translation>読み込み中...</translation>
     </message>
@@ -15208,7 +15228,7 @@ TCP ポート: %3</translation>
         <translation type="vanished">アドレス</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-56"/>
         <source>Country</source>
         <translation>国</translation>
     </message>
@@ -15233,7 +15253,7 @@ TCP ポート: %3</translation>
         <translation>この要求にはターゲットがありません。連絡先はどこにも近づきません。</translation>
     </message>
     <message>
-        <location line="+59"/>
+        <location line="+64"/>
         <source>Select an incoming search to see who asked us and which closer contacts we handed out.</source>
         <translation>受信検索を選択すると、誰が問い合わせ、どのより近い連絡先を渡したかが表示されます。</translation>
     </message>
@@ -15309,7 +15329,7 @@ TCP ポート: %3</translation>
         <translation type="vanished">アドレス</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Protocol Version</source>
         <translation>プロトコルバージョン</translation>
     </message>
@@ -15584,12 +15604,12 @@ TCP ポート: %3</translation>
         <translation type="vanished">検索が選択されていません</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+380"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+411"/>
         <source>Distance</source>
         <translation>距離</translation>
     </message>
     <message>
-        <location line="-251"/>
+        <location line="-252"/>
         <source>Time</source>
         <translation>時間</translation>
     </message>
@@ -15645,7 +15665,7 @@ TCP ポート: %3</translation>
         <translation>ノード ID</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>Protocol Version</source>
         <translation>プロトコルバージョン</translation>
     </message>
@@ -15773,7 +15793,7 @@ TCP ポート: %3</translation>
 <context>
     <name>eMule::KadPanelBase</name>
     <message>
-        <location filename="../src/gui/panels/KadPanelBase.cpp" line="+101"/>
+        <location filename="../src/gui/panels/KadPanelBase.cpp" line="+110"/>
         <location line="+2"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ 連絡先 (0)</translation>
@@ -15781,18 +15801,18 @@ TCP ポート: %3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+265"/>
+        <location line="+268"/>
         <source>▸ Search Details</source>
         <translation>▸ 検索詳細</translation>
     </message>
     <message>
-        <location line="-231"/>
+        <location line="-232"/>
         <source>▸ Outgoing Searches (0)</source>
         <translation>▸ 送信検索 (0)</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+207"/>
+        <location line="+208"/>
         <source>▸ Incoming Searches (0)</source>
         <translation>▸ 受信検索 (0)</translation>
     </message>
@@ -16509,12 +16529,12 @@ TCP ポート: %3</translation>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+145"/>
-        <location line="+866"/>
+        <location line="+868"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-676"/>
+        <location line="-678"/>
         <location line="+31"/>
         <source>New Version Available</source>
         <translation>新しいバージョンが利用可能</translation>
@@ -16536,12 +16556,12 @@ TCP ポート: %3</translation>
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1743"/>
+        <location line="+1754"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：未接続</translation>
     </message>
     <message>
-        <location line="-1657"/>
+        <location line="-1668"/>
         <source>Kad: Connected</source>
         <translation>Kad：接続済み</translation>
     </message>
@@ -16557,7 +16577,7 @@ TCP ポート: %3</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1660"/>
+        <location line="+1671"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：未接続</translation>
     </message>
@@ -16607,14 +16627,14 @@ TCP ポート: %3</translation>
         <translation>機能</translation>
     </message>
     <message>
-        <location line="-1229"/>
+        <location line="-1240"/>
         <location line="+7"/>
-        <location line="+1225"/>
+        <location line="+1236"/>
         <source>Version Check</source>
         <translation>バージョン確認</translation>
     </message>
     <message>
-        <location line="-1337"/>
+        <location line="-1348"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt を終了</translation>
     </message>
@@ -16829,7 +16849,7 @@ IPv6：%5
         <translation>秘匿中 (%1/%2 経路)</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+48"/>
         <source>Up: %1(%2)</source>
         <translation>アップ: %1(%2)</translation>
     </message>
@@ -16958,17 +16978,17 @@ The core is detached: it keeps running with all downloads and uploads. Open eMul
         <translation>ログエントリ</translation>
     </message>
     <message>
-        <location line="+195"/>
+        <location line="+200"/>
         <source>eMule Log</source>
         <translation>eMule ログ</translation>
     </message>
     <message>
-        <location line="+101"/>
+        <location line="+104"/>
         <source>Clipboard</source>
         <translation>クリップボード</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+22"/>
         <source>Open Downloads Folder in Browser</source>
         <translation>ダウンロードフォルダをブラウザで開く</translation>
     </message>
@@ -25257,13 +25277,13 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <location line="+1278"/>
         <location line="+21"/>
         <location line="+626"/>
-        <location line="+1562"/>
+        <location line="+1565"/>
         <location line="+0"/>
         <source>Download</source>
         <translation>ダウンロード</translation>
     </message>
     <message>
-        <location line="-3467"/>
+        <location line="-3470"/>
         <source>Close All Searches</source>
         <translation>すべての検索を閉じる</translation>
     </message>
@@ -25651,13 +25671,13 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
     </message>
     <message>
         <location line="+107"/>
-        <location line="+2188"/>
+        <location line="+2191"/>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
     <message>
-        <location line="-2188"/>
-        <location line="+2188"/>
+        <location line="-2191"/>
+        <location line="+2191"/>
         <source>Paused</source>
         <translation>一時停止</translation>
     </message>
@@ -25670,7 +25690,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation type="vanished">Torrent をダウンロード</translation>
     </message>
     <message>
-        <location line="-2316"/>
+        <location line="-2319"/>
         <location line="+153"/>
         <source>Copy Magnet Link</source>
         <translation>マグネットリンクをコピー</translation>
@@ -26304,7 +26324,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+332"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+333"/>
         <location line="+71"/>
         <source>Disconnect</source>
         <translation>切断</translation>
@@ -26316,12 +26336,12 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
     </message>
     <message>
         <location line="+2"/>
-        <location line="+451"/>
+        <location line="+452"/>
         <source>Connect</source>
         <translation>接続</translation>
     </message>
     <message>
-        <location line="-516"/>
+        <location line="-517"/>
         <source>Invalid URL: %1</source>
         <translation>無効なURL: %1</translation>
     </message>
@@ -26351,7 +26371,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>server.met をダウンロードし、&quot;%1&quot; を展開しました (%2 バイト)。解析中...</translation>
     </message>
     <message>
-        <location line="+661"/>
+        <location line="+653"/>
         <location line="+2"/>
         <location line="+25"/>
         <location line="+41"/>
@@ -26449,7 +26469,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>▸ サーバー (%1)</translation>
     </message>
     <message>
-        <location line="-695"/>
+        <location line="-687"/>
         <source>Connect To</source>
         <translation>接続先</translation>
     </message>
@@ -26465,12 +26485,12 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
     </message>
     <message>
         <location line="+1"/>
-        <location line="+567"/>
+        <location line="+559"/>
         <source>Normal</source>
         <translation>通常</translation>
     </message>
     <message>
-        <location line="-566"/>
+        <location line="-558"/>
         <source>High</source>
         <translation>高い</translation>
     </message>
@@ -26530,7 +26550,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>検索...</translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+56"/>
         <source>▸ Servers (0)</source>
         <translation>▸ サーバー (0)</translation>
     </message>
@@ -26551,12 +26571,12 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
     </message>
     <message>
         <location line="+10"/>
-        <location line="+172"/>
+        <location line="+163"/>
         <source>Name:</source>
         <translation>名前：</translation>
     </message>
     <message>
-        <location line="-165"/>
+        <location line="-156"/>
         <source>Add to list</source>
         <translation>リストに追加</translation>
     </message>
@@ -26581,7 +26601,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>マイ情報</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+74"/>
         <source>eD2K Network</source>
         <translation>eD2K ネットワーク</translation>
     </message>
@@ -32541,77 +32561,77 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="-358"/>
-        <location line="+2327"/>
+        <location line="+2330"/>
         <location line="+198"/>
         <source>Low</source>
         <translation>低い</translation>
     </message>
     <message>
-        <location line="-2524"/>
-        <location line="+2326"/>
+        <location line="-2527"/>
+        <location line="+2329"/>
         <location line="+199"/>
         <source>Normal</source>
         <translation>通常</translation>
     </message>
     <message>
-        <location line="-2524"/>
-        <location line="+2325"/>
+        <location line="-2527"/>
+        <location line="+2328"/>
         <location line="+200"/>
         <source>High</source>
         <translation>高い</translation>
     </message>
     <message>
-        <location line="-2521"/>
-        <location line="+2525"/>
+        <location line="-2524"/>
+        <location line="+2528"/>
         <source>Very Low</source>
         <translation>非常に低い</translation>
     </message>
     <message>
-        <location line="-2523"/>
-        <location line="+2525"/>
+        <location line="-2526"/>
+        <location line="+2528"/>
         <source>Very High</source>
         <translation>非常に高い</translation>
     </message>
     <message>
-        <location line="-2523"/>
-        <location line="+2526"/>
+        <location line="-2526"/>
+        <location line="+2529"/>
         <source>Auto</source>
         <translation>自動</translation>
     </message>
     <message>
-        <location line="-2515"/>
+        <location line="-2518"/>
         <location line="+311"/>
         <location line="+532"/>
-        <location line="+1477"/>
+        <location line="+1480"/>
         <source>Pause</source>
         <translation>一時停止</translation>
     </message>
     <message>
-        <location line="-2311"/>
+        <location line="-2314"/>
         <location line="+302"/>
         <location line="+538"/>
-        <location line="+1473"/>
+        <location line="+1476"/>
         <source>Stop</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location line="-2304"/>
+        <location line="-2307"/>
         <location line="+293"/>
         <location line="+544"/>
-        <location line="+1469"/>
+        <location line="+1472"/>
         <source>Resume</source>
         <translation>再開</translation>
     </message>
     <message>
-        <location line="-2013"/>
+        <location line="-2016"/>
         <location line="+550"/>
-        <location line="+1465"/>
+        <location line="+1468"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-2266"/>
+        <location line="-2269"/>
         <location line="+249"/>
         <location line="+20"/>
         <source>Preview with</source>
@@ -32634,14 +32654,14 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1596"/>
+        <location line="+1599"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>ファイルにパートをインポート...</translation>
     </message>
     <message>
-        <location line="-1602"/>
+        <location line="-1605"/>
         <location line="+185"/>
         <location line="+17"/>
         <source>Mass Rename...</source>
@@ -32661,19 +32681,19 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1494"/>
+        <location line="+1497"/>
         <location line="+1489"/>
         <source>Source Limit...</source>
         <translation>ソース上限...</translation>
     </message>
     <message>
-        <location line="-2980"/>
-        <location line="+2976"/>
+        <location line="-2983"/>
+        <location line="+2979"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>すべての A4AF ソースをこのファイルに切り替え</translation>
     </message>
     <message>
-        <location line="-2974"/>
+        <location line="-2977"/>
         <source>cannot swap sources.</source>
         <translation>ソースを切り替えられません。</translation>
     </message>
@@ -32752,7 +32772,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>ed3k キー</translation>
     </message>
     <message>
-        <location line="+345"/>
+        <location line="+348"/>
         <source>not connected</source>
         <translation>未接続</translation>
     </message>
@@ -32915,28 +32935,28 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="vanished">ファイル名:</translation>
     </message>
     <message>
-        <location line="-2994"/>
+        <location line="-2997"/>
         <location line="+266"/>
         <location line="+555"/>
-        <location line="+693"/>
+        <location line="+696"/>
         <source>Open File</source>
         <translation>ファイルを開く</translation>
     </message>
     <message>
-        <location line="-1505"/>
+        <location line="-1508"/>
         <location line="+2"/>
         <location line="+255"/>
         <location line="+20"/>
         <location line="+549"/>
-        <location line="+737"/>
+        <location line="+740"/>
         <source>Preview</source>
         <translation>プレビュー</translation>
     </message>
     <message>
-        <location line="-1522"/>
+        <location line="-1525"/>
         <location line="+215"/>
         <location line="+21"/>
-        <location line="+2233"/>
+        <location line="+2236"/>
         <location line="+18"/>
         <location line="+123"/>
         <location line="+16"/>
@@ -32944,7 +32964,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>詳細...</translation>
     </message>
     <message>
-        <location line="-2617"/>
+        <location line="-2620"/>
         <location line="+206"/>
         <location line="+21"/>
         <source>Comments...</source>
@@ -32963,14 +32983,14 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>eD2K リンク...</translation>
     </message>
     <message>
-        <location line="+2902"/>
+        <location line="+2905"/>
         <source>Paste eD2K Links</source>
         <translation>eD2K リンクを貼り付け</translation>
     </message>
     <message>
-        <location line="-2867"/>
+        <location line="-2870"/>
         <location line="+69"/>
-        <location line="+2241"/>
+        <location line="+2244"/>
         <location line="+17"/>
         <location line="+113"/>
         <location line="+93"/>
@@ -32978,7 +32998,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>検索...</translation>
     </message>
     <message>
-        <location line="-2525"/>
+        <location line="-2528"/>
         <location line="+64"/>
         <location line="+7"/>
         <location line="+10"/>
@@ -33009,7 +33029,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="vanished">すべて</translation>
     </message>
     <message>
-        <location line="+1320"/>
+        <location line="+1323"/>
         <source>Uploading</source>
         <translation>アップロード中</translation>
     </message>
@@ -33029,7 +33049,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>既知のクライアント</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1439"/>
         <source>Clients on queue:   0</source>
         <translation>キュー内のクライアント：   0</translation>
     </message>
@@ -33041,12 +33061,12 @@ The sources then see this node&apos;s address; queue places are lost.</source>
     </message>
     <message>
         <location line="-83"/>
-        <location line="+1466"/>
+        <location line="+1469"/>
         <source>Priority</source>
         <translation>優先度</translation>
     </message>
     <message>
-        <location line="-1429"/>
+        <location line="-1432"/>
         <source>Open Folder</source>
         <translation>フォルダを開く</translation>
     </message>
@@ -33076,7 +33096,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>検索</translation>
     </message>
     <message>
-        <location line="+649"/>
+        <location line="+652"/>
         <location line="+24"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>プレビューは利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>

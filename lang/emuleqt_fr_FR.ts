@@ -1493,7 +1493,7 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>Rating</name>
     <message>
-        <location filename="../src/core/utils/OtherFunctions.cpp" line="+590"/>
+        <location filename="../src/core/utils/OtherFunctions.cpp" line="+591"/>
         <source>Not rated</source>
         <translation>Non évalué</translation>
     </message>
@@ -5887,7 +5887,7 @@ Envoyé :	%12</translation>
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+236"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+237"/>
         <location line="+129"/>
         <location line="+160"/>
         <source>▸ Contacts (0)</source>
@@ -6927,7 +6927,7 @@ Créer une nouvelle clé anonyme ?</translation>
         </translation>
     </message>
     <message>
-        <location line="+229"/>
+        <location line="+230"/>
         <location line="+316"/>
         <source>Connect</source>
         <translation>Connecter</translation>
@@ -15253,12 +15253,32 @@ Port TCP : %3</translation>
 <context>
     <name>eMule::KadGraphBase</name>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+110"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+121"/>
         <source>Automatically show active searches</source>
         <translation>Montrer automatiquement les recherches en cours</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+29"/>
+        <source>IP</source>
+        <translation>IP</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Resolving…</source>
+        <translation>Résolution…</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Not found</source>
+        <translation>Introuvable</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hostname</source>
+        <translation>Nom d&apos;hôte</translation>
+    </message>
+    <message>
+        <location line="+43"/>
         <source>Loading...</source>
         <translation>Chargement...</translation>
     </message>
@@ -15267,7 +15287,7 @@ Port TCP : %3</translation>
         <translation type="vanished">Adresse</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-56"/>
         <source>Country</source>
         <translation>Pays</translation>
     </message>
@@ -15293,7 +15313,7 @@ Port TCP : %3</translation>
         <translation>Cette requête n&apos;a pas de cible : ses contacts ne mènent nulle part.</translation>
     </message>
     <message>
-        <location line="+59"/>
+        <location line="+64"/>
         <source>Select an incoming search to see who asked us and which closer contacts we handed out.</source>
         <translation>Sélectionnez une recherche entrante pour voir qui nous a interrogés et quels contacts plus proches nous avons fournis.</translation>
     </message>
@@ -15369,7 +15389,7 @@ Port TCP : %3</translation>
         <translation type="vanished">Adresse</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Protocol Version</source>
         <translation>Version du Protocole</translation>
     </message>
@@ -15651,12 +15671,12 @@ Port TCP : %3</translation>
         <translation type="vanished">Aucune recherche sélectionnée</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+380"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+411"/>
         <source>Distance</source>
         <translation>Distance</translation>
     </message>
     <message>
-        <location line="-251"/>
+        <location line="-252"/>
         <source>Time</source>
         <translation>Temps</translation>
     </message>
@@ -15712,7 +15732,7 @@ Port TCP : %3</translation>
         <translation>ID du nœud</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>Protocol Version</source>
         <translation>Version du Protocole</translation>
     </message>
@@ -15840,7 +15860,7 @@ Port TCP : %3</translation>
 <context>
     <name>eMule::KadPanelBase</name>
     <message>
-        <location filename="../src/gui/panels/KadPanelBase.cpp" line="+101"/>
+        <location filename="../src/gui/panels/KadPanelBase.cpp" line="+110"/>
         <location line="+2"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ Contacts (0)</translation>
@@ -15848,18 +15868,18 @@ Port TCP : %3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+265"/>
+        <location line="+268"/>
         <source>▸ Search Details</source>
         <translation>▸ Détails de recherche</translation>
     </message>
     <message>
-        <location line="-231"/>
+        <location line="-232"/>
         <source>▸ Outgoing Searches (0)</source>
         <translation>▸ Recherches sortantes (0)</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+207"/>
+        <location line="+208"/>
         <source>▸ Incoming Searches (0)</source>
         <translation>▸ Recherches entrantes (0)</translation>
     </message>
@@ -16582,12 +16602,12 @@ Port TCP : %3</translation>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+145"/>
-        <location line="+866"/>
+        <location line="+868"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-676"/>
+        <location line="-678"/>
         <location line="+31"/>
         <source>New Version Available</source>
         <translation>Nouvelle version disponible</translation>
@@ -16609,12 +16629,12 @@ Port TCP : %3</translation>
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1743"/>
+        <location line="+1754"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K : Déconnecté</translation>
     </message>
     <message>
-        <location line="-1657"/>
+        <location line="-1668"/>
         <source>Kad: Connected</source>
         <translation>Kad : Connecté</translation>
     </message>
@@ -16630,7 +16650,7 @@ Port TCP : %3</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1660"/>
+        <location line="+1671"/>
         <source>Kad: Disconnected</source>
         <translation>Kad : Déconnecté</translation>
     </message>
@@ -16680,14 +16700,14 @@ Port TCP : %3</translation>
         <translation>Fonctionnalités</translation>
     </message>
     <message>
-        <location line="-1229"/>
+        <location line="-1240"/>
         <location line="+7"/>
-        <location line="+1225"/>
+        <location line="+1236"/>
         <source>Version Check</source>
         <translation>Vérification de version</translation>
     </message>
     <message>
-        <location line="-1337"/>
+        <location line="-1348"/>
         <source>Quit eMule Qt</source>
         <translation>Quitter eMule Qt</translation>
     </message>
@@ -16902,7 +16922,7 @@ Routeur : %6</translation>
         <translation>masqué (%1/%2 chemins)</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+48"/>
         <source>Up: %1(%2)</source>
         <translation>E : %1(%2)</translation>
     </message>
@@ -17031,17 +17051,17 @@ Le noyau est détaché : il continue de tourner avec tous les téléchargements 
         <translation>Entrée de journal</translation>
     </message>
     <message>
-        <location line="+195"/>
+        <location line="+200"/>
         <source>eMule Log</source>
         <translation>Journal eMule</translation>
     </message>
     <message>
-        <location line="+101"/>
+        <location line="+104"/>
         <source>Clipboard</source>
         <translation>Presse-papiers</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+22"/>
         <source>Open Downloads Folder in Browser</source>
         <translation>Ouvrir le dossier des téléchargements dans le navigateur</translation>
     </message>
@@ -25339,13 +25359,13 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <location line="+1278"/>
         <location line="+21"/>
         <location line="+626"/>
-        <location line="+1562"/>
+        <location line="+1565"/>
         <location line="+0"/>
         <source>Download</source>
         <translation>Téléchargement</translation>
     </message>
     <message>
-        <location line="-3467"/>
+        <location line="-3470"/>
         <source>Close All Searches</source>
         <translation>Fermer toutes les recherches</translation>
     </message>
@@ -25733,13 +25753,13 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
     </message>
     <message>
         <location line="+107"/>
-        <location line="+2188"/>
+        <location line="+2191"/>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
     <message>
-        <location line="-2188"/>
-        <location line="+2188"/>
+        <location line="-2191"/>
+        <location line="+2191"/>
         <source>Paused</source>
         <translation>En pause</translation>
     </message>
@@ -25752,7 +25772,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation type="vanished">Télécharger le torrent</translation>
     </message>
     <message>
-        <location line="-2316"/>
+        <location line="-2319"/>
         <location line="+153"/>
         <source>Copy Magnet Link</source>
         <translation>Copier le lien magnet</translation>
@@ -26387,7 +26407,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+332"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+333"/>
         <location line="+71"/>
         <source>Disconnect</source>
         <translation>Déconnecter</translation>
@@ -26399,12 +26419,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
     </message>
     <message>
         <location line="+2"/>
-        <location line="+451"/>
+        <location line="+452"/>
         <source>Connect</source>
         <translation>Connecter</translation>
     </message>
     <message>
-        <location line="-516"/>
+        <location line="-517"/>
         <source>Invalid URL: %1</source>
         <translation>URL invalide : %1</translation>
     </message>
@@ -26434,7 +26454,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>server.met téléchargé, &quot;%1&quot; décompressé (%2 octets). Analyse en cours...</translation>
     </message>
     <message>
-        <location line="+661"/>
+        <location line="+653"/>
         <location line="+2"/>
         <location line="+25"/>
         <location line="+41"/>
@@ -26532,7 +26552,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>▸ Serveurs (%1)</translation>
     </message>
     <message>
-        <location line="-695"/>
+        <location line="-687"/>
         <source>Connect To</source>
         <translation>Se connecter à</translation>
     </message>
@@ -26548,12 +26568,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
     </message>
     <message>
         <location line="+1"/>
-        <location line="+567"/>
+        <location line="+559"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-566"/>
+        <location line="-558"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
@@ -26613,7 +26633,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Rechercher...</translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+56"/>
         <source>▸ Servers (0)</source>
         <translation>▸ Serveurs (0)</translation>
     </message>
@@ -26634,12 +26654,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
     </message>
     <message>
         <location line="+10"/>
-        <location line="+172"/>
+        <location line="+163"/>
         <source>Name:</source>
         <translation>Nom :</translation>
     </message>
     <message>
-        <location line="-165"/>
+        <location line="-156"/>
         <source>Add to list</source>
         <translation>Ajouter à la liste</translation>
     </message>
@@ -26664,7 +26684,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Mes infos</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+74"/>
         <source>eD2K Network</source>
         <translation>Réseau eD2K</translation>
     </message>
@@ -32649,77 +32669,77 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
     </message>
     <message>
         <location line="-358"/>
-        <location line="+2327"/>
+        <location line="+2330"/>
         <location line="+198"/>
         <source>Low</source>
         <translation>Basse</translation>
     </message>
     <message>
-        <location line="-2524"/>
-        <location line="+2326"/>
+        <location line="-2527"/>
+        <location line="+2329"/>
         <location line="+199"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-2524"/>
-        <location line="+2325"/>
+        <location line="-2527"/>
+        <location line="+2328"/>
         <location line="+200"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
     <message>
-        <location line="-2521"/>
-        <location line="+2525"/>
+        <location line="-2524"/>
+        <location line="+2528"/>
         <source>Very Low</source>
         <translation>Très basse</translation>
     </message>
     <message>
-        <location line="-2523"/>
-        <location line="+2525"/>
+        <location line="-2526"/>
+        <location line="+2528"/>
         <source>Very High</source>
         <translation>Très haute</translation>
     </message>
     <message>
-        <location line="-2523"/>
-        <location line="+2526"/>
+        <location line="-2526"/>
+        <location line="+2529"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2515"/>
+        <location line="-2518"/>
         <location line="+311"/>
         <location line="+532"/>
-        <location line="+1477"/>
+        <location line="+1480"/>
         <source>Pause</source>
         <translation>Pause</translation>
     </message>
     <message>
-        <location line="-2311"/>
+        <location line="-2314"/>
         <location line="+302"/>
         <location line="+538"/>
-        <location line="+1473"/>
+        <location line="+1476"/>
         <source>Stop</source>
         <translation>Arrêter</translation>
     </message>
     <message>
-        <location line="-2304"/>
+        <location line="-2307"/>
         <location line="+293"/>
         <location line="+544"/>
-        <location line="+1469"/>
+        <location line="+1472"/>
         <source>Resume</source>
         <translation>Reprendre</translation>
     </message>
     <message>
-        <location line="-2013"/>
+        <location line="-2016"/>
         <location line="+550"/>
-        <location line="+1465"/>
+        <location line="+1468"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
     <message>
-        <location line="-2266"/>
+        <location line="-2269"/>
         <location line="+249"/>
         <location line="+20"/>
         <source>Preview with</source>
@@ -32742,14 +32762,14 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1596"/>
+        <location line="+1599"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Importer des parties dans le fichier...</translation>
     </message>
     <message>
-        <location line="-1602"/>
+        <location line="-1605"/>
         <location line="+185"/>
         <location line="+17"/>
         <source>Mass Rename...</source>
@@ -32769,19 +32789,19 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1494"/>
+        <location line="+1497"/>
         <location line="+1489"/>
         <source>Source Limit...</source>
         <translation>Limite de sources...</translation>
     </message>
     <message>
-        <location line="-2980"/>
-        <location line="+2976"/>
+        <location line="-2983"/>
+        <location line="+2979"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>Basculer toutes les sources A4AF vers ce fichier</translation>
     </message>
     <message>
-        <location line="-2974"/>
+        <location line="-2977"/>
         <source>cannot swap sources.</source>
         <translation>impossible de basculer les sources.</translation>
     </message>
@@ -32867,7 +32887,7 @@ Les sources voient alors l&apos;adresse de ce nœud ; les places en file d&apos;
         <translation>Clé ed3k</translation>
     </message>
     <message>
-        <location line="+345"/>
+        <location line="+348"/>
         <source>not connected</source>
         <translation>non connecté</translation>
     </message>
@@ -33030,28 +33050,28 @@ Les sources voient alors l&apos;adresse de ce nœud ; les places en file d&apos;
         <translation type="vanished">Nom du fichier :</translation>
     </message>
     <message>
-        <location line="-2994"/>
+        <location line="-2997"/>
         <location line="+266"/>
         <location line="+555"/>
-        <location line="+693"/>
+        <location line="+696"/>
         <source>Open File</source>
         <translation>Ouvrir le fichier</translation>
     </message>
     <message>
-        <location line="-1505"/>
+        <location line="-1508"/>
         <location line="+2"/>
         <location line="+255"/>
         <location line="+20"/>
         <location line="+549"/>
-        <location line="+737"/>
+        <location line="+740"/>
         <source>Preview</source>
         <translation>Aperçu</translation>
     </message>
     <message>
-        <location line="-1522"/>
+        <location line="-1525"/>
         <location line="+215"/>
         <location line="+21"/>
-        <location line="+2233"/>
+        <location line="+2236"/>
         <location line="+18"/>
         <location line="+123"/>
         <location line="+16"/>
@@ -33059,7 +33079,7 @@ Les sources voient alors l&apos;adresse de ce nœud ; les places en file d&apos;
         <translation>Détails...</translation>
     </message>
     <message>
-        <location line="-2617"/>
+        <location line="-2620"/>
         <location line="+206"/>
         <location line="+21"/>
         <source>Comments...</source>
@@ -33078,14 +33098,14 @@ Les sources voient alors l&apos;adresse de ce nœud ; les places en file d&apos;
         <translation>Liens eD2K...</translation>
     </message>
     <message>
-        <location line="+2902"/>
+        <location line="+2905"/>
         <source>Paste eD2K Links</source>
         <translation>Coller les liens eD2K</translation>
     </message>
     <message>
-        <location line="-2867"/>
+        <location line="-2870"/>
         <location line="+69"/>
-        <location line="+2241"/>
+        <location line="+2244"/>
         <location line="+17"/>
         <location line="+113"/>
         <location line="+93"/>
@@ -33093,7 +33113,7 @@ Les sources voient alors l&apos;adresse de ce nœud ; les places en file d&apos;
         <translation>Rechercher...</translation>
     </message>
     <message>
-        <location line="-2525"/>
+        <location line="-2528"/>
         <location line="+64"/>
         <location line="+7"/>
         <location line="+10"/>
@@ -33124,7 +33144,7 @@ Les sources voient alors l&apos;adresse de ce nœud ; les places en file d&apos;
         <translation type="vanished">Tous</translation>
     </message>
     <message>
-        <location line="+1320"/>
+        <location line="+1323"/>
         <source>Uploading</source>
         <translation>En envoi</translation>
     </message>
@@ -33144,7 +33164,7 @@ Les sources voient alors l&apos;adresse de ce nœud ; les places en file d&apos;
         <translation>Clients connus</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1439"/>
         <source>Clients on queue:   0</source>
         <translation>Clients en file :   0</translation>
     </message>
@@ -33156,12 +33176,12 @@ Les sources voient alors l&apos;adresse de ce nœud ; les places en file d&apos;
     </message>
     <message>
         <location line="-83"/>
-        <location line="+1466"/>
+        <location line="+1469"/>
         <source>Priority</source>
         <translation>Priorité</translation>
     </message>
     <message>
-        <location line="-1429"/>
+        <location line="-1432"/>
         <source>Open Folder</source>
         <translation>Ouvrir le dossier</translation>
     </message>
@@ -33191,7 +33211,7 @@ Les sources voient alors l&apos;adresse de ce nœud ; les places en file d&apos;
         <translation>Rechercher</translation>
     </message>
     <message>
-        <location line="+649"/>
+        <location line="+652"/>
         <location line="+24"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Aperçu indisponible — le serveur web n&apos;est pas en cours d&apos;exécution ou aucun jeton de flux n&apos;a été reçu.</translation>

@@ -841,7 +841,8 @@ target_link_libraries(tst_TransferToolbar PRIVATE eMule::Core Qt6::Widgets)
 emule_add_test(tst_KadIncomingGraph FOLDER "GUI"
     SOURCES tst_KadIncomingGraph.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/controls/KadIncomingGraph.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/controls/KadLookupGraph.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/KadLookupGraph.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/HostnameResolver.cpp")
 target_include_directories(tst_KadIncomingGraph PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
 target_link_libraries(tst_KadIncomingGraph PRIVATE eMule::Core Qt6::Widgets)
 

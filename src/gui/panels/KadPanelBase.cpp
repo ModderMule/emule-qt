@@ -77,6 +77,13 @@ void KadPanelBase::switchToBottomTab(int index)
         m_bottomTabWidget->setCurrentIndex(index);
 }
 
+void KadPanelBase::applyDisplayOptions()
+{
+    const bool resolve = theUiState.resolvePeerHostnames();
+    m_lookupGraph->setResolveHostnames(resolve);
+    m_incomingGraph->setResolveHostnames(resolve);
+}
+
 // ---------------------------------------------------------------------------
 // protected
 // ---------------------------------------------------------------------------
@@ -117,6 +124,7 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
         m_topTabWidget->addTab(m_graphStack, tr("▸ Search Details"));
     for (KadGraphBase* graph : {static_cast<KadGraphBase*>(m_lookupGraph), static_cast<KadGraphBase*>(m_incomingGraph)}) {
         graph->setAutoShowLookups(theUiState.kadAutoShowLookups());
+        graph->setResolveHostnames(theUiState.resolvePeerHostnames());
         connect(graph, &KadGraphBase::autoShowLookupsToggled, this, [this](bool on) {
             theUiState.setKadAutoShowLookups(on);
             m_lookupGraph->setAutoShowLookups(on);

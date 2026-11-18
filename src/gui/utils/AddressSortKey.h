@@ -36,25 +36,36 @@ namespace eMule {
     return QStringLiteral("%1:%2").arg(host).arg(port, 5, 10, QLatin1Char('0'));
 }
 
+/// Host and port of a "host:port" / "[v6]:port" / bare-address text (port 0: none).
+struct Endpoint {
+    QString host;
+    uint16_t port = 0;
+};
+
+[[nodiscard]] inline Endpoint splitEndpoint(const QString& endpoint)
+{
+    Endpoint e{endpoint};
+    if (endpoint.startsWith(QLatin1Char('['))) {
+        const qsizetype close = endpoint.indexOf(QLatin1Char(']'));
+        if (close > 0) {
+            e.host = endpoint.mid(1, close - 1);
+            if (endpoint.mid(close + 1).startsWith(QLatin1Char(':')))
+                e.port = static_cast<uint16_t>(endpoint.mid(close + 2).toUInt());
+        }
+    } else if (endpoint.count(QLatin1Char(':')) == 1) {
+        const qsizetype colon = endpoint.indexOf(QLatin1Char(':'));
+        e.host = endpoint.left(colon);
+        e.port = static_cast<uint16_t>(endpoint.mid(colon + 1).toUInt());
+    }
+    return e;
+}
+
 /// addressSortKey of a "host:port" / "[v6]:port" / bare-address text; anything
 /// else (I2P, hidden) after the addresses, by its text.
 [[nodiscard]] inline QString endpointSortKey(const QString& endpoint)
 {
-    QString host = endpoint;
-    uint16_t port = 0;
-    if (endpoint.startsWith(QLatin1Char('['))) {
-        const qsizetype close = endpoint.indexOf(QLatin1Char(']'));
-        if (close > 0) {
-            host = endpoint.mid(1, close - 1);
-            if (endpoint.mid(close + 1).startsWith(QLatin1Char(':')))
-                port = static_cast<uint16_t>(endpoint.mid(close + 2).toUInt());
-        }
-    } else if (endpoint.count(QLatin1Char(':')) == 1) {
-        const qsizetype colon = endpoint.indexOf(QLatin1Char(':'));
-        host = endpoint.left(colon);
-        port = static_cast<uint16_t>(endpoint.mid(colon + 1).toUInt());
-    }
-    return addressSortKey(host, port);
+    const Endpoint e = splitEndpoint(endpoint);
+    return addressSortKey(e.host, e.port);
 }
 
 /// "host:port", bracketing an IPv6 literal.
