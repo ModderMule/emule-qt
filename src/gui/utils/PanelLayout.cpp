@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "utils/PanelLayout.h"
 
+#include <algorithm>
+
 #include <QFrame>
 #include <QScrollArea>
 #include <QSplitter>
@@ -31,8 +33,12 @@ QScrollArea* scrollableColumn(QWidget* column)
 void setPaneMinHeights(QSplitter* splitter)
 {
     const int minHeight = splitter->fontMetrics().lineSpacing() * kPaneMinTextLines;
-    for (int i = 0; i < splitter->count(); ++i)
-        splitter->widget(i)->setMinimumHeight(minHeight);
+    for (int i = 0; i < splitter->count(); ++i) {
+        // an explicit minimum replaces the layout's hint in QSplitter: never go below
+        // what the content needs, or the pane clips
+        QWidget* pane = splitter->widget(i);
+        pane->setMinimumHeight(std::max(minHeight, pane->minimumSizeHint().height()));
+    }
 }
 
 } // namespace eMule::PanelLayout

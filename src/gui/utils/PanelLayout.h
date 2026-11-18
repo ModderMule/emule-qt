@@ -15,7 +15,8 @@ namespace eMule::PanelLayout {
 [[nodiscard]] QScrollArea* scrollableColumn(QWidget* column);
 
 /// Gives every pane of the vertical @p splitter the same minimum height: a tab/title
-/// row plus a few list rows. Same drag range on every panel, whatever the panes hold.
+/// row plus a few list rows, or more if a pane's content needs it. Same drag range on
+/// every panel as long as the content fits. Call after the panes are filled.
 void setPaneMinHeights(QSplitter* splitter);
 
 } // namespace eMule::PanelLayout
