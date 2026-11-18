@@ -211,7 +211,7 @@ void Ed3kBootstrap::onEventPolled(const ffi::Event& event, bool* handled)
                 logEd3k(QStringLiteral("ed3k: a node list source was not answered and is refused"));
         });
     } else if (const auto* s = std::get_if<ev::BootstrapStarted>(&event)) {
-        m_last = s->unix;
+        m_last = s->unixS;
         saveLast();
         logEd3kKad(QStringLiteral("ed3k: first contact from node lists"));
     } else if (const auto* l = std::get_if<ev::BootstrapLists>(&event)) {

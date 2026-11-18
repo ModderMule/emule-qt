@@ -2275,7 +2275,7 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
     m_roomMaxItem->setToolTip(0, tr("The newest posts kept per room, in memory and on disk."));
     m_extTree->setValue(m_roomMaxItem, 5000);
     // hops.md §1: which networks' files go under the anonymous key while hiding runs
-    QTreeWidgetItem* kad = m_extTree->addGroup(tr("Kad publishing"), skinIcon(QStringLiteral(":/icons/Kad.ico")));
+    QTreeWidgetItem* kad = m_extTree->addGroup(tr("Kad publishing"), skinIcon(QStringLiteral(":/icons/Ed3k.ico")));
     kad->setToolTip(0, tr("While hiding is on, files of the checked networks are shared on ed3k under the anonymous "
                           "key, with their sets and links. Unchecked: they stay under the node key, and a file "
                           "already under the anonymous key is left out of that network's join.\n"

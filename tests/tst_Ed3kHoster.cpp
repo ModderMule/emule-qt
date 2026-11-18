@@ -3340,9 +3340,7 @@ private slots:
         // no program here prints "ffmpeg version": installed, then refused as not starting
         const QByteArray body = "MZ not a program";
 #else
-        const QByteArray body = "#!/bin/sh
-echo 'ffmpeg version 9.0-test'
-";
+        const QByteArray body = "#!/bin/sh\necho 'ffmpeg version 9.0-test'\n";
 #endif
         // in a folder, as upstream zips have it
         QVERIFY(writeZip(zip, {{QStringLiteral("bin/") + Ed3kFfmpegTool::exe(QStringLiteral("ffmpeg")), body},
