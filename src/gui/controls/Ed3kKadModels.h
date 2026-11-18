@@ -29,6 +29,8 @@ public:
     /// Replace the rows with a new snapshot, matched by "id" (no reset).
     void setRows(const QCborArray& rows);
     [[nodiscard]] const QCborMap& row(int r) const { return m_rows.at(static_cast<size_t>(r)); }
+    /// The hostname column shows PTR names ("Resolve downloaders' hostnames").
+    void setResolveHostnames(bool enabled);
 
 protected:
     struct Column {
@@ -39,7 +41,21 @@ protected:
     };
     explicit Ed3kKadTableModel(QObject* parent);
     [[nodiscard]] int columnCountValue() const override { return static_cast<int>(m_columns.size()); }
+    /// Column @p column names the address @p addressOf of a row once resolved; while on, the
+    /// header reads @p header (empty: unchanged).
+    void setHostnameColumn(int column, std::function<QString(const QCborMap&)> addressOf, const QString& header = {});
+    /// Look up the listed rows' addresses; after setRows.
+    void refreshHostnames();
+    /// Address of a row for the resolver.
+    [[nodiscard]] QString hostAddress(const QCborMap& m) const { return m_addressOf ? m_addressOf(m) : QString(); }
     std::vector<Column> m_columns;
+    HostnameResolver m_resolver;
+
+private:
+    void hostnameChanged(const QString& address);
+    int m_hostColumn = -1;
+    std::function<QString(const QCborMap&)> m_addressOf;
+    QString m_hostHeader;
 };
 
 /// The routing table, one row per node: Type, Node ID, Country, Family, Distance, Fails,
@@ -51,12 +67,9 @@ public:
     enum Column { ColType = 0, ColId, ColCountry, ColFamily, ColDistance, ColFails, ColCheck, ColIp };
     explicit Ed3kKadContactsModel(QObject* parent = nullptr);
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
-    [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 
     /// Replace the rows (setRows) and look up the new addresses.
     void setContacts(const QCborArray& rows);
-    /// IP column shows the PTR name ("Resolve downloaders' hostnames").
-    void setResolveHostnames(bool enabled);
 
     /// Version of a Hello.agent ("eMuleQt 0.7.25" -> "0.7.25"); the whole agent without one.
     [[nodiscard]] static QString versionOf(const QString& agent);
@@ -64,11 +77,8 @@ public:
 private:
     /// Contact0-4 by failed checks as eD2K Kad's type; SrcUnknown while not met since restart.
     [[nodiscard]] int contactImage(const QCborMap& m) const;
-    void refreshHostnames();
-    void hostnameChanged(const QString& address);
 
     std::array<QIcon, 6> m_icons;
-    HostnameResolver m_resolver;
 };
 
 /// Running and ended lookups: Number, Purpose, Name, Target, Kind, Load, Requests Sent, Asked,
@@ -102,7 +112,7 @@ public:
     explicit KadIncomingModel(Network network, QObject* parent = nullptr);
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
 
-    /// Replace the rows; ages turn into clock times here.
+    /// Replace the rows; ages turn into clock times here. Looks up the new addresses.
     void setIncoming(const QCborArray& rows);
 
     /// The request id of a row (GetKadIncomingGraph).
@@ -123,6 +133,10 @@ public:
 
 private:
     [[nodiscard]] static QString answerText(const QCborMap& m);
+    /// The asker's hostname once resolved, else its ip:port.
+    [[nodiscard]] QString addressText(const QCborMap& m) const;
+    /// Sort value of addressText: names by name, addresses numerically.
+    [[nodiscard]] QVariant addressSort(const QCborMap& m) const;
     /// kad::IncomingRefusal as text; @p arg per code.
     [[nodiscard]] static QString refusalText(int code, int arg);
     Network m_network;

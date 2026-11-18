@@ -6409,7 +6409,7 @@ Een nieuwe anonieme sleutel maken?</translation>
 <context>
     <name>eMule::Ed3kKadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+102"/>
+        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+145"/>
         <source>Node ID</source>
         <translation>Node-ID</translation>
     </message>
@@ -6463,12 +6463,12 @@ Een nieuwe anonieme sleutel maken?</translation>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+11"/>
         <source>Hostname / IP</source>
         <translation>Hostnaam / IP</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+31"/>
         <source>Not connected since restart</source>
         <translation>Niet verbonden sinds herstart</translation>
     </message>
@@ -6476,7 +6476,7 @@ Een nieuwe anonieme sleutel maken?</translation>
 <context>
     <name>eMule::Ed3kKadLookupsModel</name>
     <message>
-        <location line="+50"/>
+        <location line="+33"/>
         <source>Number</source>
         <translation>Nummer</translation>
     </message>
@@ -15100,17 +15100,22 @@ TCP-poort: %3</translation>
         <translation>Van</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+7"/>
         <source>Answer</source>
         <translation>Antwoord</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>IP</source>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+63"/>
+        <location line="+2"/>
+        <source>Hostname / IP</source>
+        <translation>Hostnaam / IP</translation>
+    </message>
+    <message>
+        <location line="+74"/>
         <source>Bootstrap</source>
         <translation>Bootstrap</translation>
     </message>
@@ -15468,7 +15473,7 @@ TCP-poort: %3</translation>
 <context>
     <name>eMule::KadPanelBase</name>
     <message>
-        <location filename="../src/gui/panels/KadPanelBase.cpp" line="+110"/>
+        <location filename="../src/gui/panels/KadPanelBase.cpp" line="+111"/>
         <location line="+2"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ Contacten (0)</translation>
@@ -15476,7 +15481,7 @@ TCP-poort: %3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+278"/>
+        <location line="+279"/>
         <source>▸ Search Details</source>
         <translation>▸ Zoekdetails</translation>
     </message>

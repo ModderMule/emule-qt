@@ -82,6 +82,7 @@ QIcon familyIcon(int family, bool dual)
 Ed3kKadTableModel::Ed3kKadTableModel(QObject* parent)
     : AbstractTableModel(parent)
 {
+    connect(&m_resolver, &HostnameResolver::resolved, this, [this](const QString& a) { hostnameChanged(a); });
 }
 
 QVariant Ed3kKadTableModel::data(const QModelIndex& index, int role) const
@@ -101,6 +102,8 @@ QVariant Ed3kKadTableModel::headerData(int section, Qt::Orientation orientation,
 {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole || section < 0 || section >= columnCount())
         return {};
+    if (section == m_hostColumn && m_resolver.enabled() && !m_hostHeader.isEmpty())
+        return m_hostHeader;
     return m_columns[static_cast<size_t>(section)].title;
 }
 
@@ -112,6 +115,46 @@ void Ed3kKadTableModel::setRows(const QCborArray& rows)
         maps.push_back(v.toMap());
     // polled: a reset would swallow a double click and drop the selection
     syncRows(std::move(maps), [](const QCborMap& m) { return value(m, "id"); });
+}
+
+void Ed3kKadTableModel::setResolveHostnames(bool enabled)
+{
+    if (m_hostColumn < 0 || m_resolver.enabled() == enabled)
+        return;
+    m_resolver.setEnabled(enabled);
+    refreshHostnames();
+    emit headerDataChanged(Qt::Horizontal, m_hostColumn, m_hostColumn);
+    if (count() > 0)
+        emit dataChanged(index(0, m_hostColumn), index(count() - 1, m_hostColumn),
+                         {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
+}
+
+void Ed3kKadTableModel::setHostnameColumn(int column, std::function<QString(const QCborMap&)> addressOf,
+                                          const QString& header)
+{
+    m_hostColumn = column;
+    m_addressOf = std::move(addressOf);
+    m_hostHeader = header;
+}
+
+void Ed3kKadTableModel::refreshHostnames()
+{
+    if (m_hostColumn < 0)
+        return;
+    QStringList addresses;
+    addresses.reserve(count());
+    for (const auto& m : m_rows)
+        addresses.append(hostAddress(m));
+    m_resolver.sync(addresses);
+}
+
+void Ed3kKadTableModel::hostnameChanged(const QString& address)
+{
+    for (int r = 0; r < count(); ++r) {
+        if (hostAddress(row(r)) == address)
+            emit dataChanged(index(r, m_hostColumn), index(r, m_hostColumn),
+                             {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -166,32 +209,13 @@ Ed3kKadContactsModel::Ed3kKadContactsModel(QObject* parent)
              return QVariant(m_resolver.displayText(ip, addressSortKey(ip, static_cast<uint16_t>(number(m, "port")))));
          }},
     };
-    connect(&m_resolver, &HostnameResolver::resolved, this, &Ed3kKadContactsModel::hostnameChanged);
-}
-
-QVariant Ed3kKadContactsModel::headerData(int section, Qt::Orientation orientation, int role) const
-{
-    if (section == ColIp && orientation == Qt::Horizontal && role == Qt::DisplayRole && m_resolver.enabled())
-        return tr("Hostname / IP");
-    return Ed3kKadTableModel::headerData(section, orientation, role);
+    setHostnameColumn(ColIp, [](const QCborMap& m) { return value(m, "ip"); }, tr("Hostname / IP"));
 }
 
 void Ed3kKadContactsModel::setContacts(const QCborArray& rows)
 {
     setRows(rows);
     refreshHostnames();
-}
-
-void Ed3kKadContactsModel::setResolveHostnames(bool enabled)
-{
-    if (m_resolver.enabled() == enabled)
-        return;
-    m_resolver.setEnabled(enabled);
-    refreshHostnames();
-    emit headerDataChanged(Qt::Horizontal, ColIp, ColIp);
-    if (count() > 0)
-        emit dataChanged(index(0, ColIp), index(count() - 1, ColIp),
-                         {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
 }
 
 QVariant Ed3kKadContactsModel::data(const QModelIndex& index, int role) const
@@ -239,23 +263,6 @@ int Ed3kKadContactsModel::contactImage(const QCborMap& m) const
     if (value(m, "agent").isEmpty())
         return 5;
     return static_cast<int>(std::min<qint64>(number(m, "fails"), 4));
-}
-
-void Ed3kKadContactsModel::refreshHostnames()
-{
-    QStringList addresses;
-    addresses.reserve(count());
-    for (const auto& m : m_rows)
-        addresses.append(value(m, "ip"));
-    m_resolver.sync(addresses);
-}
-
-void Ed3kKadContactsModel::hostnameChanged(const QString& address)
-{
-    for (int r = 0; r < count(); ++r) {
-        if (value(row(r), "ip") == address)
-            emit dataChanged(index(r, ColIp), index(r, ColIp), {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -358,20 +365,24 @@ KadIncomingModel::KadIncomingModel(Network network, QObject* parent)
         {tr("Type"), [typeText](const QCborMap& m) { return typeText(int(number(m, "type"))); }, {}},
         {tr("Key"), [](const QCborMap& m) { return value(m, "target").toUpper(); }, {}},
         {tr("Name"), [](const QCborMap& m) { return value(m, "name"); }, {}},
-        // flag + ip:port; ed3k: flag + node ID, the address in its own IP column
+        // flag + ip:port (or hostname); ed3k: flag + node ID, the address in its own IP column
         {tr("From"),
-         [network](const QCborMap& m) {
-             return network == Network::Ed3k ? value(m, "peer").toUpper() : value(m, "addr");
+         [this, network](const QCborMap& m) {
+             return network == Network::Ed3k ? value(m, "peer").toUpper() : addressText(m);
          },
-         [network](const QCborMap& m) {
-             return network == Network::Ed3k ? QVariant(value(m, "cc") + value(m, "peer"))
-                                             : QVariant(endpointSortKey(value(m, "addr")));
+         [this, network](const QCborMap& m) {
+             return network == Network::Ed3k ? QVariant(value(m, "cc") + value(m, "peer")) : addressSort(m);
          }},
         {tr("Answer"), [](const QCborMap& m) { return answerText(m); }, {}},
     };
-    if (network == Network::Ed3k)
-        m_columns.push_back({tr("IP"), [](const QCborMap& m) { return value(m, "addr"); },
-                             [](const QCborMap& m) { return QVariant(endpointSortKey(value(m, "addr"))); }});
+    const auto host = [](const QCborMap& m) { return splitEndpoint(value(m, "addr")).host; };
+    if (network == Network::Ed3k) {
+        m_columns.push_back({tr("IP"), [this](const QCborMap& m) { return addressText(m); },
+                             [this](const QCborMap& m) { return addressSort(m); }});
+        setHostnameColumn(ColIp, host, tr("Hostname / IP"));
+    } else {
+        setHostnameColumn(ColFrom, host);
+    }
 }
 
 QVariant KadIncomingModel::data(const QModelIndex& index, int role) const
@@ -380,9 +391,17 @@ QVariant KadIncomingModel::data(const QModelIndex& index, int role) const
         const QCborMap& m = row(index.row());
         if (role == Qt::DecorationRole && CountryFlags::showFlags())
             return CountryFlags::flag(value(m, "cc"));
-        if (role == Qt::ToolTipRole)
-            return CountryFlags::tooltip(value(m, "cc"));
+        if (role == Qt::ToolTipRole) {
+            const QString cc = CountryFlags::tooltip(value(m, "cc"));
+            if (m_network == Network::Ed3k || value(m, "addr").isEmpty())
+                return cc;
+            const QString host = m_resolver.toolTip(hostAddress(m));
+            return cc.isEmpty() ? host : cc + QLatin1Char('\n') + host;
+        }
     }
+    if (role == Qt::ToolTipRole && index.isValid() && index.column() == ColIp && index.row() < count()
+        && !value(row(index.row()), "addr").isEmpty())
+        return m_resolver.toolTip(hostAddress(row(index.row())));
     return Ed3kKadTableModel::data(index, role);
 }
 
@@ -396,6 +415,7 @@ void KadIncomingModel::setIncoming(const QCborArray& rows)
         stamped.append(m);
     }
     setRows(stamped);
+    refreshHostnames();
 }
 
 std::uint64_t KadIncomingModel::idAt(int row) const
@@ -505,6 +525,16 @@ QString KadIncomingModel::refusalText(int code, int arg)
     case 9: return tr("already a known client");
     default: return tr("reason %1").arg(code);
     }
+}
+
+QString KadIncomingModel::addressText(const QCborMap& m) const
+{
+    return m_resolver.displayText(hostAddress(m), value(m, "addr"));
+}
+
+QVariant KadIncomingModel::addressSort(const QCborMap& m) const
+{
+    return QVariant(m_resolver.displayText(hostAddress(m), endpointSortKey(value(m, "addr"))));
 }
 
 } // namespace eMule

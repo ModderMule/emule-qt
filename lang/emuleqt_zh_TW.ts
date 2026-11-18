@@ -6380,7 +6380,7 @@ Make a new anonymous key?</source>
 <context>
     <name>eMule::Ed3kKadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+102"/>
+        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+145"/>
         <source>Node ID</source>
         <translation>節點 ID</translation>
     </message>
@@ -6434,12 +6434,12 @@ Make a new anonymous key?</source>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+11"/>
         <source>Hostname / IP</source>
         <translation>主機名稱 / IP</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+31"/>
         <source>Not connected since restart</source>
         <translation>重新啟動後未連線</translation>
     </message>
@@ -6447,7 +6447,7 @@ Make a new anonymous key?</source>
 <context>
     <name>eMule::Ed3kKadLookupsModel</name>
     <message>
-        <location line="+50"/>
+        <location line="+33"/>
         <source>Number</source>
         <translation>編號</translation>
     </message>
@@ -15038,17 +15038,22 @@ TCP 連接埠：%3</translation>
         <translation>來自</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+7"/>
         <source>Answer</source>
         <translation>回應</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>IP</source>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+63"/>
+        <location line="+2"/>
+        <source>Hostname / IP</source>
+        <translation>主機名稱 / IP</translation>
+    </message>
+    <message>
+        <location line="+74"/>
         <source>Bootstrap</source>
         <translation>啟動</translation>
     </message>
@@ -15402,7 +15407,7 @@ TCP 連接埠：%3</translation>
 <context>
     <name>eMule::KadPanelBase</name>
     <message>
-        <location filename="../src/gui/panels/KadPanelBase.cpp" line="+110"/>
+        <location filename="../src/gui/panels/KadPanelBase.cpp" line="+111"/>
         <location line="+2"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ 聯絡人 (0)</translation>
@@ -15410,7 +15415,7 @@ TCP 連接埠：%3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+278"/>
+        <location line="+279"/>
         <source>▸ Search Details</source>
         <translation>▸ 搜尋詳細資料</translation>
     </message>

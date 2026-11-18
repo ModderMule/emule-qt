@@ -82,6 +82,7 @@ void KadPanelBase::applyDisplayOptions()
     const bool resolve = theUiState.resolvePeerHostnames();
     m_lookupGraph->setResolveHostnames(resolve);
     m_incomingGraph->setResolveHostnames(resolve);
+    m_incomingModel->setResolveHostnames(resolve);
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +147,7 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
 
     // Bottom: our lookups and the requests other nodes sent us
     m_incomingModel = new KadIncomingModel(network, this);
+    m_incomingModel->setResolveHostnames(theUiState.resolvePeerHostnames());
     QLabel* noLabel = nullptr;
     QWidget* incoming = buildListPanel(m_incomingModel, {}, {}, m_incomingView, noLabel);
     auto* incomingView = static_cast<ListTreeView*>(m_incomingView);
