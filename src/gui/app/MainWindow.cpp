@@ -591,6 +591,8 @@ void MainWindow::showOptionsDialog(int page)
     connect(&dlg, &OptionsDialog::changeSkinRequested, this, &MainWindow::openSkinBrowser);
     connect(&dlg, &OptionsDialog::peerHostnameResolutionChanged,
             m_transferPanel, &TransferPanel::applyDisplayOptions);
+    connect(&dlg, &OptionsDialog::peerHostnameResolutionChanged,
+            m_kadPanel, &KadPanel::applyDisplayOptions);
     connect(&dlg, &OptionsDialog::testNotificationRequested, this, [this](const QString& soundFile) {
         // MFC IDS_MAIN_READY
         showNotification(QStringLiteral("eMule Qt"),
@@ -641,6 +643,7 @@ void MainWindow::showOptionsDialog(int page)
     m_sharedFilesPanel->applyDisplayOptions();
     m_serverPanel->applyDisplayOptions();
     m_searchPanel->applyDisplayOptions();
+    m_kadPanel->applyDisplayOptions();
 #ifdef EMULE_HAVE_BITTORRENT
     if (m_torrentPanel)
         m_torrentPanel->applyDisplayOptions();

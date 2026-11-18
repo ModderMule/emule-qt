@@ -6,6 +6,7 @@
 /// of both Kad pages (GetKadIncoming, GetEd3kKadIncoming).
 
 #include "controls/AbstractTableModel.h"
+#include "utils/HostnameResolver.h"
 
 #include <QCborArray>
 #include <QCborMap>
@@ -50,6 +51,12 @@ public:
     enum Column { ColType = 0, ColId, ColCountry, ColFamily, ColDistance, ColFails, ColCheck, ColIp };
     explicit Ed3kKadContactsModel(QObject* parent = nullptr);
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+    [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
+
+    /// Replace the rows (setRows) and look up the new addresses.
+    void setContacts(const QCborArray& rows);
+    /// IP column shows the PTR name ("Resolve downloaders' hostnames").
+    void setResolveHostnames(bool enabled);
 
     /// Version of a Hello.agent ("eMuleQt 0.7.25" -> "0.7.25"); the whole agent without one.
     [[nodiscard]] static QString versionOf(const QString& agent);
@@ -57,7 +64,11 @@ public:
 private:
     /// Contact0-4 by failed checks as eD2K Kad's type; SrcUnknown while not met since restart.
     [[nodiscard]] int contactImage(const QCborMap& m) const;
+    void refreshHostnames();
+    void hostnameChanged(const QString& address);
+
     std::array<QIcon, 6> m_icons;
+    HostnameResolver m_resolver;
 };
 
 /// Running and ended lookups: Number, Purpose, Name, Target, Kind, Load, Requests Sent, Asked,

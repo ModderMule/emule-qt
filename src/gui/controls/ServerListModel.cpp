@@ -90,7 +90,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColLowID:       return r.lowIdUsers;
         case ColObfuscation: return r.obfuscation ? 1 : 0;
         case ColCountry:     return CountryFlags::sortKey(r.cc);
-        case ColIPv6:        return r.addr6;
+        case ColIPv6:        return r.addr6.isEmpty() ? QString() : addressSortKey(r.addr6, r.port);
         case ColHardFiles:   return r.hardFiles;
         case ColVersion:     return r.version;
         default:             break;

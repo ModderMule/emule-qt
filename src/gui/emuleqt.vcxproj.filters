@@ -223,6 +223,9 @@
     <ClCompile Include="utils\FolderLister.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\HostnameResolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\IpcFeedback.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -781,6 +784,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="utils\PanelPoller.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="utils\HostnameResolver.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\ClientDetailDialog.h">

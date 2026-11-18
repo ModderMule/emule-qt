@@ -971,7 +971,7 @@ Trust the new certificate?</source>
         <translation>來自 %1 的訊息</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+58"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+56"/>
         <source>Server</source>
         <translation>伺服器</translation>
     </message>
@@ -4003,7 +4003,7 @@ On queue: it waits for one, at the place shown.</source>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+262"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+178"/>
         <source>Hostname / IP</source>
         <translation>主機名稱 / IP</translation>
     </message>
@@ -4092,27 +4092,25 @@ On queue: it waits for one, at the place shown.</source>
         <translation>槽位號</translation>
     </message>
     <message>
-        <location line="-126"/>
-        <location line="+257"/>
+        <location line="-113"/>
+        <location line="+244"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location line="-259"/>
+        <location line="-246"/>
         <source>Hidden</source>
         <translation>隱藏</translation>
     </message>
     <message>
-        <location line="+10"/>
         <source>%1
 No hostname found.</source>
-        <translation>%1
+        <translation type="vanished">%1
 找不到主機名稱。</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>%1 (resolving…)</source>
-        <translation>%1（正在解析…）</translation>
+        <translation type="vanished">%1（正在解析…）</translation>
     </message>
     <message>
         <location line="+324"/>
@@ -5297,9 +5295,9 @@ ED2K 切細值：	%2
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+231"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+236"/>
         <location line="+129"/>
-        <location line="+155"/>
+        <location line="+160"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ 聯絡人 (0)</translation>
     </message>
@@ -5308,7 +5306,7 @@ ED2K 切細值：	%2
         <translation type="vanished">▸ 目前搜尋 (0)</translation>
     </message>
     <message>
-        <location line="-219"/>
+        <location line="-224"/>
         <source>The URL is invalid.</source>
         <translation>URL 無效。</translation>
     </message>
@@ -5319,19 +5317,19 @@ ED2K 切細值：	%2
     </message>
     <message>
         <location line="+9"/>
-        <location line="+97"/>
+        <location line="+102"/>
         <location line="+40"/>
         <source>Bootstrap</source>
         <translation>啟動</translation>
     </message>
     <message>
-        <location line="-135"/>
+        <location line="-140"/>
         <location line="+37"/>
         <source>Kademlia</source>
         <translation>Kademlia</translation>
     </message>
     <message>
-        <location line="+42"/>
+        <location line="+47"/>
         <source>Recheck Firewall</source>
         <translation>重新檢查防火牆</translation>
     </message>
@@ -6147,7 +6145,12 @@ Make a new anonymous key?</source>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+17"/>
+        <source>Hostname / IP</source>
+        <translation>主機名稱 / IP</translation>
+    </message>
+    <message>
+        <location line="+39"/>
         <source>Not connected since restart</source>
         <translation>重新啟動後未連線</translation>
     </message>
@@ -6155,7 +6158,7 @@ Make a new anonymous key?</source>
 <context>
     <name>eMule::Ed3kKadLookupsModel</name>
     <message>
-        <location line="+33"/>
+        <location line="+50"/>
         <source>Number</source>
         <translation>編號</translation>
     </message>
@@ -6328,7 +6331,7 @@ Make a new anonymous key?</source>
         </translation>
     </message>
     <message>
-        <location line="+219"/>
+        <location line="+229"/>
         <location line="+316"/>
         <source>Connect</source>
         <translation>連線</translation>
@@ -12748,6 +12751,21 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
 </context>
 <context>
+    <name>eMule::HostnameResolver</name>
+    <message>
+        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+93"/>
+        <source>%1
+No hostname found.</source>
+        <translation>%1
+找不到主機名稱。</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>%1 (resolving…)</source>
+        <translation>%1（正在解析…）</translation>
+    </message>
+</context>
+<context>
     <name>eMule::IPFilterDialog</name>
     <message>
         <location filename="../src/gui/dialogs/IPFilterDialog.cpp" line="+190"/>
@@ -13810,7 +13828,7 @@ Other members see your nick and posts; your node takes part in passing the room&
 <context>
     <name>eMule::KadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+69"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+82"/>
         <source>%1
 UDP port: %2
 TCP port: %3</source>
@@ -13842,6 +13860,11 @@ TCP 連接埠：%3</translation>
         <location line="+1"/>
         <source>IP</source>
         <translation>IP</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Hostname / IP</source>
+        <translation>主機名稱 / IP</translation>
     </message>
 </context>
 <context>
@@ -14418,29 +14441,29 @@ TCP 連接埠：%3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+232"/>
+        <location line="+246"/>
         <source>▸ Search Details</source>
         <translation>▸ 搜尋詳細資料</translation>
     </message>
     <message>
-        <location line="-198"/>
+        <location line="-212"/>
         <source>▸ Outgoing Searches (0)</source>
         <translation>▸ 發出的搜尋 (0)</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+174"/>
+        <location line="+188"/>
         <source>▸ Incoming Searches (0)</source>
         <translation>▸ 收到的搜尋 (0)</translation>
     </message>
     <message>
-        <location line="-88"/>
+        <location line="-102"/>
         <location line="+1"/>
         <source>▸ Contacts (%1)</source>
         <translation>▸ 聯絡人 (%1)</translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+124"/>
         <source>▸ Search Details (%1)</source>
         <translation>▸ 搜尋詳細資料 (%1)</translation>
     </message>
@@ -15141,12 +15164,12 @@ TCP 連接埠：%3</translation>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+141"/>
-        <location line="+854"/>
+        <location line="+857"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-713"/>
+        <location line="-716"/>
         <source>Quit eMule Qt</source>
         <translation>結束 eMule Qt</translation>
     </message>
@@ -15202,12 +15225,12 @@ You are running %2. Open the eMule Qt website?</source>
     <message>
         <location line="+21"/>
         <location line="+7"/>
-        <location line="+1193"/>
+        <location line="+1196"/>
         <source>Version Check</source>
         <translation>版本檢查</translation>
     </message>
     <message>
-        <location line="-1199"/>
+        <location line="-1202"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>您正在執行最新版本的 eMule Qt (v%1)。</translation>
     </message>
@@ -15235,12 +15258,12 @@ Enable at least one under Options → Connection to connect.</source>
 請在「選項 → 連線」中至少啟用一個後再連線。</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+94"/>
         <source>eMule Version %1 ready</source>
         <translation>eMule 版本 %1 已就緒</translation>
     </message>
     <message>
-        <location line="+121"/>
+        <location line="+122"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K：已連線 (低-ID)</translation>
     </message>
@@ -18309,12 +18332,11 @@ Are you sure you want to continue?</source>
         <translation>解析下載者的主機名稱</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Show resolved hostnames instead of IP addresses in client lists. Keep the IP address when no hostname is found.</source>
-        <translation>在使用者清單中以解析出的主機名稱取代 IP 位址。查不到主機名稱時保留 IP 位址。</translation>
+        <translation type="vanished">在使用者清單中以解析出的主機名稱取代 IP 位址。查不到主機名稱時保留 IP 位址。</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+23"/>
         <source>MaxMind account ID:</source>
         <translation>MaxMind 帳號 ID：</translation>
     </message>
@@ -21301,7 +21323,12 @@ Every page is an API call against the allowance your account has, so this is a s
         <translation>訂閱源</translation>
     </message>
     <message>
-        <location line="-597"/>
+        <location line="-4440"/>
+        <source>Show resolved hostnames instead of IP addresses in client lists and Kad contact lists. Keep the IP address when no hostname is found.</source>
+        <translation>在使用者清單和 Kad 聯絡人清單中以解析出的主機名稱取代 IP 位址。查不到主機名稱時保留 IP 位址。</translation>
+    </message>
+    <message>
+        <location line="+3843"/>
         <source>Search</source>
         <translation>搜尋</translation>
     </message>

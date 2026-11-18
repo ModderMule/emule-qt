@@ -1125,7 +1125,7 @@ Has comments</source>
 Contient des commentaires</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+58"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+56"/>
         <source>Server</source>
         <translation>Serveur</translation>
     </message>
@@ -4234,7 +4234,7 @@ En file : il en attend un, à la place indiquée.</translation>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+482"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+398"/>
         <location line="+13"/>
         <location line="+13"/>
         <location line="+15"/>
@@ -4359,21 +4359,19 @@ En file : il en attend un, à la place indiquée.</translation>
         <translation>Téléchargé</translation>
     </message>
     <message>
-        <location line="-382"/>
+        <location line="-369"/>
         <source>Hidden</source>
         <translation>Caché</translation>
     </message>
     <message>
-        <location line="+10"/>
         <source>%1
 No hostname found.</source>
-        <translation>%1
+        <translation type="vanished">%1
 Aucun nom d&apos;hôte trouvé.</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>%1 (resolving…)</source>
-        <translation>%1 (résolution…)</translation>
+        <translation type="vanished">%1 (résolution…)</translation>
     </message>
     <message>
         <location line="+28"/>
@@ -4465,8 +4463,8 @@ Aucun nom d&apos;hôte trouvé.</translation>
         <translation>Non</translation>
     </message>
     <message>
-        <location line="-258"/>
-        <location line="+257"/>
+        <location line="-245"/>
+        <location line="+244"/>
         <source>Unknown</source>
         <translation>Inconnu</translation>
     </message>
@@ -5595,9 +5593,9 @@ Envoyé :	%12</translation>
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+231"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+236"/>
         <location line="+129"/>
-        <location line="+155"/>
+        <location line="+160"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ Contacts (0)</translation>
     </message>
@@ -5606,7 +5604,7 @@ Envoyé :	%12</translation>
         <translation type="vanished">▸ Recherches en cours (0)</translation>
     </message>
     <message>
-        <location line="-219"/>
+        <location line="-224"/>
         <source>The URL is invalid.</source>
         <translation>L&apos;URL est invalide.</translation>
     </message>
@@ -5617,19 +5615,19 @@ Envoyé :	%12</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+97"/>
+        <location line="+102"/>
         <location line="+40"/>
         <source>Bootstrap</source>
         <translation>Bootstrap</translation>
     </message>
     <message>
-        <location line="-135"/>
+        <location line="-140"/>
         <location line="+37"/>
         <source>Kademlia</source>
         <translation>Kademlia</translation>
     </message>
     <message>
-        <location line="+42"/>
+        <location line="+47"/>
         <source>Recheck Firewall</source>
         <translation>Revérifier le pare-feu</translation>
     </message>
@@ -6448,7 +6446,12 @@ Créer une nouvelle clé anonyme ?</translation>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+17"/>
+        <source>Hostname / IP</source>
+        <translation>Nom d&apos;hôte / IP</translation>
+    </message>
+    <message>
+        <location line="+39"/>
         <source>Not connected since restart</source>
         <translation>Pas connecté depuis le redémarrage</translation>
     </message>
@@ -6456,7 +6459,7 @@ Créer une nouvelle clé anonyme ?</translation>
 <context>
     <name>eMule::Ed3kKadLookupsModel</name>
     <message>
-        <location line="+33"/>
+        <location line="+50"/>
         <source>Number</source>
         <translation>Numéro</translation>
     </message>
@@ -6630,7 +6633,7 @@ Créer une nouvelle clé anonyme ?</translation>
         </translation>
     </message>
     <message>
-        <location line="+219"/>
+        <location line="+229"/>
         <location line="+316"/>
         <source>Connect</source>
         <translation>Connecter</translation>
@@ -13174,6 +13177,21 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
     </message>
 </context>
 <context>
+    <name>eMule::HostnameResolver</name>
+    <message>
+        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+93"/>
+        <source>%1
+No hostname found.</source>
+        <translation>%1
+Aucun nom d&apos;hôte trouvé.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>%1 (resolving…)</source>
+        <translation>%1 (résolution…)</translation>
+    </message>
+</context>
+<context>
     <name>eMule::IPFilterDialog</name>
     <message>
         <location filename="../src/gui/dialogs/IPFilterDialog.cpp" line="+190"/>
@@ -14244,7 +14262,7 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
         <translation type="vanished">ID Client</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+69"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+82"/>
         <source>%1
 UDP port: %2
 TCP port: %3</source>
@@ -14276,6 +14294,11 @@ Port TCP : %3</translation>
         <location line="+1"/>
         <source>IP</source>
         <translation>IP</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Hostname / IP</source>
+        <translation>Nom d&apos;hôte / IP</translation>
     </message>
 </context>
 <context>
@@ -14876,29 +14899,29 @@ Port TCP : %3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+232"/>
+        <location line="+246"/>
         <source>▸ Search Details</source>
         <translation>▸ Détails de recherche</translation>
     </message>
     <message>
-        <location line="-198"/>
+        <location line="-212"/>
         <source>▸ Outgoing Searches (0)</source>
         <translation>▸ Recherches sortantes (0)</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+174"/>
+        <location line="+188"/>
         <source>▸ Incoming Searches (0)</source>
         <translation>▸ Recherches entrantes (0)</translation>
     </message>
     <message>
-        <location line="-88"/>
+        <location line="-102"/>
         <location line="+1"/>
         <source>▸ Contacts (%1)</source>
         <translation>▸ Contacts (%1)</translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+124"/>
         <source>▸ Search Details (%1)</source>
         <translation>▸ Détails de recherche (%1)</translation>
     </message>
@@ -15609,18 +15632,18 @@ Port TCP : %3</translation>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+141"/>
-        <location line="+854"/>
+        <location line="+857"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-664"/>
+        <location line="-667"/>
         <location line="+31"/>
         <source>New Version Available</source>
         <translation>Nouvelle version disponible</translation>
     </message>
     <message>
-        <location line="+356"/>
+        <location line="+359"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K : Connecté (LowID)</translation>
     </message>
@@ -15707,14 +15730,14 @@ Port TCP : %3</translation>
         <translation>Fonctionnalités</translation>
     </message>
     <message>
-        <location line="-1197"/>
+        <location line="-1200"/>
         <location line="+7"/>
-        <location line="+1193"/>
+        <location line="+1196"/>
         <source>Version Check</source>
         <translation>Vérification de version</translation>
     </message>
     <message>
-        <location line="-1305"/>
+        <location line="-1308"/>
         <source>Quit eMule Qt</source>
         <translation>Quitter eMule Qt</translation>
     </message>
@@ -15790,12 +15813,12 @@ Enable at least one under Options → Connection to connect.</source>
 Activez-en au moins un dans Options → Connexion pour vous connecter.</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+94"/>
         <source>eMule Version %1 ready</source>
         <translation>eMule version %1 prêt</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+103"/>
         <source>Unlimited</source>
         <translation>Illimité</translation>
     </message>
@@ -19135,7 +19158,12 @@ Voulez-vous vraiment continuer ?</translation>
         <translation>Étendu</translation>
     </message>
     <message>
-        <location line="+771"/>
+        <location line="+560"/>
+        <source>Show resolved hostnames instead of IP addresses in client lists and Kad contact lists. Keep the IP address when no hostname is found.</source>
+        <translation>Affiche les noms d&apos;hôte résolus au lieu des adresses IP dans les listes de clients et de contacts Kad. Conserve l&apos;adresse IP si aucun nom d&apos;hôte n&apos;est trouvé.</translation>
+    </message>
+    <message>
+        <location line="+211"/>
         <source>More slots while below the upload limit</source>
         <translation>Plus de slots sous la limite d&apos;envoi</translation>
     </message>
@@ -21628,12 +21656,11 @@ Entrée : page suivante, Échap : effacer</translation>
         <translation>Résoudre les noms d&apos;hôte des téléchargeurs</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Show resolved hostnames instead of IP addresses in client lists. Keep the IP address when no hostname is found.</source>
-        <translation>Affiche les noms d&apos;hôte résolus au lieu des adresses IP dans les listes de clients. Conserve l&apos;adresse IP si aucun nom d&apos;hôte n&apos;est trouvé.</translation>
+        <translation type="vanished">Affiche les noms d&apos;hôte résolus au lieu des adresses IP dans les listes de clients. Conserve l&apos;adresse IP si aucun nom d&apos;hôte n&apos;est trouvé.</translation>
     </message>
     <message>
-        <location line="+563"/>
+        <location line="+565"/>
         <source>Disable dead servers after</source>
         <translation>Désactiver les serveurs morts après</translation>
     </message>

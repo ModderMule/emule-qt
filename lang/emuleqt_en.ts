@@ -942,7 +942,7 @@ Has comments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+58"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+56"/>
         <source>Server</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3854,7 +3854,7 @@ On queue: we wait in its upload queue.</source>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+482"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+398"/>
         <location line="+13"/>
         <location line="+13"/>
         <location line="+15"/>
@@ -3979,19 +3979,8 @@ On queue: we wait in its upload queue.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-382"/>
+        <location line="-369"/>
         <source>Hidden</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+10"/>
-        <source>%1
-No hostname found.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+3"/>
-        <source>%1 (resolving…)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4084,8 +4073,8 @@ No hostname found.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-258"/>
-        <location line="+257"/>
+        <location line="-245"/>
+        <location line="+244"/>
         <source>Unknown</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5135,14 +5124,14 @@ Uploaded:	%12</source>
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+231"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+236"/>
         <location line="+129"/>
-        <location line="+155"/>
+        <location line="+160"/>
         <source>▸ Contacts (0)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-219"/>
+        <location line="-224"/>
         <source>The URL is invalid.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5153,19 +5142,19 @@ Uploaded:	%12</source>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+97"/>
+        <location line="+102"/>
         <location line="+40"/>
         <source>Bootstrap</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-135"/>
+        <location line="-140"/>
         <location line="+37"/>
         <source>Kademlia</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+42"/>
+        <location line="+47"/>
         <source>Recheck Firewall</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5965,7 +5954,12 @@ Make a new anonymous key?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+17"/>
+        <source>Hostname / IP</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+39"/>
         <source>Not connected since restart</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5973,7 +5967,7 @@ Make a new anonymous key?</source>
 <context>
     <name>eMule::Ed3kKadLookupsModel</name>
     <message>
-        <location line="+33"/>
+        <location line="+50"/>
         <source>Number</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6132,7 +6126,7 @@ Make a new anonymous key?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+219"/>
+        <location line="+229"/>
         <location line="+316"/>
         <source>Connect</source>
         <translation type="unfinished"></translation>
@@ -12279,6 +12273,20 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
 </context>
 <context>
+    <name>eMule::HostnameResolver</name>
+    <message>
+        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+93"/>
+        <source>%1
+No hostname found.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>%1 (resolving…)</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>eMule::IPFilterDialog</name>
     <message>
         <location filename="../src/gui/dialogs/IPFilterDialog.cpp" line="+190"/>
@@ -13321,7 +13329,7 @@ Other members see your nick and posts; your node takes part in passing the room&
 <context>
     <name>eMule::KadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+69"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+82"/>
         <source>%1
 UDP port: %2
 TCP port: %3</source>
@@ -13350,6 +13358,11 @@ TCP port: %3</source>
     <message>
         <location line="+1"/>
         <source>IP</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Hostname / IP</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -13839,29 +13852,29 @@ TCP port: %3</source>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+232"/>
+        <location line="+246"/>
         <source>▸ Search Details</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-198"/>
+        <location line="-212"/>
         <source>▸ Outgoing Searches (0)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+174"/>
+        <location line="+188"/>
         <source>▸ Incoming Searches (0)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-88"/>
+        <location line="-102"/>
         <location line="+1"/>
         <source>▸ Contacts (%1)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+124"/>
         <source>▸ Search Details (%1)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14544,18 +14557,18 @@ TCP port: %3</source>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+141"/>
-        <location line="+854"/>
+        <location line="+857"/>
         <source>eMule Qt v%1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-664"/>
+        <location line="-667"/>
         <location line="+31"/>
         <source>New Version Available</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+356"/>
+        <location line="+359"/>
         <source>eD2K: Connected (LowID)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14642,14 +14655,14 @@ TCP port: %3</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1197"/>
+        <location line="-1200"/>
         <location line="+7"/>
-        <location line="+1193"/>
+        <location line="+1196"/>
         <source>Version Check</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1305"/>
+        <location line="-1308"/>
         <source>Quit eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14717,12 +14730,12 @@ Enable at least one under Options → Connection to connect.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+94"/>
         <source>eMule Version %1 ready</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+103"/>
         <source>Unlimited</source>
         <translation type="unfinished"></translation>
     </message>
@@ -19724,7 +19737,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4720"/>
+        <location line="-4735"/>
+        <source>Show resolved hostnames instead of IP addresses in client lists and Kad contact lists. Keep the IP address when no hostname is found.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+15"/>
         <source>Database source:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20772,12 +20790,7 @@ Enter: next page, Esc: clear</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2"/>
-        <source>Show resolved hostnames instead of IP addresses in client lists. Keep the IP address when no hostname is found.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+83"/>
+        <location line="+85"/>
         <source>Skin:</source>
         <translation type="unfinished"></translation>
     </message>

@@ -7,6 +7,7 @@
 #include <QString>
 
 #include "AbstractTableModel.h"
+#include "utils/HostnameResolver.h"
 
 #include <array>
 #include <cstdint>
@@ -53,7 +54,11 @@ public:
     void setContacts(std::vector<KadContactRow> contacts)
     {
         syncRows(std::move(contacts), [](const KadContactRow& r) { return r.clientId; });
+        refreshHostnames();
     }
+
+    /// IP column shows the PTR name ("Resolve downloaders' hostnames").
+    void setResolveHostnames(bool enabled);
 
     [[nodiscard]] int contactCount() const { return count(); }
 
@@ -65,7 +70,11 @@ protected:
     [[nodiscard]] int columnCountValue() const override { return ColCount; }
 
 private:
+    void refreshHostnames();
+    void hostnameChanged(const QString& address);
+
     std::array<QIcon, 6> m_icons;
+    HostnameResolver m_resolver;
 };
 
 } // namespace eMule

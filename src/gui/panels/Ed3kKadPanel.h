@@ -34,6 +34,7 @@ public:
     ~Ed3kKadPanel() override;
 
     void setIpcClient(IpcClient* client) override;
+    void applyDisplayOptions() override;
 
     /// The daemon's preferences landed: reload the node list prefs.
     void refreshPrefs();

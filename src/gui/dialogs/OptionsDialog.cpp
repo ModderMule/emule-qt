@@ -1334,7 +1334,7 @@ QWidget* OptionsDialog::createDisplayPage()
 
     m_resolvePeerHostnamesCheck = new QCheckBox(tr("Resolve downloaders' hostnames"), page);
     m_resolvePeerHostnamesCheck->setToolTip(
-        tr("Show resolved hostnames instead of IP addresses in client lists. "
+        tr("Show resolved hostnames instead of IP addresses in client lists and Kad contact lists. "
            "Keep the IP address when no hostname is found."));
     layout->addWidget(m_resolvePeerHostnamesCheck);
     m_showExtControlsCheck = new QCheckBox(tr("Show more controls (advanced mode controls)"), page);

@@ -6,6 +6,7 @@
 #include "controls/ClientListModel.h"
 #include "controls/KadContactsModel.h"
 #include "controls/ServerListModel.h"
+#include "utils/AddressSortKey.h"
 #include "utils/CountryFlags.h"
 
 #include <QCborArray>
@@ -345,7 +346,9 @@ void tst_CountryFlags::clientModel_hostnameSurvivesRefresh()
     QCOMPARE(model.index(0, model.peerIpColumn()).data().toString(), QStringLiteral("Hidden"));
     QVERIFY(model.index(1, model.peerIpColumn()).data(Qt::ToolTipRole).toString().contains(peer.addr));
     const QString resolved = model.index(1, model.peerIpColumn()).data().toString();
-    QCOMPARE(model.index(1, model.peerIpColumn()).data(Qt::UserRole).toString(), resolved);
+    // sorts by the name found, else numerically by the address
+    QCOMPARE(model.index(1, model.peerIpColumn()).data(Qt::UserRole).toString(),
+             resolved == peer.addr ? addressSortKey(peer.addr, peer.port) : resolved);
     QVERIFY(!model.canResolveHostname(peer)); // success and failure both cached
     model.setResolveHostnames(false);
     QCOMPARE(model.index(1, model.peerIpColumn()).data().toString(), peer.addr);

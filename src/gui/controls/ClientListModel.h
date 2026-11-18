@@ -7,11 +7,11 @@
 /// Known Clients) by switching the column set based on the mode.
 
 #include <QByteArray>
-#include <QQueue>
 #include <QMetaType>
 #include <QString>
 
 #include "AbstractTableModel.h"
+#include "utils/HostnameResolver.h"
 
 #include <cstdint>
 #include <utility>
@@ -113,8 +113,8 @@ public:
     static constexpr int FileSizeRole = Qt::UserRole + 3;
 
     explicit ClientListModel(ClientListMode mode, QObject* parent = nullptr);
-    ~ClientListModel() override;
 
+    /// A peer address not looked up yet ("Resolve downloaders' hostnames").
     [[nodiscard]] bool canResolveHostname(const ClientRow& client) const;
     void setResolveHostnames(bool enabled);
 
@@ -168,13 +168,11 @@ private:
     [[nodiscard]] static QString lowIdText(const ClientRow& c);
 
     ClientListMode m_mode;
-    bool m_resolveHostnames = false;
-    quint64 m_hostnameGeneration = 0;
-    QHash<QString, QString> m_hostnames;
-    QHash<QString, int> m_hostnameLookups;
-    QQueue<QString> m_hostnameQueue;
+    HostnameResolver m_resolver;
+
+    /// Rows carrying a peer address, not a service host or a hidden one.
+    [[nodiscard]] static bool hostnameCandidate(const ClientRow& client);
     void refreshHostnames();
-    void startHostnameLookups();
     void hostnameChanged(const QString& address);
 };
 

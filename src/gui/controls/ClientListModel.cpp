@@ -6,6 +6,7 @@
 
 #include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
+#include "utils/AddressSortKey.h"
 #include "utils/ClientIcons.h"
 #include "utils/ClientStateText.h"
 #include "utils/CountryFlags.h"
@@ -13,8 +14,6 @@
 #include "utils/StringUtils.h"
 
 #include <QColor>
-#include <QHostAddress>
-#include <QHostInfo>
 
 namespace eMule {
 
@@ -79,96 +78,25 @@ ClientListModel::ClientListModel(ClientListMode mode, QObject* parent)
     : AbstractTableModel<ClientRow>(parent)
     , m_mode(mode)
 {
-}
-
-ClientListModel::~ClientListModel()
-{
-    for (int id : m_hostnameLookups)
-        QHostInfo::abortHostLookup(id);
+    connect(&m_resolver, &HostnameResolver::resolved, this, &ClientListModel::hostnameChanged);
 }
 
 bool ClientListModel::canResolveHostname(const ClientRow& client) const
 {
-    const QHostAddress address(client.addr);
-    return !client.anonymous && !client.isUrl
-        && client.network != ClientNetwork::Usenet && client.network != ClientNetwork::Hoster
-        && !address.isNull() && !address.isMulticast()
-        && address != QHostAddress(QHostAddress::AnyIPv4)
-        && address != QHostAddress(QHostAddress::AnyIPv6)
-        && address != QHostAddress(QHostAddress::Broadcast)
-        && !m_hostnames.contains(client.addr)
-        && !m_hostnameLookups.contains(client.addr);
-}
-
-void ClientListModel::hostnameChanged(const QString& address)
-{
-    // Polling may reorder or remove peers while DNS is in flight.
-    for (int row = 0; row < clientCount(); ++row) {
-        if (m_rows[size_t(row)].addr == address)
-            emit dataChanged(index(row, peerIpColumn()), index(row, peerIpColumn()),
-                             {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
-    }
+    return hostnameCandidate(client) && HostnameResolver::isResolvable(client.addr)
+        && !m_resolver.isKnown(client.addr);
 }
 
 void ClientListModel::setResolveHostnames(bool enabled)
 {
-    if (m_resolveHostnames == enabled)
+    if (m_resolver.enabled() == enabled)
         return;
-    m_resolveHostnames = enabled;
-    ++m_hostnameGeneration;
-    if (!enabled) {
-        for (int id : m_hostnameLookups)
-            QHostInfo::abortHostLookup(id);
-        m_hostnameLookups.clear();
-    }
+    m_resolver.setEnabled(enabled);
     refreshHostnames();
     emit headerDataChanged(Qt::Horizontal, peerIpColumn(), peerIpColumn());
     if (clientCount() > 0)
         emit dataChanged(index(0, peerIpColumn()), index(clientCount() - 1, peerIpColumn()),
                          {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
-}
-
-void ClientListModel::refreshHostnames()
-{
-    // Retain results for the current snapshot, including failures. This avoids
-    // cycling through a small LRU cache on every poll of a large client list.
-    QSet<QString> addresses;
-    QSet<QString> queued;
-    m_hostnameQueue.clear();
-    for (const auto& client : m_rows) {
-        if (m_resolveHostnames && !queued.contains(client.addr) && canResolveHostname(client)) {
-            m_hostnameQueue.enqueue(client.addr);
-            queued.insert(client.addr);
-        }
-        addresses.insert(client.addr);
-    }
-    for (auto it = m_hostnames.begin(); it != m_hostnames.end();) {
-        if (!addresses.contains(it.key()))
-            it = m_hostnames.erase(it);
-        else
-            ++it;
-    }
-    startHostnameLookups();
-}
-
-void ClientListModel::startHostnameLookups()
-{
-    while (m_resolveHostnames && m_hostnameLookups.size() < 8 && !m_hostnameQueue.isEmpty()) {
-        const QString address = m_hostnameQueue.dequeue();
-        const quint64 generation = m_hostnameGeneration;
-        const int id = QHostInfo::lookupHost(address, this, [this, address, generation](const QHostInfo& info) {
-            if (generation != m_hostnameGeneration)
-                return;
-            m_hostnameLookups.remove(address);
-            // Qt can return the original IP when no PTR record exists.
-            const QString name = info.error() == QHostInfo::NoError
-                    && QHostAddress(info.hostName()).isNull() ? info.hostName() : QString();
-            m_hostnames.insert(address, name);
-            hostnameChanged(address);
-            startHostnameLookups();
-        });
-        m_hostnameLookups.insert(address, id);
-    }
 }
 
 std::vector<int> ClientListModel::extColumns() const
@@ -208,24 +136,11 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
                 return tr("Hidden");
             if (c.addr.isEmpty())
                 return tr("Unknown");
-            if (m_resolveHostnames) {
-                const auto name = m_hostnames.constFind(c.addr);
-                if (name != m_hostnames.cend()) {
-                    if (!name->isEmpty())
-                        return role == Qt::DisplayRole ? *name
-                            : QStringLiteral("%1\n%2").arg(*name, c.addr);
-                    if (role == Qt::ToolTipRole)
-                        return tr("%1\nNo hostname found.").arg(c.addr);
-                }
-                if (role == Qt::ToolTipRole && m_hostnameLookups.contains(c.addr))
-                    return tr("%1 (resolving…)").arg(c.addr);
-            }
-            return c.addr;
+            return role == Qt::DisplayRole ? m_resolver.displayText(c.addr, c.addr)
+                                           : m_resolver.toolTip(c.addr);
         }
-        if (role == Qt::UserRole) {
-            const QString name = m_resolveHostnames ? m_hostnames.value(c.addr) : QString();
-            return c.anonymous ? QString() : name.isEmpty() ? c.addr : name;
-        }
+        if (role == Qt::UserRole)
+            return c.anonymous ? QString() : m_resolver.displayText(c.addr, addressSortKey(c.addr, c.port));
         return {};
     }
     if (index.column() >= baseColumnCount())
@@ -323,7 +238,7 @@ QVariant ClientListModel::headerData(int section, Qt::Orientation orientation, i
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
         return {};
     if (section == peerIpColumn())
-        return m_resolveHostnames ? tr("Hostname / IP") : tr("Peer IP");
+        return m_resolver.enabled() ? tr("Hostname / IP") : tr("Peer IP");
     if (section == countryColumn())
         return tr("Country");
     if (section == sharedListColumn())
@@ -608,6 +523,39 @@ QString ClientListModel::lowIdText(const ClientRow& c)
     if (!c.hasLowID)
         return route;
     return route.isEmpty() ? tr("Low ID") : tr("Low ID, %1").arg(route);
+}
+
+// ---------------------------------------------------------------------------
+// private: hostnames
+// ---------------------------------------------------------------------------
+
+bool ClientListModel::hostnameCandidate(const ClientRow& client)
+{
+    return !client.anonymous && !client.isUrl
+        && client.network != ClientNetwork::Usenet && client.network != ClientNetwork::Hoster;
+}
+
+void ClientListModel::refreshHostnames()
+{
+    // Results stay while listed, failures too: no lookup again on every poll
+    QSet<QString> listed;
+    QStringList candidates;
+    for (const auto& client : m_rows) {
+        listed.insert(client.addr);
+        if (hostnameCandidate(client))
+            candidates.append(client.addr);
+    }
+    m_resolver.sync(listed, candidates);
+}
+
+void ClientListModel::hostnameChanged(const QString& address)
+{
+    // Polling may reorder or remove peers while DNS is in flight
+    for (int row = 0; row < clientCount(); ++row) {
+        if (m_rows[size_t(row)].addr == address)
+            emit dataChanged(index(row, peerIpColumn()), index(row, peerIpColumn()),
+                             {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
+    }
 }
 
 } // namespace eMule

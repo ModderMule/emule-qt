@@ -237,6 +237,20 @@ void KadPanelBase::setContactCount(int count)
     m_topTabWidget->setTabText(0, tr("▸ Contacts (%1)").arg(count));
 }
 
+bool KadPanelBase::isNewColumn(const QString& stateKey, int column)
+{
+    return !theUiState.hasHeaderState(stateKey) || theUiState.headerStateSectionCount(stateKey) <= column;
+}
+
+void KadPanelBase::placeContactsColumn(int column, int after, int width)
+{
+    auto* hdr = m_contactsView->header();
+    const int from = hdr->visualIndex(column);
+    const int to = hdr->visualIndex(after) + 1;
+    hdr->moveSection(from, from < to ? to - 1 : to);
+    hdr->resizeSection(column, width);
+}
+
 void KadPanelBase::setLookupTabTitle(const QString& lookupTitle)
 {
     m_lookupTitle = lookupTitle;

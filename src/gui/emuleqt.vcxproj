@@ -383,6 +383,7 @@
     <ClCompile Include="utils\MoveDownloadsAction.cpp" />
     <ClCompile Include="utils\Ed3kLinkMenu.cpp" />
     <ClCompile Include="utils\FolderLister.cpp" />
+    <ClCompile Include="utils\HostnameResolver.cpp" />
     <ClCompile Include="utils\ListActivation.cpp" />
     <ClCompile Include="utils\MenuUtils.cpp" />
     <ClCompile Include="utils\ViewNavigation.cpp" />
@@ -474,6 +475,7 @@
     <ClInclude Include="utils\ViewNavigation.h" />
     <ClInclude Include="utils\ViewSelection.h" />
     <QtMoc Include="utils\PanelPoller.h" />
+    <QtMoc Include="utils\HostnameResolver.h" />
     <QtMoc Include="utils\CountryFlags.h" />
     <ClInclude Include="utils\ClientIcons.h" />
     <ClInclude Include="utils\PreviewLauncher.h" />

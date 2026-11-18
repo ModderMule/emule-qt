@@ -73,6 +73,11 @@ Ed2kKadPanel::Ed2kKadPanel(QWidget* parent)
 
 Ed2kKadPanel::~Ed2kKadPanel() = default;
 
+void Ed2kKadPanel::applyDisplayOptions()
+{
+    m_contactsModel->setResolveHostnames(theUiState.resolvePeerHostnames());
+}
+
 void Ed2kKadPanel::setIpcClient(IpcClient* client)
 {
     // row-update pushes only while this list is on screen
@@ -367,8 +372,13 @@ QWidget* Ed2kKadPanel::createContactsPanel()
     // (srchybrid/KadContactListCtrl.cpp:53-55).
     if (!theUiState.hasHeaderState(QStringLiteral("kadContacts")))
         header->moveSection(KadContactsModel::ColClientId, 0);
+    const bool newIpColumn = isNewColumn(QStringLiteral("kadContacts"), KadContactsModel::ColIp);
     contactsView->setDefaultSort(KadContactsModel::ColStatus, Qt::AscendingOrder);
-    contactsView->bindColumns(QStringLiteral("kadContacts"), {110, 200, 200, 100, 150}, {KadContactsModel::ColCountry});
+    contactsView->bindColumns(QStringLiteral("kadContacts"), {110, 200, 200, 100, 200}, {KadContactsModel::ColCountry});
+    // IP (not MFC) after ID; also into a layout saved before it, past the wide Distance
+    if (newIpColumn)
+        placeContactsColumn(KadContactsModel::ColIp, KadContactsModel::ColClientId, 200);
+    m_contactsModel->setResolveHostnames(theUiState.resolvePeerHostnames());
     CountryFlags::bindFlagColumn(contactsView);
 
     // Compact monospace font for hex/binary display

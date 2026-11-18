@@ -34,6 +34,7 @@ public:
     ~Ed2kKadPanel() override;
 
     void setIpcClient(IpcClient* client) override;
+    void applyDisplayOptions() override;
 
     /// Reload the nodes.dat URL field after the daemon's preferences landed.
     void refreshNodesUrl();

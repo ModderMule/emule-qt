@@ -118,12 +118,42 @@ Ed3kKadContactsModel::Ed3kKadContactsModel(QObject* parent)
          [](const QCborMap& m) { return QVariant(number(m, "checkInS")); }},
         // appended to keep saved layouts; address of the family dialled first
         {tr("IP"),
-         [](const QCborMap& m) {
+         [this](const QCborMap& m) {
              const QString ip = value(m, "ip");
-             return ip.isEmpty() ? QString() : addressWithPort(ip, static_cast<uint16_t>(number(m, "port")));
+             return ip.isEmpty() ? QString()
+                                 : m_resolver.displayText(ip, addressWithPort(ip, static_cast<uint16_t>(number(m, "port"))));
          },
-         [](const QCborMap& m) { return QVariant(addressSortKey(value(m, "ip"), static_cast<uint16_t>(number(m, "port")))); }},
+         [this](const QCborMap& m) {
+             const QString ip = value(m, "ip");
+             return QVariant(m_resolver.displayText(ip, addressSortKey(ip, static_cast<uint16_t>(number(m, "port")))));
+         }},
     };
+    connect(&m_resolver, &HostnameResolver::resolved, this, &Ed3kKadContactsModel::hostnameChanged);
+}
+
+QVariant Ed3kKadContactsModel::headerData(int section, Qt::Orientation orientation, int role) const
+{
+    if (section == ColIp && orientation == Qt::Horizontal && role == Qt::DisplayRole && m_resolver.enabled())
+        return tr("Hostname / IP");
+    return Ed3kKadTableModel::headerData(section, orientation, role);
+}
+
+void Ed3kKadContactsModel::setContacts(const QCborArray& rows)
+{
+    setRows(rows);
+    refreshHostnames();
+}
+
+void Ed3kKadContactsModel::setResolveHostnames(bool enabled)
+{
+    if (m_resolver.enabled() == enabled)
+        return;
+    m_resolver.setEnabled(enabled);
+    refreshHostnames();
+    emit headerDataChanged(Qt::Horizontal, ColIp, ColIp);
+    if (count() > 0)
+        emit dataChanged(index(0, ColIp), index(count() - 1, ColIp),
+                         {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
 }
 
 QVariant Ed3kKadContactsModel::data(const QModelIndex& index, int role) const
@@ -139,6 +169,8 @@ QVariant Ed3kKadContactsModel::data(const QModelIndex& index, int role) const
         const QCborMap& m = row(index.row());
         if (index.column() == ColCountry)
             return CountryFlags::tooltip(value(m, "cc"));
+        if (index.column() == ColIp && !value(m, "ip").isEmpty())
+            return m_resolver.toolTip(value(m, "ip"));
         if (index.column() == ColType) {
             const QString agent = value(m, "agent");
             const QString tip = agent.isEmpty() ? tr("Not connected since restart") : agent;
@@ -164,6 +196,23 @@ int Ed3kKadContactsModel::contactImage(const QCborMap& m) const
     if (value(m, "agent").isEmpty())
         return 5;
     return static_cast<int>(std::min<qint64>(number(m, "fails"), 4));
+}
+
+void Ed3kKadContactsModel::refreshHostnames()
+{
+    QStringList addresses;
+    addresses.reserve(count());
+    for (const auto& m : m_rows)
+        addresses.append(value(m, "ip"));
+    m_resolver.sync(addresses);
+}
+
+void Ed3kKadContactsModel::hostnameChanged(const QString& address)
+{
+    for (int r = 0; r < count(); ++r) {
+        if (value(row(r), "ip") == address)
+            emit dataChanged(index(r, ColIp), index(r, ColIp), {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
+    }
 }
 
 // ---------------------------------------------------------------------------

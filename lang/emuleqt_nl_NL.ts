@@ -980,7 +980,7 @@ Het nieuwe certificaat vertrouwen?</translation>
         <translation>Bericht van %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+58"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+56"/>
         <source>Server</source>
         <translation>Server</translation>
     </message>
@@ -4024,7 +4024,7 @@ In wachtrij: hij wacht op een, op de getoonde plaats.</translation>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+264"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+180"/>
         <source>Country</source>
         <translation>Land</translation>
     </message>
@@ -4103,27 +4103,25 @@ In wachtrij: hij wacht op een, op de getoonde plaats.</translation>
         <translation>Slotnr.</translation>
     </message>
     <message>
-        <location line="-126"/>
-        <location line="+257"/>
+        <location line="-113"/>
+        <location line="+244"/>
         <source>Unknown</source>
         <translation>Onbekend</translation>
     </message>
     <message>
-        <location line="-259"/>
+        <location line="-246"/>
         <source>Hidden</source>
         <translation>Verborgen</translation>
     </message>
     <message>
-        <location line="+10"/>
         <source>%1
 No hostname found.</source>
-        <translation>%1
+        <translation type="vanished">%1
 Geen hostnaam gevonden.</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>%1 (resolving…)</source>
-        <translation>%1 (omzetten…)</translation>
+        <translation type="vanished">%1 (omzetten…)</translation>
     </message>
     <message>
         <location line="+105"/>
@@ -5318,9 +5316,9 @@ Geüpload:	%12</translation>
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+231"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+236"/>
         <location line="+129"/>
-        <location line="+155"/>
+        <location line="+160"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ Contacten (0)</translation>
     </message>
@@ -5329,7 +5327,7 @@ Geüpload:	%12</translation>
         <translation type="vanished">▸ Huidige zoekopdrachten (0)</translation>
     </message>
     <message>
-        <location line="-219"/>
+        <location line="-224"/>
         <source>The URL is invalid.</source>
         <translation>De URL is ongeldig.</translation>
     </message>
@@ -5340,19 +5338,19 @@ Geüpload:	%12</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+97"/>
+        <location line="+102"/>
         <location line="+40"/>
         <source>Bootstrap</source>
         <translation>Bootstrap</translation>
     </message>
     <message>
-        <location line="-135"/>
+        <location line="-140"/>
         <location line="+37"/>
         <source>Kademlia</source>
         <translation>Kademlia</translation>
     </message>
     <message>
-        <location line="+42"/>
+        <location line="+47"/>
         <source>Recheck Firewall</source>
         <translation>Firewall hertesten</translation>
     </message>
@@ -6171,7 +6169,12 @@ Een nieuwe anonieme sleutel maken?</translation>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+17"/>
+        <source>Hostname / IP</source>
+        <translation>Hostnaam / IP</translation>
+    </message>
+    <message>
+        <location line="+39"/>
         <source>Not connected since restart</source>
         <translation>Niet verbonden sinds herstart</translation>
     </message>
@@ -6179,7 +6182,7 @@ Een nieuwe anonieme sleutel maken?</translation>
 <context>
     <name>eMule::Ed3kKadLookupsModel</name>
     <message>
-        <location line="+33"/>
+        <location line="+50"/>
         <source>Number</source>
         <translation>Nummer</translation>
     </message>
@@ -6353,7 +6356,7 @@ Een nieuwe anonieme sleutel maken?</translation>
         </translation>
     </message>
     <message>
-        <location line="+219"/>
+        <location line="+229"/>
         <location line="+316"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
@@ -12801,6 +12804,21 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
     </message>
 </context>
 <context>
+    <name>eMule::HostnameResolver</name>
+    <message>
+        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+93"/>
+        <source>%1
+No hostname found.</source>
+        <translation>%1
+Geen hostnaam gevonden.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>%1 (resolving…)</source>
+        <translation>%1 (omzetten…)</translation>
+    </message>
+</context>
+<context>
     <name>eMule::IPFilterDialog</name>
     <message>
         <location filename="../src/gui/dialogs/IPFilterDialog.cpp" line="+190"/>
@@ -13863,7 +13881,7 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
 <context>
     <name>eMule::KadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+69"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+82"/>
         <source>%1
 UDP port: %2
 TCP port: %3</source>
@@ -13895,6 +13913,11 @@ TCP-poort: %3</translation>
         <location line="+1"/>
         <source>IP</source>
         <translation>IP</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Hostname / IP</source>
+        <translation>Hostnaam / IP</translation>
     </message>
 </context>
 <context>
@@ -14479,29 +14502,29 @@ TCP-poort: %3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+232"/>
+        <location line="+246"/>
         <source>▸ Search Details</source>
         <translation>▸ Zoekdetails</translation>
     </message>
     <message>
-        <location line="-198"/>
+        <location line="-212"/>
         <source>▸ Outgoing Searches (0)</source>
         <translation>▸ Uitgaande zoekopdrachten (0)</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+174"/>
+        <location line="+188"/>
         <source>▸ Incoming Searches (0)</source>
         <translation>▸ Inkomende zoekopdrachten (0)</translation>
     </message>
     <message>
-        <location line="-88"/>
+        <location line="-102"/>
         <location line="+1"/>
         <source>▸ Contacts (%1)</source>
         <translation>▸ Contacten (%1)</translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+124"/>
         <source>▸ Search Details (%1)</source>
         <translation>▸ Zoekdetails (%1)</translation>
     </message>
@@ -15208,12 +15231,12 @@ TCP-poort: %3</translation>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+141"/>
-        <location line="+854"/>
+        <location line="+857"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-713"/>
+        <location line="-716"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt afsluiten</translation>
     </message>
@@ -15269,12 +15292,12 @@ U gebruikt %2. De website van eMule Qt openen?</translation>
     <message>
         <location line="+21"/>
         <location line="+7"/>
-        <location line="+1193"/>
+        <location line="+1196"/>
         <source>Version Check</source>
         <translation>Versiecontrole</translation>
     </message>
     <message>
-        <location line="-1199"/>
+        <location line="-1202"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>U gebruikt de nieuwste versie van eMule Qt (v%1).</translation>
     </message>
@@ -15302,12 +15325,12 @@ Enable at least one under Options → Connection to connect.</source>
 Schakel er minstens één in onder Opties → Verbinding om te verbinden.</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+94"/>
         <source>eMule Version %1 ready</source>
         <translation>eMule versie %1 is klaar</translation>
     </message>
     <message>
-        <location line="+121"/>
+        <location line="+122"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: verbonden (laag-ID)</translation>
     </message>
@@ -18421,7 +18444,12 @@ Auto volgt de uploadcapaciteit: 4 onder 4 Mbit/s, 8 onder 20 Mbit/s, 16 onder 10
         <translation>CPU- &amp;&amp; geheugengebruik besparen</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-53"/>
+        <source>Show resolved hostnames instead of IP addresses in client lists and Kad contact lists. Keep the IP address when no hostname is found.</source>
+        <translation>Toont omgezette hostnamen in plaats van IP-adressen in clientlijsten en Kad-contactlijsten. Behoudt het IP-adres als er geen hostnaam wordt gevonden.</translation>
+    </message>
+    <message>
+        <location line="+55"/>
         <source>Disable Known Clients list</source>
         <translation>Bekende-cliëntenlijst deactiveren</translation>
     </message>
@@ -21369,12 +21397,11 @@ Elke pagina is een API-aanroep ten laste van het tegoed van uw account, dus dit 
         <translation>Hostnamen van downloaders omzetten</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Show resolved hostnames instead of IP addresses in client lists. Keep the IP address when no hostname is found.</source>
-        <translation>Toont omgezette hostnamen in plaats van IP-adressen in clientlijsten. Behoudt het IP-adres als er geen hostnaam wordt gevonden.</translation>
+        <translation type="vanished">Toont omgezette hostnamen in plaats van IP-adressen in clientlijsten. Behoudt het IP-adres als er geen hostnaam wordt gevonden.</translation>
     </message>
     <message>
-        <location line="+3843"/>
+        <location line="+3845"/>
         <source>Search</source>
         <translation>Zoeken</translation>
     </message>
