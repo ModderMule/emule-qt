@@ -102,7 +102,7 @@ void tst_BtTorrentCreator::singleFileFormats()
     QCOMPARE(r.pieces, 5);
     QCOMPARE(BtTorrentCreator::countPieces(p).value_or(-1), 5);
     const auto preview = BtSession::inspectTorrentFile(r.data);
-    QVERIFY2(preview, qPrintable(preview.error()));
+    QVERIFY2(preview, qPrintable(preview ? QString() : preview.error()));
     QCOMPARE(!preview->hashV1.isEmpty(), v1);
     QCOMPARE(!preview->hashV2.isEmpty(), v2);
     QCOMPARE(contentSize(*preview), 300 * 1024 + 7);
@@ -311,7 +311,7 @@ void tst_BtTorrentCreator::exportsWhatIsSeeded()
 
     const auto made = BtSession::inspectTorrentFile(r.data);
     const auto back = BtSession::inspectTorrentFile(out);
-    QVERIFY2(back, qPrintable(back.error()));
+    QVERIFY2(back, qPrintable(back ? QString() : back.error()));
     QCOMPARE(back->hashV1, made->hashV1);
     QCOMPARE(back->hashV2, made->hashV2);
     QCOMPARE(back->comment, p.comment);

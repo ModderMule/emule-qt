@@ -1363,6 +1363,7 @@ void tst_PartFile::writeReadRoundTrip_withGaps()
 
     // On disk it is eMule's form: old-style uint32 tag, 2-byte name = FT_GAPSTART or
     // FT_GAPEND + the gap index, and the end one past the gap.
+    BackgroundFileWriter::instance().flush();   // the save may still be queued
     QFile met(tempDir + QLatin1Char('/') + pf1.partMetFileName());
     QVERIFY(met.open(QIODevice::ReadOnly));
     QByteArray raw = met.readAll();

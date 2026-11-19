@@ -1368,14 +1368,15 @@ bool UploadQueue::isSlotCoolingDown(const UpDownClient* client, uint64 curTick) 
 
 bool UploadQueue::callbackSlotAllowed(uint64 curTick)
 {
+    // sums, not differences: a stamp taken after curTick must not wrap to "long ago"
     std::erase_if(m_callbackAsks, [curTick](const auto& entry) {
-        return curTick - entry.second.askedAt
-            >= (entry.second.failed ? kCallbackFailedRetryMs : kCallbackRetryMs);
+        return curTick >= entry.second.askedAt
+                              + (entry.second.failed ? kCallbackFailedRetryMs : kCallbackRetryMs);
     });
-    if (m_lastCallbackSlot != 0 && curTick - m_lastCallbackSlot < kCallbackSlotMs)
+    if (m_lastCallbackSlot != 0 && curTick < m_lastCallbackSlot + kCallbackSlotMs)
         return false;
     // under the limit for a while (always, unlimited): recycleDeadSlots() keeps the stamp
-    return m_underfillSince != 0 && curTick - m_underfillSince >= kUnderfillMs;
+    return m_underfillSince != 0 && curTick >= m_underfillSince + kUnderfillMs;
 }
 
 bool UploadQueue::awaitsCallback(const UpDownClient* client, uint64 curTick) const
@@ -1383,8 +1384,9 @@ bool UploadQueue::awaitsCallback(const UpDownClient* client, uint64 curTick) con
     if (client->uploadState() != UploadState::Connecting)
         return false;
     const auto it = m_callbackAsks.find(client->userAddress());
+    // process() reads curTick before addUpNextClient() stamps askedAt: a later stamp is fresh
     return it != m_callbackAsks.end() && !it->second.failed
-        && curTick - it->second.askedAt < kCallbackWaitMs;
+        && curTick < it->second.askedAt + kCallbackWaitMs;
 }
 
 bool UploadQueue::requeueFailedCallback(UpDownClient* client, const QString& reason)
@@ -1472,7 +1474,7 @@ void UploadQueue::recycleDeadSlots(uint64 curTick)
         if (!dead && curTick - since >= kDeadSlotMs)
             dead = cur;
     }
-    if (!dead || curTick - m_underfillSince < kUnderfillMs)
+    if (!dead || curTick < m_underfillSince + kUnderfillMs)
         return;
 
     // Only for someone: with nobody to take it, the slot is no use to anyone freed.

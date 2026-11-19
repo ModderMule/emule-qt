@@ -37,6 +37,8 @@
 #include <QJsonObject>
 #include <QSaveFile>
 #include <QSet>
+#include <QTcpServer>
+#include <QUdpSocket>
 
 #include <algorithm>
 #include <QTimer>
@@ -55,6 +57,22 @@ namespace lt = libtorrent;
 namespace eMule::bt {
 
 namespace {
+
+/// A port free for TCP and UDP alike; 0: none found. libtorrent's port 0 takes an
+/// ephemeral TCP port and binds uTP to the same number, which fails inside a UDP-only
+/// excluded range (Windows Hyper-V/WinNAT reserve those): no listen socket at all.
+quint16 freeTcpUdpPort()
+{
+    for (int tries = 0; tries < 32; ++tries) {
+        QUdpSocket udp;
+        if (!udp.bind(QHostAddress::Any, 0))
+            continue;
+        QTcpServer tcp;
+        if (tcp.listen(QHostAddress::Any, udp.localPort()))
+            return udp.localPort();
+    }
+    return 0;
+}
 
 constexpr int kTickMs = 1000;
 /// resume data of changed torrents every 5 min
@@ -332,6 +350,8 @@ struct BtSession::Impl {
     int redundantIdx = lt::find_metric_idx("net.recv_redundant_bytes");
     int peersIdx = lt::find_metric_idx("peer.num_peers_connected");
     bool listening = false;
+    /// listenPort 0 (random): the port picked at start, kept until stop
+    mutable quint16 randomPort = 0;
     int dhtNodes = 0;
     /// one DHT node per listen socket (v4 + v6): routing table size per local endpoint
     std::map<lt::udp::endpoint, int> dhtNodesBySocket;
@@ -825,6 +845,7 @@ void BtSession::stop()
     d->i2pNameMisses.clear();
     d->outstandingResume = 0;
     d->listening = false;
+    d->randomPort = 0;
     d->dhtNodes = 0;
     d->dhtNodesBySocket.clear();
     d->externalIPv4.clear();
@@ -2185,7 +2206,13 @@ void BtSession::Impl::enforceSeedLimits(const lt::torrent_status& st, const BtTo
 
 lt::settings_pack BtSession::Impl::pack(const BtSettings& s) const
 {
-    lt::settings_pack p = BtSettingsMap::toPack(s);
+    BtSettings resolved = s;
+    if (resolved.listenPort == 0) {
+        if (randomPort == 0)
+            randomPort = freeTcpUdpPort();
+        resolved.listenPort = randomPort;   // still 0 when none found: libtorrent picks
+    }
+    lt::settings_pack p = BtSettingsMap::toPack(resolved);
     if (rateLimits) {
         p.set_int(lt::settings_pack::download_rate_limit, rateLimits->first);
         p.set_int(lt::settings_pack::upload_rate_limit, rateLimits->second);
