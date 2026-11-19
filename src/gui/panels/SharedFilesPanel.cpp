@@ -762,6 +762,20 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
                 TorrentCreatorDialog::run(m_ipc, this, root, only);
         });
         act->setEnabled(oneFolder && m_ipc && m_ipc->isConnected());
+
+        // #212: the torrents that have the selected files; the files stay
+        QList<QPair<QString, QString>> torrents;
+        for (const SharedFileRow* f : sel)
+            for (const auto& t : f->torrents)
+                if (!torrents.contains(t))
+                    torrents.append(t);
+        auto* removeAct = m_contextMenu->addAction(
+            torrents.size() == 1 ? tr("Remove Torrent \"%1\" (Keep Files)...").arg(torrents.constFirst().second)
+                                 : tr("Remove Torrents (Keep Files)..."),
+            this, [this, torrents]() { removeTorrentsKeepFiles(torrents); });
+        removeAct->setEnabled(!torrents.isEmpty() && m_ipc && m_ipc->isConnected());
+        removeAct->setToolTip(tr("Removes the torrent from the Torrents list and stops seeding it. "
+                                 "The files stay on disk and in Shared Files."));
     }
 #endif
 
@@ -1373,6 +1387,10 @@ SharedFileRow sharedRowFromCbor(const QCborMap& m)
     row.allTimeAccepted   = m.value(QStringLiteral("allTimeAccepted")).toInteger();
     row.allTimeTransferred = m.value(QStringLiteral("allTimeTransferred")).toInteger();
     row.lastRequested     = m.value(QStringLiteral("lastRequested")).toInteger();
+    for (const auto& t : m.value(QStringLiteral("torrents")).toArray()) {
+        const QCborArray pair = t.toArray();
+        row.torrents.append({pair.at(0).toString(), pair.at(1).toString()});
+    }
     row.completeSources   = static_cast<int>(m.value(QStringLiteral("completeSources")).toInteger());
     row.completeSourcesLo = static_cast<int>(m.value(QStringLiteral("completeSourcesLo")).toInteger());
     row.completeSourcesHi = static_cast<int>(m.value(QStringLiteral("completeSourcesHi")).toInteger());
@@ -2990,6 +3008,33 @@ void SharedFilesPanel::dumpEd3kMenus()
         logInfo(QStringLiteral("ed3k menu Shared %1%2: %3")
                     .arg(f->fileName, f->ed3kOnly ? QStringLiteral(" (ed3k only)") : QString(), MenuDump::text(m_contextMenu)));
     }
+}
+
+void SharedFilesPanel::removeTorrentsKeepFiles(const QList<QPair<QString, QString>>& torrents)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (torrents.isEmpty() || !IpcFeedback::requireConnection(m_ipc, tr("Remove Torrent")))
+        return;
+    QStringList names;
+    for (const auto& t : torrents)
+        names.append(t.second);
+    const QString text = torrents.size() == 1
+                             ? tr("Remove the torrent \"%1\"? Its files stay on disk and shared.").arg(names.constFirst())
+                             : tr("Remove these %n torrent(s)? Their files stay on disk and shared.\n\n%1", nullptr,
+                                  int(torrents.size()))
+                                   .arg(names.join(u'\n'));
+    if (QMessageBox::question(this, tr("Remove Torrent"), text, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+        != QMessageBox::Yes)
+        return;
+    for (const auto& t : torrents) {
+        IpcMessage msg(IpcMsgType::RemoveTorrent);
+        msg.append(t.first);
+        msg.append(false);   // keep the files
+        m_ipc->sendRequest(std::move(msg));
+    }
+#else
+    Q_UNUSED(torrents)
+#endif
 }
 
 } // namespace eMule

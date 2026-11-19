@@ -4660,6 +4660,12 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setMaxUpload(static_cast<uint32>(val.toInteger()));
     else if (key == QStringLiteral("maxDownload"))
         thePrefs.setMaxDownload(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("altSpeed"))
+        thePrefs.setAltSpeed(val.toBool());
+    else if (key == QStringLiteral("altSpeedUp"))
+        thePrefs.setAltSpeedUp(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("altSpeedDown"))
+        thePrefs.setAltSpeedDown(static_cast<uint32>(val.toInteger()));
     else if (key == QStringLiteral("maxGraphDownloadRate"))
         thePrefs.setMaxGraphDownloadRate(static_cast<uint32>(val.toInteger()));
     else if (key == QStringLiteral("maxGraphUploadRate"))

@@ -19,10 +19,12 @@
 
 #include "Ed3kFfi.h"
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QString>
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <array>
 #include <map>
@@ -52,6 +54,7 @@ public:
         bool lan = false;
         bool due = false;            ///< the turn reached 16 MiB / 1 h (SlotUsed due)
         std::uint64_t bytes = 0;     ///< file bytes of the running turn
+        std::uint64_t rate = 0;      ///< upload speed of the running turn, B/s (uploading() only)
         qint64 since = 0;            ///< ms since the epoch: entered the queue, or got the slot
         int place = 0;               ///< waiting: the engine's rank (else 1-based by waiting time); holding: 0
         QString agent;               ///< Hello.agent ("eMuleQt 0.7.0"); empty: not known
@@ -93,11 +96,20 @@ private:
     void onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled);
     void onSessionStatus();
     [[nodiscard]] static qint64 nowMs();
+    /// The turn's bytes over the last 10 s (the GUI polls about once a second); 0 at first.
+    [[nodiscard]] std::uint64_t sampleUpRate(const Row& row) const;
 
     Ed3kSession& m_session;
     NameLookup m_names;
     /// by (key, node): the two nodes' queues may hold the same downloader ID
     std::map<std::pair<::ed3k::KeyKind, ::ed3k::NodeId>, Row> m_rows;
+    /// sampleUpRate(): (ms, turn bytes) per holder, and when it was last asked
+    struct UpSamples {
+        std::deque<std::pair<qint64, std::uint64_t>> at;
+        qint64 asked = 0;
+    };
+    mutable std::map<std::pair<::ed3k::KeyKind, ::ed3k::NodeId>, UpSamples> m_upSamples;
+    mutable QElapsedTimer m_upClock;
 };
 
 } // namespace eMule::ed3k

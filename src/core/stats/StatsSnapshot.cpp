@@ -997,9 +997,37 @@ std::optional<qint64> cachedFreeTempSpace(const QStringList& tempDirs)
     return cache.value;
 }
 
+/// Last heap summary; refreshed on the thread pool when older than 10 s. Windows
+/// HeapSummary walks the whole heap: seconds on a big one, on the main thread (#200).
+std::optional<HeapMemory> cachedHeapMemory()
+{
+    struct Cache {
+        QMutex mutex;
+        std::optional<HeapMemory> value;
+        QElapsedTimer age;
+        bool running = false;
+    };
+    static constexpr qint64 kRefreshMs = 10000;
+    static Cache cache;
+
+    QMutexLocker lock(&cache.mutex);
+    if ((!cache.age.isValid() || cache.age.elapsed() > kRefreshMs) && !cache.running) {
+        cache.running = true;
+        QThreadPool::globalInstance()->start([] {
+            const auto heap = heapMemory();
+            QMutexLocker done(&cache.mutex);
+            cache.value = heap;
+            cache.age.start();
+            cache.running = false;
+        });
+    }
+    return cache.value;
+}
+
 void collectMemoryBreakdown(StatsSnapshot& out)
 {
-    if (const auto heap = heapMemory()) {
+    // was: heapMemory() (HeapSummary on the main thread stalled the core 8 s, #200)
+    if (const auto heap = cachedHeapMemory()) {
         out.memHeapInUse = static_cast<qint64>(heap->inUse);
         out.memHeapCommitted = static_cast<qint64>(heap->committed);
     }

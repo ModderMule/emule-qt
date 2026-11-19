@@ -15,7 +15,7 @@
 ///
 /// ed3k (packmule) rides on eD2K's share (socket-modes.md "Mode A in eMuleQt"): it may use
 /// all of it (ed3k_set_limits), its traffic joins eD2K's demand, its upload goes to the
-/// throttler (noteBytesSentOutsideTheLoop: in the upload rate, off the budget) and eD2K's
+/// throttler (noteForeignBytesSent: in the upload rate, off the budget in full) and eD2K's
 /// download budget drops by what ed3k receives.
 
 #include "transfer/BandwidthSplit.h"

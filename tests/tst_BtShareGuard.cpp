@@ -3,6 +3,7 @@
 /// switched off finished torrents and hoster downloads do too (#177).
 
 #include "utils/BackgroundFileWriter.h"
+#include "BtFileIndex.h"
 #include "BtShareGuard.h"
 #include "LandedFiles.h"
 #include "files/SharedFileList.h"
@@ -20,6 +21,7 @@ class tst_BtShareGuard : public QObject {
     Q_OBJECT
 
 private slots:
+    void fileIndex_folderTorrentCoversEachFile();
     void unfinished_blocksTheWholeContent();
     void magnetWithoutMetadata_blocksNothing();
     void done_releasesTheTreeAndKeepsSkippedFilesOut();
@@ -321,6 +323,35 @@ void tst_BtShareGuard::landedFiles_blockOnlyWhileOff()
     QVERIFY(again.contains(QStringLiteral("/in/pkg/a.bin")));
     QVERIFY(again.contains(QStringLiteral("/in/b.bin")));
     QCOMPARE(again.size(), SharedFileList::pathKey(QStringLiteral("/in/b.bin")) == SharedFileList::pathKey(QStringLiteral("/IN/B.BIN")) ? 2 : 3);
+}
+
+// #212: a file of a folder torrent is covered; removal and a move clear the old keys
+void tst_BtShareGuard::fileIndex_folderTorrentCoversEachFile()
+{
+    BtFileIndex idx;
+    const QString root = QStringLiteral("/data/Show");
+    const QStringList files{root + QStringLiteral("/a.mkv"), root + QStringLiteral("/sub/b.mkv")};
+    QCOMPARE(idx.update(QStringLiteral("t1"), QStringLiteral("Show"), root, files).size(), 2);
+    QVERIFY(idx.isCurrent(QStringLiteral("t1"), root));
+    QVERIFY(idx.update(QStringLiteral("t1"), QStringLiteral("Show"), root, files).isEmpty());
+    QCOMPARE(idx.torrentsOf(files.at(1)).size(), 1);
+    QCOMPARE(idx.torrentsOf(files.at(1)).constFirst().name, QStringLiteral("Show"));
+    QVERIFY(idx.torrentsOf(root).isEmpty());   // the folder itself is no shared file
+
+    // a second torrent over the same file: both listed
+    idx.update(QStringLiteral("t2"), QStringLiteral("a.mkv"), files.at(0), {files.at(0)});
+    QCOMPARE(idx.torrentsOf(files.at(0)).size(), 2);
+
+    // moved: the old paths are free
+    const QString moved = QStringLiteral("/other/Show");
+    QVERIFY(!idx.isCurrent(QStringLiteral("t1"), moved));
+    idx.update(QStringLiteral("t1"), QStringLiteral("Show"), moved, {moved + QStringLiteral("/a.mkv")});
+    QVERIFY(idx.torrentsOf(files.at(1)).isEmpty());
+    QCOMPARE(idx.torrentsOf(files.at(0)).size(), 1);
+
+    QCOMPARE(idx.remove(QStringLiteral("t2")).size(), 1);
+    QVERIFY(idx.torrentsOf(files.at(0)).isEmpty());
+    QVERIFY(idx.remove(QStringLiteral("t2")).isEmpty());
 }
 
 QTEST_GUILESS_MAIN(tst_BtShareGuard)

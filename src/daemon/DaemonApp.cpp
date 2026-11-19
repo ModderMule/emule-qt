@@ -22,6 +22,7 @@
 #include "ScheduleNetworkBridge.h"
 #include "BandwidthCoordinator.h"
 #include "BtBridge.h"
+#include "BtFileIndex.h"
 #include "BtCreateBridge.h"
 #include "Ed3kBridge.h"
 #include "Ed3kCreditBridge.h"
@@ -1070,6 +1071,46 @@ bool DaemonApp::start()
         connect(m_btSession.get(), &bt::BtSession::torrentFinished, this, guard);
         connect(m_btSession.get(), &bt::BtSession::metadataReceived, this, guard);
         connect(m_btSession.get(), &bt::BtSession::torrentChecked, this, guard);
+    }
+    {
+        // #212: which torrents cover a shared file (torrent mark, Remove Torrent keeping files)
+        const auto refreshRows = [](const QSet<QString>& keys) {
+            if (keys.isEmpty() || !theApp.sharedFileList)
+                return;
+            // collected under the list's lock, told after it (lock re-entry)
+            std::vector<MD4Key> hashes;
+            theApp.sharedFileList->forEachFile([&](KnownFile* kf) {
+                if (keys.contains(SharedFileList::pathKey(kf->filePath())))
+                    hashes.emplace_back(kf->fileHash());
+            });
+            for (const MD4Key& h : hashes)
+                theApp.sharedFileList->noteFileChanged(h.data.data());
+        };
+        const auto index = [this, refreshRows](const QString& id) {
+            if (!m_btSession)
+                return;
+            const auto row = m_btSession->torrent(id);
+            if (!row || row->name.isEmpty() || row->totalSize <= 0)
+                return;   // no metadata yet
+            const QString root = QDir::cleanPath(row->savePath + u'/' + row->name);
+            auto& idx = BtFileIndex::instance();
+            if (idx.isCurrent(id, root))
+                return;
+            // first ask may be empty: the next torrentChanged has the list
+            const QList<bt::BtFileRow> files = m_btSession->files(id);
+            if (files.isEmpty())
+                return;
+            QStringList paths;
+            for (const bt::BtFileRow& f : files)
+                if (!f.pad)
+                    paths.append(QDir::cleanPath(row->savePath + u'/' + f.path));
+            refreshRows(idx.update(id, row->name, root, paths));
+        };
+        connect(m_btSession.get(), &bt::BtSession::torrentAdded, this, index);
+        connect(m_btSession.get(), &bt::BtSession::torrentChanged, this, index);
+        connect(m_btSession.get(), &bt::BtSession::metadataReceived, this, index);
+        connect(m_btSession.get(), &bt::BtSession::torrentRemoved, this,
+                [refreshRows](const QString& id) { refreshRows(BtFileIndex::instance().remove(id)); });
     }
     m_i2pRouter = std::make_unique<I2pRouter>();
     BtBridge::setI2pRouter(m_i2pRouter.get());

@@ -219,7 +219,8 @@ void tst_CountryFlags::sharedListColumn_hiddenByDefaultAndExtOnly()
 }
 
 // Uploading and On Queue append Uploaded, Downloaded, Ratio, Session Ratio after
-// Shared List, Uploading also Slot #; all are "Show more controls" columns.
+// Shared List, Uploading also Slot #; all are "Show more controls" columns. Software
+// (MorphXT) comes last and shows always.
 void tst_CountryFlags::clientModel_transferAndRatioColumns()
 {
     for (const auto mode : {ClientListMode::Uploading, ClientListMode::OnQueue}) {
@@ -234,7 +235,7 @@ void tst_CountryFlags::clientModel_transferAndRatioColumns()
 
         const int first = model.sharedListColumn() + 1;
         const bool uploading = mode == ClientListMode::Uploading;
-        QCOMPARE(model.columnCount(), first + (uploading ? 5 : 4));
+        QCOMPARE(model.columnCount(), first + (uploading ? 6 : 5));
         QCOMPARE(model.headerData(first, Qt::Horizontal).toString(), QStringLiteral("Uploaded"));
         QCOMPARE(model.headerData(first + 3, Qt::Horizontal).toString(), QStringLiteral("Session Ratio"));
         QCOMPARE(model.data(model.index(0, first)).toString(), QStringLiteral("3.00 MB"));
@@ -258,6 +259,16 @@ void tst_CountryFlags::clientModel_transferAndRatioColumns()
             QVERIFY(std::ranges::find(hidden, first + 4) == hidden.end());
         }
         QCOMPARE(model.extColumns(), expected);
+
+        const int software = model.columnCount() - 1;
+        QCOMPARE(model.headerData(software, Qt::Horizontal).toString(), QStringLiteral("Software"));
+        QCOMPARE(model.data(model.index(0, software)).toString(), QStringLiteral("Unknown"));
+        ClientRow named = row;
+        named.software = QStringLiteral("eMule v0.50a");
+        model.setClients({named});
+        QCOMPARE(model.data(model.index(0, software)).toString(), QStringLiteral("eMule v0.50a"));
+        const auto hidden = model.defaultHiddenColumns();
+        QVERIFY(std::ranges::find(hidden, software) == hidden.end());
     }
     // The other two tabs keep Shared List last
     ClientListModel known(ClientListMode::KnownClients);

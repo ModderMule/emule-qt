@@ -118,9 +118,11 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
     // the same one the download list draws. Nothing here touches the disk: the
     // daemon's background sweep settled the verdict and sent a bool.
     if (role == Qt::DecorationRole && index.column() == ColFileName) {
+        // #212: torrent mark right after the type icon: a torrent has this file
         return fileMarksIcon(f.fileType, containerMark(f.containerSuspect, f.containerMislabelled),
                              f.ownComment,
-                             ratingMark(f.hasComment, f.userRating));
+                             ratingMark(f.hasComment, f.userRating),
+                             f.torrents.isEmpty() ? QString() : QStringLiteral(":/icons/Torrent.ico"));
     }
     if (role == Qt::DecorationRole && index.column() == ColSharedNetworks)
         return networkIcons(f.publishedED2K, f.kadPublished);
@@ -195,9 +197,12 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
                  networkText(f.publishedED2K, f.kadPublished), f.path);
         // The marks in column 0 explain themselves here, worded exactly as they are
         // in the download list — same helper, same cell, same sentence.
-        return QString(tip + fileMarksTooltip(f.fileName,
-                                             containerMark(f.containerSuspect, f.containerMislabelled),
-                                             f.containerActual, f.hasComment, f.userRating));
+        QString torrents;
+        for (const auto& [id, name] : f.torrents)
+            torrents += u'\n' + tr("Torrent:\t%1").arg(name);
+        return QString(tip + torrents
+                       + fileMarksTooltip(f.fileName, containerMark(f.containerSuspect, f.containerMislabelled),
+                                          f.containerActual, f.hasComment, f.userRating));
     }
 
     if (role == AltSortRole) {

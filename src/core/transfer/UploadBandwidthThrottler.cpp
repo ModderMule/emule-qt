@@ -294,6 +294,7 @@ void UploadBandwidthThrottler::run()
 void UploadBandwidthThrottler::runInternal()
 {
     int64 realBytesToSpend = 0;
+    int64 foreignDebt = 0;   // noteForeignBytesSent, bytes × 1000, paid off the accrual
     int rememberedSlotCounter = 0;
     int surplusStart = 0;
     bool recentlySentData = false;
@@ -544,11 +545,19 @@ void UploadBandwidthThrottler::runInternal()
                 if (timeSinceLastLoop >= sleepTime + SEC2MS(2))
                     timeSinceLastLoop = sleepTime + SEC2MS(2);
 
-                realBytesToSpend += static_cast<int64>(allowedDataRate) * static_cast<int64>(timeSinceLastLoop);
+                const int64 accrued = static_cast<int64>(allowedDataRate) * static_cast<int64>(timeSinceLastLoop);
+                // another engine's bytes on this line first; at most 2 s of the line owed
+                foreignDebt += static_cast<int64>(m_foreignBytesForBudget.exchange(0, std::memory_order_relaxed)) * 1000;
+                foreignDebt = std::min<int64>(foreignDebt, static_cast<int64>(allowedDataRate) * 2000);
+                const int64 paid = std::min(foreignDebt, accrued);
+                foreignDebt -= paid;
+                realBytesToSpend += accrued - paid;
                 bytesToSpend = realBytesToSpend / 1000;
             }
         } else {
             realBytesToSpend = 0;
+            foreignDebt = 0;
+            m_foreignBytesForBudget.store(0, std::memory_order_relaxed);
             bytesToSpend = INT32_MAX;
         }
 

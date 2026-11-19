@@ -111,6 +111,7 @@ SOURCES += \
     controls/ClientListModel.cpp \
     controls/ContactsGraph.cpp \
     controls/ContentScrollArea.cpp \
+    controls/CheckComboBox.cpp \
     controls/HosterCombo.cpp \
     utils/HosterIcons.cpp \
     controls/OptionsTree.cpp \
@@ -259,6 +260,7 @@ HEADERS += \
     controls/ClientListModel.h \
     controls/ContactsGraph.h \
     controls/ContentScrollArea.h \
+    controls/CheckComboBox.h \
     controls/HosterCombo.h \
     utils/HosterIcons.h \
     controls/OptionsTree.h \

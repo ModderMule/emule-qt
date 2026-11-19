@@ -170,6 +170,7 @@ private slots:
     void ed2kAliasIsMd4AndSizeBigEndian();
     void aSharedFileIsFetchedByItsRoot();
     void theCacheSparesAHashAfterARestart();
+    void theListedDateSparesAStat();
     void unlistedCacheEntriesArePrunedOffTheMainThread();
     void aRemovedFileIsNotShared();
     void aDeclinedFileIsSharedNotPublished();
@@ -335,6 +336,66 @@ void tst_Ed3kShared::theCacheSparesAHashAfterARestart()
         QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
         QCOMPARE(shared.hashCount(), 1);
         QCOMPARE(*shared.rootOf(md4), rootOf(other));
+        shared.stop();
+    }
+}
+
+// #200: the share list's date (stat'ed off the main thread) picks the cached entry, a
+// new file is stat'ed when hashed; both are served (the read worker checks the ms date)
+void tst_Ed3kShared::theListedDateSparesAStat()
+{
+    const QByteArray data = payload(int(kBlock + 777), 8);
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    const QString path = QDir(da.path()).filePath(QStringLiteral("d.bin"));
+    QVERIFY(writeFile(path, data));
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    FakeSource src;
+    const QByteArray md4(16, char(0x3a));
+    SharedEntry e{md4, path, QStringLiteral("d.bin"), std::uint64_t(data.size())};
+    e.fileDate = QFileInfo(path).lastModified().toSecsSinceEpoch();
+    src.entries.push_back(e);
+
+    ::ed3k::Root first;
+    {
+        // nothing cached: hashed, its date read then
+        Ed3kShared shared(a, src, da.path());
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+        QCOMPARE(shared.hashCount(), 1);
+        first = *shared.rootOf(md4);
+        QCOMPARE(first, rootOf(data));
+        shared.stop();
+        eMule::BackgroundFileWriter::instance().flush();
+    }
+    {
+        // the listed date matches the cached one: shared at once
+        Ed3kShared shared(a, src, da.path());
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(shared.hashCount(), 0);
+        QCOMPARE(*shared.rootOf(md4), first);
+        Fetcher fetch(b, db.path());
+        fetch.setSearchEnabled(false);
+        fetch.start();
+        QVERIFY(fetch.fetch(first, std::uint64_t(data.size()), sourceOf(a)));
+        QTRY_COMPARE_WITH_TIMEOUT(fetch.got.size(), data.size(), 30000);
+        QVERIFY(fetch.got == data);
+        fetch.stop();
+        shared.stop();
+    }
+    {
+        // a listed date 1 h off: stat'ed, still a hit (DST)
+        src.entries.front().fileDate += 3600;
+        Ed3kShared shared(a, src, da.path());
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(shared.hashCount(), 0);
         shared.stop();
     }
 }

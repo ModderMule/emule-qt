@@ -205,14 +205,26 @@ void BandwidthCoordinator::tick()
 
     // ed3k: all of eMule's share; the throttler and eD2K's budget keep the sum inside it
     s.ed3kDownKb = emuleDownKb;
+    // was: s.ed3kUpKb = s.ed2kUpKb; ed3k sent first and eD2K's slots got nothing
     s.ed3kUpKb = s.ed2kUpKb;
+#ifdef EMULE_HAVE_ED3K
+    if (ed3kRunning && m_ed3k && theApp.uploadQueue) {
+        const auto q = m_ed3k->uploadQueueStats();
+        // the eD2K rate holds ed3k's bytes (the throttler counts them)
+        const qint64 ed2kOwnKb = std::max<qint64>(0, qint64(ed2kUp.recentBytesPerSec) - m_ed3kUpRate) / 1024;
+        s.ed3kUpKb = ed3kUploadCapKb(s.ed2kUpKb, theApp.uploadQueue->uploadQueueLength(), q ? int(q->holders) : 0,
+                                     ed2kOwnKb);
+    }
+#endif
     s.ed3kDownRate = ed3kRunning ? m_ed3kDownRate : 0;
     s.ed3kUpRate = ed3kRunning ? m_ed3kUpRate : 0;
 #ifdef EMULE_HAVE_ED3K
     if (m_ed3k)
         m_ed3k->setLimits(quint64(s.ed3kUpKb) * 1024, quint64(s.ed3kDownKb) * 1024);
 #endif
-    applyEd3kSlots(ed3kRunning, s.ed3kUpKb);
+    // slots from the whole share: a count from the cap would shrink the cap's own holders
+    // was: applyEd3kSlots(ed3kRunning, s.ed3kUpKb);
+    applyEd3kSlots(ed3kRunning, s.ed2kUpKb);
 
     const auto held = [](const EngineDemand& d, qint64 capKb, qint64 lineKb) {
         return d.active && lineKb > 0 && capKb < lineKb;
@@ -244,8 +256,10 @@ bool BandwidthCoordinator::sampleEd3k()
     }
     const qint64 ms = m_ed3kClock.restart();
     // past the throttler's loop: in the upload rate, off eD2K's budget
+    // was: noteBytesSentOutsideTheLoop, whose debt the loop's carry-over clamp forgave
+    // (ed3k + eD2K ran at about twice the limit)
     if (sent > 0 && theApp.uploadBandwidthThrottler)
-        theApp.uploadBandwidthThrottler->noteBytesSentOutsideTheLoop(
+        theApp.uploadBandwidthThrottler->noteForeignBytesSent(
             static_cast<uint32>(std::min<quint64>(sent, std::numeric_limits<uint32>::max())));
     if (ms > 0) {
         // half the last value: a 500 ms tick alone is noisy

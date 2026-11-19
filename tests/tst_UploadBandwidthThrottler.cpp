@@ -7,6 +7,7 @@
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
+#include <QElapsedTimer>
 #include <QTest>
 
 #include <algorithm>
@@ -107,6 +108,7 @@ private slots:
     void trickleIsPacedOnACappedLine();
     void controlQueueDrainsWhenSocketEmpty();
     void surplusPassRotatesItsStartSlot();
+    void foreignBytesStayInsideTheLimit();
 };
 
 void tst_UploadBandwidthThrottler::construction_defaults()
@@ -420,6 +422,50 @@ void tst_UploadBandwidthThrottler::surplusPassRotatesItsStartSlot()
           static_cast<unsigned long long>(last));
     QVERIFY(first > 0);
     QVERIFY2(last * 8 >= first, "the last slot is starved of the surplus");
+}
+
+// ed3k's bytes arrive in 500 ms batches (BandwidthCoordinator::sampleEd3k). The loop's
+// carry-over clamp used to forgive most of each batch: eD2K kept the whole line, the sum
+// ran at about twice the limit.
+void tst_UploadBandwidthThrottler::foreignBytesStayInsideTheLimit()
+{
+    const uint32 oldLimit = thePrefs.maxUpload();
+    const bool oldDyn = thePrefs.dynUpEnabled();
+    thePrefs.setDynUpEnabled(false);
+    constexpr uint32 kLimitKb = 200;
+    constexpr uint32 kForeignPerTick = 50 * 1024;   // 100 KiB/s
+    thePrefs.setMaxUpload(kLimitKb);
+
+    FakeFileSocket socks[3];
+    for (auto& s : socks)
+        s.perCall = 64 * 1024;
+    UploadBandwidthThrottler throttler;
+    for (int i = 0; i < 3; ++i)
+        throttler.addToStandardList(i, &socks[i]);
+
+    QElapsedTimer clock;
+    clock.start();
+    uint64 foreign = 0;
+    while (clock.elapsed() < 3000) {
+        throttler.noteForeignBytesSent(kForeignPerTick);
+        foreign += kForeignPerTick;
+        QTest::qWait(500);
+    }
+    const qint64 ms = clock.elapsed();
+    uint64 own = 0;
+    for (auto& s : socks) {
+        throttler.removeFromAllQueues(static_cast<ThrottledFileSocket*>(&s));
+        own += s.sentBytes.load();
+    }
+    throttler.endThread();
+    thePrefs.setMaxUpload(oldLimit);
+    thePrefs.setDynUpEnabled(oldDyn);
+
+    const double line = double(kLimitKb) * 1024.0 * double(ms) / 1000.0;
+    qInfo("own %llu + foreign %llu of a %.0f byte line", static_cast<unsigned long long>(own),
+          static_cast<unsigned long long>(foreign), line);
+    QVERIFY2(double(own + foreign) <= line * 1.15, "eD2K and the foreign engine overshoot the line");
+    QVERIFY2(double(own) >= line * 0.3, "eD2K is starved below what the foreign engine left");
 }
 
 QTEST_GUILESS_MAIN(tst_UploadBandwidthThrottler)

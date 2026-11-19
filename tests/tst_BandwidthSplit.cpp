@@ -67,6 +67,7 @@ private slots:
     void uploadUnlimitedOrBtIdleHasNoBudget();
     void uploadSaturatedHoldsTheShare();
     void uploadBtBorrowsIdleLine();
+    void ed3kUploadSharesSlotsWithEd2k();
 };
 
 void tst_BandwidthSplit::unlimitedDividesNothing()
@@ -169,6 +170,18 @@ void tst_BandwidthSplit::uploadBtBorrowsIdleLine()
 {
     const UploadPlan p = planUpload(1000, 25, idle(), busy(10));
     QCOMPARE(p.btCapKb, 1000);
+}
+
+void tst_BandwidthSplit::ed3kUploadSharesSlotsWithEd2k()
+{
+    QCOMPARE(ed3kUploadCapKb(0, 3, 2, 100), 0);       // unlimited stays so
+    QCOMPARE(ed3kUploadCapKb(300, 0, 1, 0), 300);     // no eD2K slot: all of it
+    QCOMPARE(ed3kUploadCapKb(300, 1, 1, 150), 150);   // one slot each: half (the live 2-node rig)
+    QCOMPARE(ed3kUploadCapKb(300, 1, 0, 150), 150);   // ed3k counts as one before its first holder
+    QCOMPARE(ed3kUploadCapKb(400, 3, 1, 300), 100);   // a slot's part
+    QCOMPARE(ed3kUploadCapKb(300, 1, 1, 40), 185);    // what a slow eD2K slot leaves
+    QCOMPARE(ed3kUploadCapKb(300, 1, 1, 0), 225);     // a starved eD2K slot keeps room to grow
+    QCOMPARE(ed3kUploadCapKb(1, 5, 1, 0), 1);         // never 0 (= none)
 }
 
 QTEST_GUILESS_MAIN(tst_BandwidthSplit)

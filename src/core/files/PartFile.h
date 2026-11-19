@@ -177,12 +177,22 @@ public:
         std::vector<std::array<uint8, 16>> partHashes;
     };
 
+    /// What the worker reads of the delivered file before moveFinished: the main thread
+    /// must not wait for a NAS (#200).
+    struct Delivered {
+        bool wantMeta = false;   ///< in: media extraction on
+        qint64 mtime = 0;        ///< out: secs since epoch, 0 = unknown
+        std::optional<KnownFile::MetaDataRead> meta;   ///< out: when wantMeta
+    };
+
     /// @p aichFileSize non-zero: also build the AICH recovery set and store it in known2
     /// (MFC does it in the completion hash, srchybrid/PartFile.cpp:1543-1550).
     FileMoveThread(const QString& srcPath, const QString& destPath,
                    std::optional<Verify> verify = std::nullopt, uint64 aichFileSize = 0,
                    QObject* parent = nullptr);
     void run() override;
+    /// Filled before moveFinished on success; read by its receiver.
+    void setDelivered(std::shared_ptr<Delivered> out) { m_delivered = std::move(out); }
 
     /// Deliver across volumes: copy to a staged sibling of @p finalDest, put it on the
     /// disk, rename it in place, then remove @p srcPath. On failure, or when
@@ -210,6 +220,9 @@ private:
     QString m_destPath;
     std::optional<Verify> m_verify;
     uint64 m_aichFileSize = 0;
+    std::shared_ptr<Delivered> m_delivered;
+
+    void readDelivered(const QString& path);
 };
 
 // ---------------------------------------------------------------------------

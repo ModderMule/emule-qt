@@ -1974,9 +1974,9 @@ void tst_SharedFileList::staleMediaStamp_isBroughtUpToDateInTheBackground()
     RESCAN(shared, reload());
     QCOMPARE(shared.getCount(), 2);
     QCOMPARE(shared.m_metaRebuildQueue.size(), size_t{2});
-    for (int i = 0; i < 100 && !shared.m_metaRebuildQueue.empty(); ++i)
-        shared.process();
-    QVERIFY(shared.m_metaRebuildQueue.empty());
+    // read on the thread pool, applied on the main thread
+    shared.process();
+    QTRY_VERIFY_WITH_TIMEOUT(!shared.isRebuildingMetaData(), 10000);
     shared.forEachFile([](KnownFile* f) { QVERIFY(!f->mediaExtractIsStale()); });
 }
 
@@ -2918,9 +2918,8 @@ void tst_SharedFileList::rebuildMetaData_rereadsSharedFilesOnly()
     QVERIFY(!bare->hasMetaDataTags());
 
     QCOMPARE(shared.rebuildMetaData(), 2);
-    for (int i = 0; i < 20 && shared.isRebuildingMetaData(); ++i)
-        shared.process();
-    QVERIFY(!shared.isRebuildingMetaData());
+    shared.process();
+    QTRY_VERIFY_WITH_TIMEOUT(!shared.isRebuildingMetaData(), 10000);
 
     for (KnownFile* f : {stale, bare}) {
         QCOMPARE(f->getIntTagValue(FT_MEDIA_LENGTH), uint32{2});

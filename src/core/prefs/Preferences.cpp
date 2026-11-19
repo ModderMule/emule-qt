@@ -262,6 +262,10 @@ struct Preferences::Data {
     uint32 maxUpload = kDefaultMaxUpload;
     uint32 maxDownload = kDefaultMaxDownload;
     uint32 minUpload = 1;
+    // Alternative speed ("turtle"): while on, these limits replace the stored pair
+    bool altSpeed = false;
+    uint32 altSpeedUp = 10;
+    uint32 altSpeedDown = 50;
 
     // Scheduler layer on top of the stored limits. Runtime only, never saved.
     ScheduledLimits scheduled;
@@ -638,7 +642,7 @@ struct Preferences::Data {
     bool chatSound = false;         // a sound on a new message not on screen
     int chatAlert = 0;              // ChatAlert: flash the taskbar / bounce the dock
     bool chatUnreadBadge = true;    // red "!" on the toolbar buttons + status bar icon
-    bool chatWebLinks = false;    // chats: web links clickable too (off: ed2k/ed3k/magnet only)
+    bool chatWebLinks = true;     // chats: web links clickable too (off: ed2k/ed3k/magnet only)
     bool chatModStar = false;       // room moderators: gold star, else "@"
     bool chatRoomMedia = true;      // room images shown (fetched by themselves)
     bool chatRoomVideos = false;    // room videos fetched by themselves too
@@ -1182,6 +1186,8 @@ void Preferences::setServerPreferIPv6(bool val) { set(&Data::serverPreferIPv6, v
 
 uint32 Preferences::maxUpload() const
 {
+    if (altSpeed())
+        return get(&Data::altSpeedUp);
     return getScheduled(&Data::maxUpload, &ScheduledLimits::maxUpload);
 }
 
@@ -1197,8 +1203,17 @@ uint32 Preferences::maxUploadLimit() const
 
 uint32 Preferences::maxDownload() const
 {
+    if (altSpeed())   // the ratio rule holds the turtle pair too
+        return SpeedRules::clampDownForUp(get(&Data::altSpeedUp), get(&Data::altSpeedDown));
     return getScheduled(&Data::maxDownload, &ScheduledLimits::maxDownload);
 }
+
+bool Preferences::altSpeed() const { return get(&Data::altSpeed); }
+void Preferences::setAltSpeed(bool on) { set(&Data::altSpeed, on); }
+uint32 Preferences::altSpeedUp() const { return get(&Data::altSpeedUp); }
+void Preferences::setAltSpeedUp(uint32 kb) { set(&Data::altSpeedUp, kb); }
+uint32 Preferences::altSpeedDown() const { return get(&Data::altSpeedDown); }
+void Preferences::setAltSpeedDown(uint32 kb) { set(&Data::altSpeedDown, kb); }
 
 uint32 Preferences::configuredMaxDownload() const { return get(&Data::maxDownload); }
 
@@ -2772,6 +2787,30 @@ void Preferences::setBtI2pStatusPageUser(const QString& val) { set(&Data::btI2pS
 QString Preferences::btI2pStatusPagePassword() const { return get(&Data::btI2pStatusPagePassword); }
 void Preferences::setBtI2pStatusPagePassword(const QString& val) { set(&Data::btI2pStatusPagePassword, val); }
 
+QStringList Preferences::defaultBtPublicTrackers()
+{
+    // ngosang/trackerslist trackers_best.txt as of 2026-11 + discussion #212, best first
+    return {
+        QStringLiteral("udp://tracker.opentrackr.org:1337/announce"),
+        QStringLiteral("udp://open.demonii.com:1337/announce"),
+        QStringLiteral("udp://open.stealth.si:80/announce"),
+        QStringLiteral("udp://tracker.torrent.eu.org:451/announce"),
+        QStringLiteral("udp://open.tracker.cl:1337/announce"),
+        QStringLiteral("udp://exodus.desync.com:6969/announce"),
+        QStringLiteral("udp://explodie.org:6969/announce"),
+        QStringLiteral("udp://tracker.qu.ax:6969/announce"),
+        QStringLiteral("udp://tracker.dler.org:6969/announce"),
+        QStringLiteral("udp://tracker-udp.gbitt.info:80/announce"),
+        QStringLiteral("udp://tracker.bittor.pw:1337/announce"),
+        QStringLiteral("udp://tracker.tryhackx.org:6969/announce"),
+        QStringLiteral("udp://tracker.gmi.gd:6969/announce"),
+        QStringLiteral("udp://tracker.ducks.party:1984/announce"),
+        QStringLiteral("http://tracker.dler.com:6969/announce"),
+        QStringLiteral("http://tracker.renfei.net:8080/announce"),
+        QStringLiteral("https://tracker.gbitt.info:443/announce"),
+    };
+}
+
 QStringList Preferences::defaultBtI2pTrackers()
 {
     // ngosang/trackerslist trackers_all_i2p.txt as of 2026-11; udp:// ones left out
@@ -3454,6 +3493,44 @@ QString Preferences::ipcDialHostOf(const QString& value)
     if (addr == QHostAddress::AnyIPv4 || addr == QHostAddress::Any || addr == QHostAddress::LocalHost)
         return QStringLiteral("127.0.0.1");   // a name too: the core listens there as well
     return value.trimmed();
+}
+
+bool Preferences::ipcPortReserved(const QString& host, uint16 port)
+{
+    QTcpServer probe;
+    return !probe.listen(ipcBindAddressOf(host), port)
+        && probe.serverError() == QAbstractSocket::SocketAccessError;
+}
+
+uint16 Preferences::freeIpcPort(const QString& host, uint16 from, const QList<uint16>& avoid)
+{
+    const QHostAddress address = ipcBindAddressOf(host);
+    const auto usable = [&](uint16 port) {
+        QTcpServer probe;
+        return port != 0 && !avoid.contains(port) && probe.listen(address, port);
+    };
+    for (uint32 port = from + 1u; port <= 65535u && port <= from + 300u; ++port) {
+        if (usable(static_cast<uint16>(port)))
+            return static_cast<uint16>(port);
+    }
+    for (int tries = 0; tries < 50; ++tries) {
+        if (const uint16 port = randomPort({}); usable(port))
+            return port;
+    }
+    return 0;
+}
+
+uint16 Preferences::savedIpcPort(const QString& filePath)
+{
+    const auto root = readIntactYaml(filePath);
+    if (!root)
+        return 0;
+    try {
+        if (const auto ipc = (*root)["ipc"])
+            return static_cast<uint16>(std::clamp(ipc["port"].as<int>(0), 0, 65535));
+    } catch (const YAML::Exception&) {
+    }
+    return 0;
 }
 
 QString Preferences::ipcDaemonPath() const { return get(&Data::ipcDaemonPath); }
@@ -4234,6 +4311,9 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("bindAddress"), bindAddress());
     prefs.insert(QStringLiteral("maxUpload"), static_cast<qint64>(configuredMaxUpload()));
     prefs.insert(QStringLiteral("maxDownload"), static_cast<qint64>(configuredMaxDownload()));
+    prefs.insert(QStringLiteral("altSpeed"), altSpeed());
+    prefs.insert(QStringLiteral("altSpeedUp"), static_cast<qint64>(altSpeedUp()));
+    prefs.insert(QStringLiteral("altSpeedDown"), static_cast<qint64>(altSpeedDown()));
     prefs.insert(QStringLiteral("maxGraphDownloadRate"), static_cast<qint64>(maxGraphDownloadRate()));
     prefs.insert(QStringLiteral("maxGraphUploadRate"), static_cast<qint64>(maxGraphUploadRate()));
     prefs.insert(QStringLiteral("maxConnections"), static_cast<qint64>(configuredMaxConnections()));
@@ -4656,6 +4736,9 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->bindAddress      = p.value(QStringLiteral("bindAddress")).toString();
     m_data->maxUpload        = static_cast<uint32>(p.value(QStringLiteral("maxUpload")).toInteger());
     m_data->maxDownload      = static_cast<uint32>(p.value(QStringLiteral("maxDownload")).toInteger());
+    m_data->altSpeed         = p.value(QStringLiteral("altSpeed")).toBool();
+    m_data->altSpeedUp       = static_cast<uint32>(p.value(QStringLiteral("altSpeedUp")).toInteger(m_data->altSpeedUp));
+    m_data->altSpeedDown     = static_cast<uint32>(p.value(QStringLiteral("altSpeedDown")).toInteger(m_data->altSpeedDown));
     m_data->maxGraphDownloadRate = static_cast<uint32>(p.value(QStringLiteral("maxGraphDownloadRate")).toInteger());
     m_data->maxGraphUploadRate   = static_cast<uint32>(p.value(QStringLiteral("maxGraphUploadRate")).toInteger());
     m_data->maxConnections   = static_cast<uint16>(p.value(QStringLiteral("maxConnections")).toInteger());
@@ -5382,6 +5465,9 @@ bool Preferences::load(const QString& filePath)
         if (auto b = root["bandwidth"]) {
             m_data->maxUpload = b["maxUpload"].as<uint32>(m_data->maxUpload);
             m_data->maxDownload = b["maxDownload"].as<uint32>(m_data->maxDownload);
+            m_data->altSpeed = b["altSpeed"].as<bool>(m_data->altSpeed);
+            m_data->altSpeedUp = b["altSpeedUp"].as<uint32>(m_data->altSpeedUp);
+            m_data->altSpeedDown = b["altSpeedDown"].as<uint32>(m_data->altSpeedDown);
             m_data->minUpload = b["minUpload"].as<uint32>(m_data->minUpload);
             m_data->maxGraphUploadRate = b["maxGraphUploadRate"].as<uint32>(m_data->maxGraphUploadRate);
             m_data->uploadSlotTargetRate = b["uploadSlotTargetRate"].as<uint32>(m_data->uploadSlotTargetRate);
@@ -7051,6 +7137,9 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "bandwidth" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "maxUpload" << YAML::Value << m_data->maxUpload;
     out << YAML::Key << "maxDownload" << YAML::Value << m_data->maxDownload;
+    out << YAML::Key << "altSpeed" << YAML::Value << m_data->altSpeed;
+    out << YAML::Key << "altSpeedUp" << YAML::Value << m_data->altSpeedUp;
+    out << YAML::Key << "altSpeedDown" << YAML::Value << m_data->altSpeedDown;
     out << YAML::Key << "minUpload" << YAML::Value << m_data->minUpload;
     out << YAML::Key << "maxGraphUploadRate" << YAML::Value << m_data->maxGraphUploadRate;
     out << YAML::Key << "uploadSlotTargetRate" << YAML::Value << m_data->uploadSlotTargetRate;

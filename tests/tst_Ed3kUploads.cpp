@@ -153,6 +153,12 @@ void tst_Ed3kUploads::eventsBecomeRowsAndStayUnhandled()
     QCOMPARE(up.uploading().front().bytes, std::uint64_t(300'000));
     QCOMPARE(up.waiting().size(), std::size_t(1));
     QCOMPARE(up.waiting().front().place, 1);
+    // the Speed column: the turn's bytes over time (0 until two samples 0.5 s apart)
+    QCOMPARE(up.uploading().front().rate, std::uint64_t(0));
+    QTest::qWait(600);
+    QVERIFY(!send(e::SlotUsed{node(1), 600'000, false}));
+    const std::uint64_t rate = up.uploading().front().rate;
+    QVERIFY2(rate > 300'000 && rate <= 500'000, qPrintable(QString::number(rate)));
     // a failed offer leaves node 2 waiting; its queue entry ends: gone
     QVERIFY(!send(e::SlotOfferResult{node(2), false}));
     QCOMPARE(up.waiting().size(), std::size_t(1));
@@ -191,6 +197,11 @@ void tst_Ed3kUploads::eventsBecomeRowsAndStayUnhandled()
     QVERIFY(!Ed3kUploadsBridge::details(QStringLiteral("ed3k:anon:") + QStringLiteral("03").repeated(16)));
     QVERIFY(!Ed3kUploadsBridge::details(QStringLiteral("ed3k:") + QStringLiteral("04").repeated(16)));
     QVERIFY(!Ed3kUploadsBridge::details(QStringLiteral("ed3k:zz")));
+    // a node byte >= 0x80 (most real IDs): was compared as signed char, never found
+    QVERIFY(!send(e::FileRequested{node(0xe2), root, std::nullopt, true, true, true}));
+    const auto high = Ed3kUploadsBridge::details(QStringLiteral("ed3k:") + QStringLiteral("e2").repeated(16));
+    QVERIFY(high);
+    QCOMPARE(high->value(QStringLiteral("nodeId")).toString(), QStringLiteral("e2").repeated(16));
 }
 
 void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()

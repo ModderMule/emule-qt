@@ -224,6 +224,8 @@ private:
     void markActivity(const QString& key);
     /// Someone's message in tab @p key: unread unless on screen; sound and alert (MainWindow).
     void noteMessage(const QString& key, bool mention);
+    /// Tab @p key unread unless on screen (red tab, toolbar "!"); true when on screen.
+    bool markUnread(const QString& key);
     /// Tab @p key read or gone.
     void markRead(const QString& key);
     void playIrcSound(const QString& fileName);
@@ -269,6 +271,10 @@ private:
     /// The tab of @p room (made from its list row when missing); null when unknown.
     Ed3kRoomTab* ensureRoomTab(const QString& room, bool show = false);
     [[nodiscard]] Ed3kRoomTab* roomTab(const QString& room) const;
+    /// After the first posts of a tab: those after the read mark (uistate) are unread.
+    void noteUnreadRoomPosts(Ed3kRoomTab* tab);
+    /// Room tab @p key read: its newest post is the read mark.
+    void rememberRoomRead(const QString& key);
     /// Posts @p text in the active room tab.
     void postToRoom(Ed3kRoomTab* tab, const QString& text);
     void ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint& globalPos);

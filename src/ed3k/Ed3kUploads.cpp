@@ -76,13 +76,15 @@ std::vector<Ed3kUploads::Row> Ed3kUploads::uploading() const
     std::vector<Row> out;
     if (auto rows = listed()) {
         std::ranges::copy_if(*rows, std::back_inserter(out), [](const Row& r) { return r.holding; });
-        std::ranges::sort(out, {}, &Row::since);
-        return out;
+    } else {
+        for (const auto& [node, row] : m_rows)
+            if (row.holding)
+                out.push_back(row);
     }
-    for (const auto& [node, row] : m_rows)
-        if (row.holding)
-            out.push_back(row);
     std::ranges::sort(out, {}, &Row::since);
+    // was: no speed, the Uploading list's column stayed empty for ed3k rows
+    for (Row& r : out)
+        r.rate = sampleUpRate(r);
     return out;
 }
 
@@ -251,6 +253,30 @@ void Ed3kUploads::onSessionStatus()
 qint64 Ed3kUploads::nowMs()
 {
     return QDateTime::currentMSecsSinceEpoch();
+}
+
+std::uint64_t Ed3kUploads::sampleUpRate(const Row& row) const
+{
+    constexpr qint64 kWindowMs = 10000;
+    constexpr qint64 kStepMs = 250;      // calls closer than this add no sample
+    constexpr qint64 kForgetMs = 30000;  // holders not asked for this long are dropped
+    if (!m_upClock.isValid())
+        m_upClock.start();
+    const qint64 now = m_upClock.elapsed();
+    std::erase_if(m_upSamples, [now](const auto& kv) { return now - kv.second.asked > kForgetMs; });
+
+    UpSamples& s = m_upSamples[{row.key, row.node}];
+    s.asked = now;
+    if (!s.at.empty() && row.bytes < s.at.back().second)
+        s.at.clear();   // a new turn
+    if (s.at.empty() || now - s.at.back().first >= kStepMs)
+        s.at.emplace_back(now, row.bytes);
+    while (s.at.size() > 2 && now - s.at.front().first > kWindowMs)
+        s.at.pop_front();
+    const qint64 span = s.at.back().first - s.at.front().first;
+    if (span < 500)
+        return 0;
+    return (s.at.back().second - s.at.front().second) * 1000 / std::uint64_t(span);
 }
 
 } // namespace eMule::ed3k

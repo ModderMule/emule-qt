@@ -5,6 +5,7 @@
 #include "controls/TorrentFilterProxy.h"
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentListsPane.h"
+#include "controls/CheckComboBox.h"
 #include "controls/TorrentPieceGrid.h"
 #include "controls/TorrentOptionsForm.h"
 #include "dialogs/EditTrackersDialog.h"
@@ -12,6 +13,7 @@
 #include "dialogs/TorrentOptionsDialog.h"
 #include "dialogs/TorrentDetailsDialog.h"
 
+#include <QAbstractItemView>
 #include <QCborArray>
 #include <QCheckBox>
 #include <QComboBox>
@@ -464,6 +466,27 @@ void tst_TorrentDetailsGui::torrentCreatorDialog()
     auto* format = dlg.findChild<QComboBox*>();
     QVERIFY(format);
     auto combos = dlg.findChildren<QComboBox*>();
+    // #212: public trackers, a multi-select: none checked by default
+    const auto checks = dlg.findChildren<CheckComboBox*>();
+    QCOMPARE(checks.size(), 1);
+    QVERIFY(checks.at(0)->count() >= 10);
+    QVERIFY(checks.at(0)->checkedValues().isEmpty());
+    checks.at(0)->setCheckedValues({checks.at(0)->itemData(0).toString(), checks.at(0)->itemData(2).toString()});
+    QCOMPARE(checks.at(0)->checkedValues().size(), 2);
+    checks.at(0)->setCheckedValues({});
+    // a click in the open list toggles the item and keeps the list open
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+    checks.at(0)->showPopup();
+    QAbstractItemView* view = checks.at(0)->view();
+    QTRY_VERIFY(view->isVisible());
+    const QPoint at = view->visualRect(view->model()->index(1, 0)).center();
+    QTest::mouseClick(view->viewport(), Qt::LeftButton, {}, at);
+    QCOMPARE(checks.at(0)->checkedValues(), QStringList{checks.at(0)->itemData(1).toString()});
+    QVERIFY(view->isVisible());
+    checks.at(0)->hidePopup();
+    checks.at(0)->setCheckedValues({});
+    combos.removeAll(checks.at(0));
     QCOMPARE(combos.size(), 2);
     QCOMPARE(combos.at(0)->currentData().toInt(), 2);   // hybrid by default
     QCOMPARE(combos.at(1)->count(), 15);                 // Auto + 16 KiB..128 MiB

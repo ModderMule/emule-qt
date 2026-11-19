@@ -460,6 +460,7 @@ if(EMULE_BITTORRENT)
     # unfinished torrents kept out of the share (#124)
     emule_add_test(tst_BtShareGuard FOLDER "BitTorrent"
         SOURCES tst_BtShareGuard.cpp "${CMAKE_SOURCE_DIR}/src/daemon/BtShareGuard.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/BtFileIndex.cpp"
                 "${CMAKE_SOURCE_DIR}/src/daemon/LandedFiles.cpp"
         LIBRARIES eMule::Bt eMule::Core)
     target_include_directories(tst_BtShareGuard PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")

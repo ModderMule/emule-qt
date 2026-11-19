@@ -209,7 +209,7 @@ public:
     /// (srchybrid/SharedFileList.cpp:1381-1386), there in one blocking loop.
     /// @return number of files queued.
     int rebuildMetaData();
-    [[nodiscard]] bool isRebuildingMetaData() const { return !m_metaRebuildQueue.empty(); }
+    [[nodiscard]] bool isRebuildingMetaData() const { return !m_metaRebuildQueue.empty() || m_metaReadBusy; }
 
     /// Hash every shared complete file again and rebuild known.met from the result,
     /// for after disk errors. Runs behind the workers, one file per worker at a time;
@@ -590,8 +590,10 @@ private:
     /// The list payloads then report whatever this has resolved so far.
     void warmContainerChecks();
 
-    /// One slice of a running rebuildMetaData() pass.
+    /// One batch of a running rebuildMetaData() pass: read on the thread pool, applied
+    /// here; the next batch starts right after.
     void stepMetaDataRebuild();
+    void finishMetaDataRebuild();
 
     // EntityMap<MD4Key, KnownFile> hooks. Storage (m_map) and the mutex guarding it
     // live in the base. These carry only work that must happen under that lock;
@@ -750,6 +752,8 @@ private:
     /// share between ticks. Main thread only.
     std::vector<MD4Key> m_metaRebuildQueue;
     int m_metaRebuildTotal = 0;
+    /// A batch of the pass being read on the thread pool (a NAS stalled the core, #200)
+    bool m_metaReadBusy = false;
 
     /// A rehashAllFiles() pass. Main thread only, but for the counter
     /// getHashingCount() reads.

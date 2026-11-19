@@ -174,6 +174,72 @@ private slots:
         QCOMPARE(p2.configDir(), realDir);
     }
 
+    // The GUI reads the port a core moved to off a reserved one
+    void savedIpcPort_readsFile()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        QCOMPARE(Preferences::savedIpcPort(file), uint16(0));   // missing
+        Preferences p;
+        p.load(file);
+        p.setIpcPort(4799);
+        QVERIFY(p.save());
+        QCOMPARE(Preferences::savedIpcPort(file), uint16(4799));
+    }
+
+    // Skips a held port and the avoided ones; a free port is no reserved one
+    void freeIpcPort_skipsHeldAndAvoided()
+    {
+        QTcpServer held;
+        QVERIFY(held.listen(QHostAddress::LocalHost, 0));
+        const uint16 from = held.serverPort();
+        QVERIFY(from < 65000);
+        QTcpServer next;
+        const bool nextHeld = next.listen(QHostAddress::LocalHost, from + 1);
+        const uint16 got = Preferences::freeIpcPort(QString(), from - 1, {uint16(from + 2)});
+        QVERIFY(got != 0);
+        QVERIFY(got != from && got != from + 2);
+        if (nextHeld)
+            QVERIFY(got != from + 1);
+        QVERIFY(!Preferences::ipcPortReserved(QString(), got));
+        QVERIFY(!Preferences::ipcPortReserved(QString(), from));   // in use, not reserved
+    }
+
+    // Turtle (alternative speed): its pair replaces the stored limits and a schedule while on,
+    // the stored pair stays as it was; saved
+    void altSpeed_overridesLimitsAndRoundTrip()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        Preferences p;
+        p.load(file);
+        QVERIFY(!p.altSpeed());
+        p.setMaxUpload(100);
+        p.setMaxDownload(400);
+        p.setScheduledLimits({.maxUpload = 80, .maxDownload = 300});
+        p.setAltSpeedUp(10);
+        p.setAltSpeedDown(30);
+        QCOMPARE(p.maxUpload(), 80u);   // schedule over stored
+        p.setAltSpeed(true);
+        QCOMPARE(p.maxUpload(), 10u);
+        QCOMPARE(p.maxDownload(), 30u);
+        QCOMPARE(p.configuredMaxUpload(), 100u);   // untouched
+        QCOMPARE(p.configuredMaxDownload(), 400u);
+        // the UL:DL ratio holds the turtle pair too (3 KiB/s up: at most 9 down)
+        p.setAltSpeedUp(3);
+        QCOMPARE(p.maxDownload(), 9u);
+        p.save();
+
+        Preferences p2;
+        p2.load(file);
+        QVERIFY(p2.altSpeed());
+        QCOMPARE(p2.altSpeedUp(), 3u);
+        QCOMPARE(p2.altSpeedDown(), 30u);
+        QCOMPARE(p2.toIpcMap().value(QStringLiteral("altSpeed")).toBool(), true);
+        p2.setAltSpeed(false);
+        QCOMPARE(p2.maxUpload(), 100u);
+    }
+
     // Tray icon + close-to-tray: defaults (icon on, close quits as MFC) and round trip
     void trayOptions_defaultsAndRoundTrip()
     {

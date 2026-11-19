@@ -30,6 +30,7 @@ class AICHRecoveryHashSet;
 class AICHHashTree;
 class Collection;
 class FileDataIO;
+struct MediaInfo;
 class Packet;
 class UpDownClient;
 class SafeMemFile;
@@ -222,7 +223,17 @@ public:
     [[nodiscard]] bool mediaExtractIsStale() const;
     [[nodiscard]] bool hasMetaDataTags() const;
 
-    // Media metadata extraction
+    /// A media header read: done off the main thread (a NAS file blocks for seconds, #200)
+    struct MetaDataRead {
+        bool readable = false;
+        std::shared_ptr<const MediaInfo> info;   ///< null: nothing found
+    };
+    /// Reads @p path's media header. Thread-safe, touches no KnownFile.
+    [[nodiscard]] static MetaDataRead readMetaData(const QString& path);
+    /// Media tags from @p read (readMetaData of this file). No disk.
+    void applyMetaData(const MetaDataRead& read);
+
+    // Media metadata extraction: readMetaData + applyMetaData in one, reads on the caller's thread
     void updateMetaDataTags();
     void removeMetaDataTags();
 

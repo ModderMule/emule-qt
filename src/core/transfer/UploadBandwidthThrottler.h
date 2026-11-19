@@ -52,6 +52,14 @@ public:
         m_outsideBytesForStats.fetch_add(bytes, std::memory_order_relaxed);
         m_outsideBytesForBudget.fetch_add(bytes, std::memory_order_relaxed);
     }
+    /// Bytes another engine sent on this line (ed3k): in the rate, and a debt the budget
+    /// pays off in full. Not clamped like the loop's carry-over, which forgave most of a
+    /// 500 ms batch and let the sum run at twice the limit. Any thread.
+    void noteForeignBytesSent(uint32 bytes)
+    {
+        m_outsideBytesForStats.fetch_add(bytes, std::memory_order_relaxed);
+        m_foreignBytesForBudget.fetch_add(bytes, std::memory_order_relaxed);
+    }
 
     // Wakeup signals
     void newUploadDataAvailable();
@@ -118,6 +126,7 @@ private:
     std::atomic<uint64> m_outsideBytesForStats{0};
     std::atomic<uint64> m_outsideBytesForOverheadStats{0};
     std::atomic<uint64> m_outsideBytesForBudget{0};
+    std::atomic<uint64> m_foreignBytesForBudget{0};
     int m_highestNumberOfFullyActivatedSlots = 0;
 
     // Components (not owned)

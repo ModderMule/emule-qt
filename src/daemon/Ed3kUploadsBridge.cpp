@@ -79,6 +79,7 @@ QCborMap rowToCbor(const ed3k::Ed3kUploads::Row& r, qint64 nowMs)
         {QStringLiteral("port"), int(r.port)},
         {QStringLiteral("cc"), r.address.isEmpty() ? QString() : countryCodeOf(QHostAddress(r.address))},
         {QStringLiteral("sessionUp"), qint64(std::min<std::uint64_t>(r.bytes, INT64_MAX))},
+        {QStringLiteral("upDatarate"), qint64(std::min<std::uint64_t>(r.rate, INT64_MAX))},
         {QStringLiteral("waitStartTime"), r.holding ? qint64(0) : held},
         {QStringLiteral("uploadStartDelay"), r.holding ? held : qint64(0)},
         {QStringLiteral("queueRank"), r.place},
@@ -321,7 +322,9 @@ std::optional<QCborMap> details(const QString& key)
         return std::nullopt;
     const auto wanted = anon ? ::ed3k::KeyKind::Anon : ::ed3k::KeyKind::Node;
     const auto match = [&](const ed3k::Ed3kUploads::Row& r) {
-        return r.key == wanted && std::equal(r.node.bytes.begin(), r.node.bytes.end(), raw.begin());
+        // was: raw.begin(): signed char vs uint8, a node byte >= 0x80 never matched (Details empty)
+        return r.key == wanted
+            && std::equal(r.node.bytes.begin(), r.node.bytes.end(), reinterpret_cast<const std::uint8_t*>(raw.constData()));
     };
     ::ed3k::NodeId node;
     std::copy(raw.begin(), raw.end(), node.bytes.begin());

@@ -31,12 +31,15 @@
 #include "utils/PathUtils.h"
 #include "utils/Log.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QPointer>
 #include <QTextStream>
+#include <QThreadPool>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -2412,27 +2415,57 @@ int SharedFileList::rebuildMetaData()
 
 void SharedFileList::stepMetaDataRebuild()
 {
-    if (m_metaRebuildQueue.empty())
+    if (m_metaReadBusy)
         return;
+    if (m_metaRebuildQueue.empty()) {
+        finishMetaDataRebuild();
+        return;
+    }
 
-    // Each file costs a header read; keep it to a small part of the 1 s tick.
-    constexpr qint64 kBudgetMs = 50;
-    QElapsedTimer budget;
-    budget.start();
-    while (!m_metaRebuildQueue.empty() && budget.elapsed() < kBudgetMs) {
+    // was: read here under a 50 ms budget: one NAS open blocked the core for seconds (#200).
+    // A batch per job keeps the pool from a task per file of a big share
+    constexpr std::size_t kBatch = 32;
+    std::vector<std::pair<MD4Key, QString>> batch;
+    while (!m_metaRebuildQueue.empty() && batch.size() < kBatch) {
         const MD4Key key = m_metaRebuildQueue.back();
         m_metaRebuildQueue.pop_back();
         // Looked up again: the file may have left the share since it was queued.
         if (KnownFile* file = getFileByID(key.data.data()); file && !file->isPartFile())
-            file->updateMetaDataTags();
+            batch.emplace_back(key, file->filePath());
     }
+    if (batch.empty()) {
+        finishMetaDataRebuild();
+        return;
+    }
+    m_metaReadBusy = true;
+    QThreadPool::globalInstance()->start([self = QPointer<SharedFileList>(this), batch = std::move(batch)] {
+        std::vector<KnownFile::MetaDataRead> reads;
+        reads.reserve(batch.size());
+        for (const auto& [key, path] : batch)
+            reads.push_back(KnownFile::readMetaData(path));
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, batch, reads = std::move(reads)] {
+            if (!self)
+                return;
+            self->m_metaReadBusy = false;
+            for (std::size_t i = 0; i < batch.size(); ++i) {
+                // gone, or moved meanwhile: its read is of another file
+                KnownFile* file = self->getFileByID(batch[i].first.data.data());
+                if (file && !file->isPartFile() && file->filePath() == batch[i].second)
+                    file->applyMetaData(reads[i]);
+            }
+            self->stepMetaDataRebuild();
+        });
+    });
+}
 
-    if (m_metaRebuildQueue.empty()) {
-        logInfo(QStringLiteral("Meta data of %1 shared files rebuilt").arg(m_metaRebuildTotal));
-        m_metaRebuildTotal = 0;
-        if (m_knownFiles)
-            m_knownFiles->save();
-    }
+void SharedFileList::finishMetaDataRebuild()
+{
+    if (m_metaRebuildTotal == 0)
+        return;
+    logInfo(QStringLiteral("Meta data of %1 shared files rebuilt").arg(m_metaRebuildTotal));
+    m_metaRebuildTotal = 0;
+    if (m_knownFiles)
+        m_knownFiles->save();
 }
 
 // ---------------------------------------------------------------------------

@@ -330,7 +330,11 @@ void UsenetPanel::setupUi()
     // keeps their text and state from drifting apart.
     m_addUrlAction = new QAction(menuIcon("DirectDownload.ico"),
                                  tr("Add NZB from URL…"), this);
-    connect(m_addUrlAction, &QAction::triggered, this, &UsenetPanel::promptAddNzbUrl);
+    // Queued: MainWindow's own triggered slot switches to this tab first, so the
+    // modal opens on a visible parent and after the menu closed. Run inside the
+    // menu's emission, on a hidden page, Cancel left the window black on Windows.
+    connect(m_addUrlAction, &QAction::triggered, this, &UsenetPanel::promptAddNzbUrl,
+            Qt::QueuedConnection);
 
     // Context menu only — a toolbar entry would be enabled for most of a
     // release's life and do nothing, because most posts are RAR sets.

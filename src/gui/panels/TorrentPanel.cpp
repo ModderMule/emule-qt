@@ -307,8 +307,10 @@ void TorrentPanel::setupUi()
 
     m_addFileAction = toolbar->addAction(menuIcon("ListAdd.ico"), tr("Add Torrent…"), this,
                                          &TorrentPanel::promptAddTorrentFiles);
-    m_addMagnetAction = toolbar->addAction(menuIcon("DirectDownload.ico"), tr("Add Magnet Link…"),
-                                           this, [this] { promptAddMagnets(); });
+    m_addMagnetAction = toolbar->addAction(menuIcon("DirectDownload.ico"), tr("Add Magnet Link…"));
+    // Queued, also in the Tools menu: see UsenetPanel's Add NZB from URL
+    connect(m_addMagnetAction, &QAction::triggered, this, [this] { promptAddMagnets(); },
+            Qt::QueuedConnection);
     toolbar->addSeparator();
     m_pauseAction = toolbar->addAction(menuIcon("Pause.ico"), tr("Pause"), this,
                                        [this] { sendForSelection(IpcMsgType::PauseTorrent); });

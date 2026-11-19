@@ -71,6 +71,8 @@ struct SharedFileRow {
     bool hasCollectionAuthorKey = false;
     bool hasPartHashes = false;         ///< a link with the part hashes can be asked for
     int64_t uploadDataRate = 0;         ///< bytes/sec upload rate for this file
+    /// #212: torrents with this file (a folder torrent's member too), id and name each
+    QList<QPair<QString, QString>> torrents;
 
     // -- Share membership, only meaningful in browse mode (see setBrowseMode) -----
     /// Is this file currently shared? Always true for rows that came from the shared

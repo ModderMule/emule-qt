@@ -16,6 +16,7 @@
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
 #include "app/SkinIcons.h"
+#include "app/UiState.h"
 #include "utils/Log.h"
 
 #include <QApplication>
@@ -87,6 +88,20 @@ struct RoomForm {
     bool files = false;    ///< text, NZB, DLC, torrent too (§2.6)
     int keepDays = 1;
 };
+
+/// Someone else's post, not muted: one that can be unread.
+bool countsAsUnread(const Ed3kRoomTab* tab, const Ed3kRoomTab::Post& p)
+{
+    return p.author != tab->memberKey() && !tab->isMuted(p.authorId.toLower());
+}
+
+/// @p p answers us or names our nick.
+bool mentionsMe(const Ed3kRoomTab* tab, const Ed3kRoomTab::Post& p)
+{
+    const QString me = tab->row().value(QStringLiteral("nick")).toString().trimmed();
+    const Ed3kRoomTab::Post* answered = p.replyTo.isEmpty() ? nullptr : tab->post(p.replyTo);
+    return (answered && answered->author == tab->memberKey()) || (!me.isEmpty() && p.text.contains(me, Qt::CaseInsensitive));
+}
 
 /// keep_posts for a history of @p days (§2.1: 1,000 to 10,000)
 int keepPostsOf(int days)
@@ -359,8 +374,10 @@ void IrcPanel::onEd3kRooms(const IpcMessage& reply)
     // rooms left elsewhere (another GUI, a restart): their tabs go
     QStringList gone;
     for (auto it = m_channels.cbegin(); it != m_channels.cend(); ++it)
-        if (it->type == IrcChannel::Ed3kRoom && it->room && !present.contains(it->room->room()))
+        if (it->type == IrcChannel::Ed3kRoom && it->room && !present.contains(it->room->room())) {
             gone << it.key();
+            theUiState.forgetRoomRead(it->room->room());   // a later join starts unread-free
+        }
     for (const QString& k : gone)
         removeChannelTab(k);
     m_roomTabsClosed.removeIf([&](const QString& r) { return !present.contains(r); });
@@ -387,14 +404,22 @@ void IrcPanel::onEd3kRoomPost(const IpcMessage& msg)
         return;
     const QString key = Ed3kRoomTab::keyOf(room);
     markActivity(key);
-    // someone's new post: history a join brings (older than 10 min) and muted members stay quiet
-    if (p.author == tab->memberKey() || tab->isMuted(p.authorId.toLower())
-        || p.sent < QDateTime::currentSecsSinceEpoch() - 600)
+    // someone's new post: read ones (before the read mark), muted members and, with no
+    // mark yet, history a join brings (older than 10 min) stay quiet
+    const qint64 readUpTo = theUiState.roomReadUpTo(room);
+    const qint64 recent = QDateTime::currentSecsSinceEpoch() - 600;
+    if (!countsAsUnread(tab, p) || (readUpTo > 0 ? p.sent <= readUpTo : p.sent < recent)) {
+        if (!m_unread.contains(key))
+            rememberRoomRead(key);
         return;
-    const QString me = tab->row().value(QStringLiteral("nick")).toString().trimmed();
-    const Ed3kRoomTab::Post* answered = p.replyTo.isEmpty() ? nullptr : tab->post(p.replyTo);
-    noteMessage(key, (answered && answered->author == tab->memberKey())
-                         || (!me.isEmpty() && p.text.contains(me, Qt::CaseInsensitive)));
+    }
+    // one missed while away (synced late): unread, no sound
+    if (p.sent < recent)
+        markUnread(key);
+    else
+        noteMessage(key, mentionsMe(tab, p));
+    if (!m_unread.contains(key))
+        rememberRoomRead(key);   // on screen: read now
 }
 
 void IrcPanel::onEd3kRoomPostsRemoved(const IpcMessage& msg)
@@ -674,13 +699,15 @@ Ed3kRoomTab* IrcPanel::ensureRoomTab(const QString& room, bool show)
         m_channels[Ed3kRoomTab::keyOf(room)] = ch;
         m_roomTabsClosed.removeAll(room);
         if (m_ipc)
-            m_ipc->requestEd3kRoomPosts(room, [tab = QPointer<Ed3kRoomTab>(tab)](const IpcMessage& r) {
-                if (!tab || !r.isValid() || !r.fieldBool(0))
+            m_ipc->requestEd3kRoomPosts(room, [self = QPointer<IrcPanel>(this),
+                                               tab = QPointer<Ed3kRoomTab>(tab)](const IpcMessage& r) {
+                if (!self || !tab || !r.isValid() || !r.fieldBool(0))
                     return;
                 QVector<Ed3kRoomTab::Post> posts;
                 for (const QCborValue& v : r.fieldArray(1))
                     posts << Ed3kRoomTab::postFrom(v.toMap());
                 tab->setPosts(posts);
+                self->noteUnreadRoomPosts(tab);   // posts while the GUI was off: toolbar "!"
             });
     }
     if (show) {
@@ -1258,6 +1285,34 @@ QString IrcPanel::ed3kNick() const
     if (nick == Preferences::defaultNick() || Preferences::isMfcDefaultNick(nick) || nick.contains(QLatin1String("://")))
         return {};
     return nick;
+}
+
+void IrcPanel::noteUnreadRoomPosts(Ed3kRoomTab* tab)
+{
+    const QString key = Ed3kRoomTab::keyOf(tab->room());
+    const qint64 readUpTo = theUiState.roomReadUpTo(tab->room());
+    if (readUpTo <= 0) {
+        // first sight of the room (joined, or no mark from older builds): all held is read
+        const qint64 newest = tab->posts().isEmpty() ? 0 : tab->posts().last().sent;
+        theUiState.setRoomReadUpTo(tab->room(), std::max(newest, QDateTime::currentSecsSinceEpoch()));
+        return;
+    }
+    const bool unread = std::ranges::any_of(tab->posts(), [&](const Ed3kRoomTab::Post& p) {
+        return p.sent > readUpTo && countsAsUnread(tab, p);
+    });
+    // no sound: these came while the GUI was off
+    if (!unread || markUnread(key))
+        rememberRoomRead(key);
+}
+
+void IrcPanel::rememberRoomRead(const QString& key)
+{
+    const auto it = m_channels.constFind(key);
+    if (it == m_channels.constEnd() || !it->room || it->room->posts().isEmpty())
+        return;
+    const qint64 newest = it->room->posts().last().sent;
+    if (newest > theUiState.roomReadUpTo(it->room->room()))
+        theUiState.setRoomReadUpTo(it->room->room(), newest);
 }
 
 } // namespace eMule

@@ -3,6 +3,7 @@
 
 #include "SharedFileRows.h"
 
+#include "BtFileIndex.h"
 #include "Ed3kHideBridge.h"
 
 #include "app/AppContext.h"
@@ -117,6 +118,15 @@ QCborMap sharedFileRow(KnownFile* kf, const SharedFileList::ShareRules& rules,
     if (const QString& v = kf->getStrTagValue(FT_MEDIA_CODEC); !v.isEmpty())
         m.insert(QStringLiteral("codec"), codecDisplayName(v));
     m.insert(QStringLiteral("filePath"), kf->filePath());
+#ifdef EMULE_HAVE_BITTORRENT
+    // #212: torrents with this file, a folder torrent's member file too: [[id, name], ...]
+    if (const auto torrents = BtFileIndex::instance().torrentsOf(kf->filePath()); !torrents.isEmpty()) {
+        QCborArray list;
+        for (const auto& t : torrents)
+            list.append(QCborArray{t.id, t.name});
+        m.insert(QStringLiteral("torrents"), list);
+    }
+#endif
     // Whether the user is allowed to unshare it — the incoming directory is not
     // unshareable by accident, it is unshareable by design (MFC ShouldBeShared with
     // bMustBeShared, srchybrid/SharedFilesCtrl.cpp:1598). The GUI greys the menu

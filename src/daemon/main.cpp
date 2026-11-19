@@ -294,6 +294,22 @@ int main(int argc, char* argv[])
                              .arg(QDir::toNativeSeparators(lockPath)));
     }
 
+    // Windows reserves port blocks at boot (Hyper-V, WSL2, Docker): move off one and
+    // save it, so the GUI dials the same. A --port given by hand stays.
+    if (cli.portOverride() == 0 && eMule::Preferences::ipcPortReserved(ipcHost, ipcPort)) {
+        const QList<uint16_t> ownPorts{eMule::thePrefs.port(), eMule::thePrefs.udpPort(),
+                                       eMule::thePrefs.webServerPort(),
+                                       eMule::thePrefs.btListenPort()};
+        if (const uint16_t moved = eMule::Preferences::freeIpcPort(ipcHost, ipcPort, ownPorts);
+            moved != 0) {
+            eMule::logWarning(QStringLiteral("IPC port %1 is reserved by the system, using %2")
+                                  .arg(ipcPort).arg(moved));
+            ipcPort = moved;
+            eMule::thePrefs.setIpcPort(moved);
+            eMule::thePrefs.save();
+        }
+    }
+
     // One default core per user, wherever it was installed: the setup's per-user
     // config and a portable copy each have a profile lock of their own. A --config
     // profile stays separate, unless it names the default one.

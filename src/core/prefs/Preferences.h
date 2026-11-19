@@ -370,6 +370,15 @@ public:
     [[nodiscard]] uint32 maxDownload() const;
     void setMaxDownload(uint32 val);
 
+    /// Alternative speed ("turtle", KB/s, 0 = no limit): while on, maxUpload() /
+    /// maxDownload() return these over the scheduler and the stored pair. Saved.
+    [[nodiscard]] bool altSpeed() const;
+    void setAltSpeed(bool on);
+    [[nodiscard]] uint32 altSpeedUp() const;
+    void setAltSpeedUp(uint32 kb);
+    [[nodiscard]] uint32 altSpeedDown() const;
+    void setAltSpeedDown(uint32 kb);
+
     /// Limits a running schedule puts over the stored ones (MFC CScheduler).
     /// Getters such as maxUpload() return the scheduled value while one is set;
     /// setters, save() and toIpcMap() use the stored value, so a schedule never
@@ -1601,6 +1610,8 @@ public:
     void setBtI2pStatusPagePassword(const QString& val);
     /// The public I2P trackers of issue #118 (http only: no UDP over SAM in libtorrent).
     [[nodiscard]] static QStringList defaultBtI2pTrackers();
+    /// Public clearnet trackers offered by the Torrent Creator, most reliable first.
+    [[nodiscard]] static QStringList defaultBtPublicTrackers();
 
     static constexpr int kBtI2pOff = 0;
     static constexpr int kBtI2pBundled = 1;
@@ -2006,6 +2017,15 @@ public:
     /// Where a client on this machine dials a core listening at @p value: a wildcard
     /// ("*", 0.0.0.0, ::), "" or a name over loopback.
     [[nodiscard]] static QString ipcDialHostOf(const QString& value);
+    /// The OS refuses TCP @p port on ipcBindAddressOf(@p host) for access, not use:
+    /// a Windows excluded range (Hyper-V, WSL2, Docker), a privileged port.
+    [[nodiscard]] static bool ipcPortReserved(const QString& host, uint16 port);
+    /// A port the IPC server can listen on at @p host: the 300 after @p from first,
+    /// then random (Windows reserves blocks of 100). Never one of @p avoid. 0 = none.
+    [[nodiscard]] static uint16 freeIpcPort(const QString& host, uint16 from,
+                                            const QList<uint16>& avoid);
+    /// ipc.port saved in the preferences file @p filePath; 0 = none or unreadable.
+    [[nodiscard]] static uint16 savedIpcPort(const QString& filePath);
 
     /// Path to emulecored binary. Empty = search next to GUI executable.
     [[nodiscard]] QString ipcDaemonPath() const;

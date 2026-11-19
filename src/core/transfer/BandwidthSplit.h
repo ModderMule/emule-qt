@@ -100,4 +100,10 @@ struct UploadPlan {
 [[nodiscard]] UploadPlan planUpload(qint64 lineKb, int btSharePercent, const EngineDemand& ed2k,
                                     const EngineDemand& bt, PairState* state = nullptr);
 
+/// ed3k's upload cap inside eMule's share @p shareKb (KB/s, 0 = unlimited → 0): a slot
+/// share like MFC's (each holder of either network an equal part, ed3k at least one), or
+/// what eD2K leaves (its own rate + half its part as room to grow) when that is more.
+/// ed3k's bytes are paid off eD2K's budget, so a cap of the whole share starved eD2K's slots.
+[[nodiscard]] qint64 ed3kUploadCapKb(qint64 shareKb, int ed2kSlots, int ed3kHolders, qint64 ed2kOwnKb);
+
 } // namespace eMule

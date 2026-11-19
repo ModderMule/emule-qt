@@ -506,7 +506,8 @@ void CoreSession::onTimer()
         if (theApp.statistics) {
             float downRate = (theApp.downloadQueue && theApp.downloadQueue->hasActiveTransfers())
                 ? static_cast<float>(theApp.downloadQueue->datarate()) / 1024.0f : 0.0f;
-            float upRate = (theApp.uploadQueue && theApp.uploadQueue->hasActiveUploads())
+            // the rate holds ed3k's bytes too: its holders count (was: eD2K slots alone, ed3k-only showed 0)
+            float upRate = (theApp.uploadQueue && (theApp.uploadQueue->hasActiveUploads() || theApp.uploadQueue->foreignSlots() > 0))
                 ? static_cast<float>(theApp.uploadQueue->datarate()) / 1024.0f : 0.0f;
             theApp.statistics->updateConnectionStats(upRate, downRate);
             // Once a second, as MFC (srchybrid/UploadQueue.cpp:962) — the history

@@ -84,6 +84,10 @@ using Kind = PrefSpec::Kind;
     // --- Speed and connection limits ---
     t << number("maxUpload", 0, kMaxU32, "KiB/s", "Upload limit. 0 = unlimited.");
     t << number("maxDownload", 0, kMaxU32, "KiB/s", "Download limit. 0 = unlimited.");
+    t << flag("altSpeed", "Alternative speed (turtle): the two limits below replace the upload and "
+              "download limits and any schedule while on.");
+    t << number("altSpeedUp", 0, kMaxU32, "KiB/s", "Turtle upload limit. 0 = unlimited.");
+    t << number("altSpeedDown", 0, kMaxU32, "KiB/s", "Turtle download limit. 0 = unlimited.");
     t << number("maxConnections", 1, 65535, "", "Maximum simultaneous connections.");
     t << number("maxSourcesPerFile", 1, 5000, "", "Hard limit of sources kept per download.");
     t << advanced(number("maxConsPerFive", 1, 50, "", "New connections allowed per 5 seconds."));

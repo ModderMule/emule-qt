@@ -318,6 +318,8 @@ private:
     void resetFilesystemTree();
     /// MoveEd3kFileKey of each file (hops.md §1: asks first).
     void moveEd3kKey(const QStringList& hashes, bool toAnon);
+    /// #212: drop these torrents from the Torrents list, files stay (shared as before)
+    void removeTorrentsKeepFiles(const QList<QPair<QString, QString>>& torrents);
 
     QString m_fsTreeCore;   ///< host:port whose folders "All Directories" holds
 };

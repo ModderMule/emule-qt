@@ -101,4 +101,18 @@ UploadPlan planUpload(qint64 lineKb, int btSharePercent, const EngineDemand& ed2
     return plan;
 }
 
+qint64 ed3kUploadCapKb(qint64 shareKb, int ed2kSlots, int ed3kHolders, qint64 ed2kOwnKb)
+{
+    if (shareKb <= 0)
+        return 0;
+    if (ed2kSlots <= 0)
+        return shareKb;
+    const qint64 mine = std::max(ed3kHolders, 1);
+    const qint64 fair = shareKb * mine / (mine + ed2kSlots);
+    // was: shareKb - ed2kOwnKb * 5 / 4: eD2K sending nothing (starved) handed ed3k all of it
+    // half of eD2K's slot part stays reserved, so a starved eD2K grows back to its part
+    const qint64 left = shareKb - std::max<qint64>(ed2kOwnKb, 0) - (shareKb - fair) / 2;
+    return std::clamp<qint64>(std::max(fair, left), 1, shareKb);
+}
+
 } // namespace eMule
