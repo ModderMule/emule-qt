@@ -6,7 +6,7 @@
 ///
 /// Needs a built resolver.zip (scripts/build-hoster-resolver.sh, or EMULE_RESOLVER_ZIP) and
 /// Java 17+; skips without. No internet. EMULE_HOSTER_SPEED_MIB: file size (default 512),
-/// EMULE_HOSTER_MIN_MIBS: the floor (default 50).
+/// EMULE_HOSTER_MIN_MIBS: the floor (default 50; 15 in an MSVC Debug build).
 
 #include "TestHelpers.h"
 
@@ -103,7 +103,12 @@ private slots:
 
         m_server = std::make_unique<MockHosterServer>(envInt("EMULE_HOSTER_SPEED_MIB", 512) * 1024 * 1024);
         QVERIFY(m_server->port() != 0);
-        m_minMibs = double(envInt("EMULE_HOSTER_MIN_MIBS", 50));
+#if defined(_MSC_VER) && defined(_DEBUG)
+        constexpr int kDefaultMin = 15;   // MSVC debug CRT + unoptimised Rust: ~25-45 MiB/s here
+#else
+        constexpr int kDefaultMin = 50;
+#endif
+        m_minMibs = double(envInt("EMULE_HOSTER_MIN_MIBS", kDefaultMin));
         m_md5 = expectedMd5(*m_server);
 
         m_resolver = std::make_unique<Ed3kJdResolver>();

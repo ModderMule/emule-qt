@@ -2447,7 +2447,9 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
 
     const QString metPath = m_fullName;
     // Preloaded bytes for a preload of this very file; the disk otherwise
-    if (preload && (!preload->met || preload->metPath != metPath))
+    // compare separator-agnostic: m_fullName uses '\' on Windows, the preload '/'
+    if (preload && (!preload->met
+                    || QDir::cleanPath(preload->metPath) != QDir::cleanPath(metPath)))
         preload = nullptr;
     std::optional<SafeFile> diskMet;
     std::optional<SafeMemFile> memMet;

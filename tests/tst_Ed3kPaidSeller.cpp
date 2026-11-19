@@ -19,6 +19,7 @@
 #include "Ed3kStore.h"
 
 #include "IpcMessage.h"
+#include "utils/OwnerOnly.h"
 
 #include <QCborArray>
 #include <QDir>
@@ -103,12 +104,7 @@ QByteArray open(const ::ed3k::Key32& kData, const QByteArray& sealed)
 
 bool ownerOnly(const QString& path)
 {
-#ifdef Q_OS_WIN
-    Q_UNUSED(path);
-    return true;
-#else
-    return (QFile::permissions(path) & (QFileDevice::ReadGroup | QFileDevice::ReadOther)) == QFileDevice::Permissions{};
-#endif
+    return eMule::isOwnerOnly(path);
 }
 
 } // namespace
@@ -247,6 +243,7 @@ void tst_Ed3kPaidSeller::aSetSoldAVoucherTakenKeysTheMemberOpens()
         const QByteArray json = readBlob(seller.statePath());
         QVERIFY(!json.contains(seed.toHex()) && !json.contains(seed.toBase64()));
     }
+    flushBlobWrites();   // the state goes via the writer; Windows sets its DACL after the rename
     QVERIFY(ownerOnly(seller.statePath()));
     QVERIFY(!readBlob(seller.statePath()).contains(voucher->toUtf8()));
 

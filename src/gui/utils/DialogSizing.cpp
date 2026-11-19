@@ -68,7 +68,8 @@ Fitted contentSize(QWidget* dialog, QSize floor, Fit fit, QSize budget)
     layout->activate();
 
     const QSize layoutMin = layout->totalMinimumSize();
-    const int   width     = std::max(floor.width(), layoutMin.width());
+    // cut to the screen before measuring: wrapped text at a wider width needs fewer lines
+    const int   width     = std::min(std::max(floor.width(), layoutMin.width()), budget.width());
     const int   minHeight = std::max(floor.height(), layoutMin.height());
     int         preferred = minHeight;
 

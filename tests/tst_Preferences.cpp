@@ -13,6 +13,7 @@
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
+#include "utils/OwnerOnly.h"
 
 #include <QCborMap>
 #include <QCoreApplication>
@@ -2419,9 +2420,6 @@ private slots:
     // account secrets: saved file, an older world-readable one after load and the backup
     void save_fileIsOwnerOnly()
     {
-#ifdef Q_OS_WIN
-        QNtfsPermissionCheckGuard ntfs;   // permissions() from the ACL
-#endif
         TempDir tmp;
         const QString file = tmp.filePath(QStringLiteral("preferences.yml"));
         Preferences p;
@@ -2448,10 +2446,7 @@ private slots:
 private:
     static bool ownerOnly(const QString& path)
     {
-        constexpr auto others = QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ReadOther
-                                | QFileDevice::WriteOther;
-        const auto perms = QFile::permissions(path);
-        return (perms & QFileDevice::ReadOwner) && !(perms & others);
+        return eMule::isOwnerOnly(path);   // Windows: the DACL, permissions() can't tell
     }
 
     static void writeRaw(const QString& path, const QByteArray& data)

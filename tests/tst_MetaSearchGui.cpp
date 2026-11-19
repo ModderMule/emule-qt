@@ -540,7 +540,7 @@ void tst_MetaSearchGui::webLinksDialog_longNamesLeaveStatusInView()
 {
     QVERIFY(!theUiState.hasHeaderState(QStringLiteral("webLinks")));
     WebLinksDialog dlg(QStringLiteral("row"), longNamedLinks(8), {}, QStringLiteral("row.txt"), nullptr);
-    auto* list = dlg.findChild<QTreeWidget*>();
+    auto* list = dlg.findChild<QTreeWidget*>(QStringLiteral("webLinks"));
     QVERIFY(list);
     dlg.show();
     QVERIFY(QTest::qWaitForWindowExposed(&dlg));
@@ -556,7 +556,7 @@ void tst_MetaSearchGui::webLinksDialog_keepsColumnLayout()
     const QString key = QStringLiteral("webLinks");
     {
         WebLinksDialog dlg(QStringLiteral("row"), longNamedLinks(2), {}, QStringLiteral("row.txt"), nullptr);
-        auto* list = dlg.findChild<QTreeWidget*>();
+        auto* list = dlg.findChild<QTreeWidget*>(QStringLiteral("webLinks"));
         QVERIFY(list->isColumnHidden(WebStatus));   // no checks without IPC
         QVERIFY(list->header()->sectionsMovable());
         list->header()->resizeSection(WebSize, 123);
@@ -573,7 +573,7 @@ void tst_MetaSearchGui::webLinksDialog_keepsColumnLayout()
         QVERIFY(probe.isColumnHidden(WebLink));
     }
     WebLinksDialog dlg(QStringLiteral("row"), longNamedLinks(2), {}, QStringLiteral("row.txt"), nullptr);
-    auto* list = dlg.findChild<QTreeWidget*>();
+    auto* list = dlg.findChild<QTreeWidget*>(QStringLiteral("webLinks"));
     QCOMPARE(list->header()->sectionSize(WebSize), 123);
     QCOMPARE(list->header()->visualIndex(WebHoster), 1);
     QVERIFY(list->isColumnHidden(WebLink));
@@ -595,7 +595,7 @@ void tst_MetaSearchGui::webLinksDialog_listsAndCopies()
     QVERIFY(dlg.windowTitle().contains(QStringLiteral("Some Release")));
     QVERIFY(visibleChild<QLabel>(&dlg, [](QLabel* l) { return l->text().contains(u"password"); }));
 
-    auto* list = dlg.findChild<QTreeWidget*>();
+    auto* list = dlg.findChild<QTreeWidget*>(QStringLiteral("webLinks"));
     QVERIFY(list);
     QCOMPARE(list->topLevelItemCount(), 2);
     QCOMPARE(list->topLevelItem(0)->text(list->columnCount() - 1), QStringLiteral("https://a.test/f/1"));
@@ -626,7 +626,7 @@ void tst_MetaSearchGui::webLinksDialog_listsOnionLinks()
                                                                      {QStringLiteral("hoster"), QStringLiteral("onionhost")}}}}};
     WebLinksDialog dlg(QStringLiteral("row"), map, onion.toUtf8() + "\r\n", QStringLiteral("row.txt"), nullptr);
 
-    auto* list = dlg.findChild<QTreeWidget*>();
+    auto* list = dlg.findChild<QTreeWidget*>(QStringLiteral("webLinks"));
     QVERIFY(list);
     QCOMPARE(list->topLevelItemCount(), 1);
     QCOMPARE(list->topLevelItem(0)->text(list->columnCount() - 1), onion);
@@ -674,7 +674,7 @@ void tst_MetaSearchGui::webLinksDialog_downloadLabelAndMenu()
     auto* b = button(dlg);
     QVERIFY(b);
     QCOMPARE(b->text(), WebLinksDialog::tr("Download (all)"));
-    auto* list = dlg.findChild<QTreeWidget*>();
+    auto* list = dlg.findChild<QTreeWidget*>(QStringLiteral("webLinks"));
     QVERIFY(list);
     list->topLevelItem(1)->setCheckState(0, Qt::Unchecked);
     QCOMPARE(b->text(), WebLinksDialog::tr("Download (%1)").arg(2));

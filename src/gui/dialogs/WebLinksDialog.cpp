@@ -123,6 +123,7 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
     pageLayout->addWidget(hint);
 
     m_list = new ListTreeWidget(linksPage);
+    m_list->setObjectName(QStringLiteral("webLinks"));   // the Archive tab has a tree too
     m_list->setRootIsDecorated(false);
     m_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_list->setHeaderLabels({tr("File"), tr("Name"), tr("Size"), tr("Hoster"), tr("Status"), tr("Account"), tr("Link")});

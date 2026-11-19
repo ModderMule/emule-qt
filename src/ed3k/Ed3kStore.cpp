@@ -5,12 +5,13 @@
 #include "Ed3kFfi.h"
 #include "Ed3kKeyFile.h"
 #include "utils/BackgroundFileWriter.h"
+#include "utils/Log.h"
+#include "utils/OwnerOnly.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileDevice>
 #include <QFileInfo>
-#include <QSaveFile>
 
 #include <openssl/crypto.h>
 #include <openssl/rand.h>
@@ -190,7 +191,7 @@ bool replaceSecret(const QString& dir, const QString& name, const Seed& secret, 
             *error = QStringLiteral("cannot create %1").arg(dir);
         return false;
     }
-    // QSaveFile: a temporary file made owner-only before the first byte, then renamed
+    // writeBlob: a temporary file owner-only before the first byte, then renamed
     // was: ToDo: owner-only DACL on Windows (as createKeyFile) (done: writeBlob → ownerOnly)
     const QString path = QDir(dir).filePath(name);
     if (!writeBlob(path, std::as_bytes(std::span{secret}))) {
@@ -213,23 +214,12 @@ QByteArray readBlob(const QString& path)
 
 bool writeBlob(const QString& path, std::span<const std::byte> data)
 {
-    QSaveFile f(path);
-    if (!f.open(QIODevice::WriteOnly))
-        return false;
-    f.setPermissions(kOwnerOnly);
-    if (f.write(reinterpret_cast<const char*>(data.data()), qint64(data.size())) != qint64(data.size())) {
-        f.cancelWriting();
-        return false;
-    }
-    // return f.commit();
-    if (!f.commit())
-        return false;
-#ifdef Q_OS_WIN
-    // the renamed file has its folder's ACL: owner-only from here on (0600 elsewhere already)
-    if (!ownerOnly(path))
-        return false;
-#endif
-    return true;
+    // was: QSaveFile, then ownerOnly after the rename; the new file had its folder's ACL meanwhile
+    QString error;
+    if (writeOwnerOnly(path, QByteArrayView(reinterpret_cast<const char*>(data.data()), qsizetype(data.size())), &error))
+        return true;
+    logWarning(QStringLiteral("writeBlob: %1").arg(error));
+    return false;
 }
 
 void writeBlobLater(const QString& path, std::span<const std::byte> data)

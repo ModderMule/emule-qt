@@ -1290,6 +1290,7 @@ void TestOptionsDialogSizing::defaultWidthShowsEveryTabTitle()
         auto* layout = new QVBoxLayout(&dialog);
         auto* tabs = new QTabWidget;
         tabs->setUsesScrollButtons(scrollButtons);
+        tabs->setElideMode(Qt::ElideRight);   // macOS style default; Windows' ElideNone can't squeeze
         for (int i = 0; i < 8; ++i)
             tabs->addTab(new QWidget, QStringLiteral("A rather long tab title %1").arg(i));
         layout->addWidget(tabs);
