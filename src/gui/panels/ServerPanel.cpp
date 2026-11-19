@@ -19,6 +19,7 @@
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
+#include "utils/PanelLayout.h"
 #include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/UrlPrefField.h"
@@ -689,6 +690,7 @@ void ServerPanel::setupUi()
     m_vertSplitter->addWidget(m_logWidget);
     m_vertSplitter->setStretchFactor(0, 2);
     m_vertSplitter->setStretchFactor(1, 1);
+    PanelLayout::setPaneMinHeights(m_vertSplitter);
     // First-run default, scaled to the real height: log gets ~45%
     m_vertSplitter->setSizes({550, 450});
 
@@ -887,16 +889,7 @@ QWidget* ServerPanel::createControlsPanel()
 
     // The whole column scrolls too: its full height would otherwise pin the
     // main window's minimum height.
-    auto* scroll = new QScrollArea;
-    scroll->setWidget(widget);
-    scroll->setWidgetResizable(true);
-    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setFrameShape(QFrame::NoFrame);
-    scroll->viewport()->setAutoFillBackground(false);
-    const int barWidth = scroll->style()->pixelMetric(QStyle::PM_ScrollBarExtent);
-    scroll->setMinimumWidth(widget->minimumWidth() + barWidth);
-    scroll->setMaximumWidth(widget->maximumWidth() + barWidth);
-    return scroll;
+    return PanelLayout::scrollableColumn(widget);
 }
 
 // ---------------------------------------------------------------------------

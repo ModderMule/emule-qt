@@ -512,7 +512,7 @@ private slots:
             Preferences loaded;
             QVERIFY(loaded.load(file));
             QCOMPARE(loaded.btEnabled(), version < 3);
-            QCOMPARE(loaded.startVersion(), 7u);
+            QCOMPARE(loaded.startVersion(), 8u);
         }
     }
 
@@ -541,7 +541,7 @@ private slots:
             QVERIFY(loaded.load(file));
             QCOMPARE(loaded.nick(), version < 5 ? Preferences::defaultNick()
                                                 : QStringLiteral("https://emule-project.net"));
-            QCOMPARE(loaded.startVersion(), 7u);
+            QCOMPARE(loaded.startVersion(), 8u);
         }
     }
 
@@ -564,7 +564,27 @@ private slots:
             Preferences loaded;
             QVERIFY(loaded.load(file));
             QCOMPARE(loaded.ed3kHoster().maxStreams, uint32(expected));
-            QCOMPARE(loaded.startVersion(), 7u);
+            QCOMPARE(loaded.startVersion(), 8u);
+        }
+    }
+
+    // v8: ed3k LAN peers unlimited by default; a stored old default off turned on once
+    void ed3kLanUnlimited_v8On()
+    {
+        QCOMPARE(Preferences{}.ed3kLanUnlimited(), true);
+        TempDir tmp;
+        for (const uint32 version : {7u, 8u}) {
+            const auto file = tmp.filePath(QStringLiteral("lan%1.yaml").arg(version));
+            {
+                Preferences prefs;
+                prefs.setStartVersion(version);
+                prefs.setEd3kLanUnlimited(false);
+                QVERIFY(prefs.saveTo(file));
+            }
+            Preferences loaded;
+            QVERIFY(loaded.load(file));
+            QCOMPARE(loaded.ed3kLanUnlimited(), version < 8);
+            QCOMPARE(loaded.startVersion(), 8u);
         }
     }
 
