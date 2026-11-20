@@ -881,7 +881,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+2"/>
         <source>The network interface selected in Options has no public address known yet, so nothing could be tested over it. Connect to the network first, then test again.</source>
-        <translation>選項中所選的網路介面尚無已知的公用位址，因此無法透過它進行任何測試。請先連線網路，然後再測試。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
@@ -967,12 +967,12 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+5"/>
         <source>Some test packets from the website did not arrive, but peers prove the port open: the packets were lost on the way (often dropped by a VPN or provider), the port is not closed.</source>
-        <translation>網站的部分測試封包未到達，但對等端證明連接埠是開放的：封包在途中遺失（通常被 VPN 或供應商丟棄），連接埠並未關閉。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>The website&apos;s test packets did not arrive.</source>
-        <translation>網站的測試封包未到達。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+17"/>
@@ -995,61 +995,61 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+58"/>
         <source>other ed3k nodes reach this node at %1</source>
-        <translation>其他 ed3k 節點可透過 %1 連到本節點</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>eD2K clients reach this UDP port at %1 (Kad check passed)</source>
-        <translation>eD2K 用戶端可透過 %1 連到此 UDP 連接埠（Kad 檢查通過）</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>the eD2K server gave a High ID at %1</source>
-        <translation>eD2K 伺服器在 %1 給出了 High ID</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+13"/>
         <source>The website&apos;s test failed (%1).</source>
-        <translation>網站測試失敗（%1）。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test connection got no answer: it was dropped on the way.</source>
-        <translation>網站的測試連線沒有收到回應：它在途中被丟棄。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+2"/>
         <source>None of the %n test packet(s) from the website arrived: lost on the way.</source>
-        <translation>
-            <numerusform>網站的 %n 個測試封包均未到達：在途中遺失。</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test packet did not arrive: lost on the way.</source>
-        <translation>網站的測試封包未到達：在途中遺失。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>reachable, %1.</source>
-        <translation>可連線，%1。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+3"/>
         <source>not reachable: none of the %n test packet(s) arrived (firewall or missing port forwarding)</source>
-        <translation>
-            <numerusform>無法連線：%n 個測試封包均未到達（防火牆或缺少連接埠轉送）</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+13"/>
         <source>Only IPv4 was tested: the network interface %1 selected in Options has no IPv6.</source>
-        <translation>僅測試了 IPv4：選項中所選的網路介面 %1 沒有 IPv6。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Only IPv6 was tested: the network interface %1 selected in Options has no IPv4.</source>
-        <translation>僅測試了 IPv6：選項中所選的網路介面 %1 沒有 IPv4。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+10"/>
@@ -16686,35 +16686,31 @@ IPv6：%5
     <message>
         <location line="+1765"/>
         <source>Built without the hoster resolver, cannot open %1.</source>
-        <translation>建置時未包含網盤解析器，無法開啟 %1。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+661"/>
         <source>Usenet Disabled</source>
-        <translation>Usenet 已停用</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Usenet is turned off, so NZB files and links cannot be added.
 
 Turn it on under Options → Usenet, then try again.</source>
-        <translation>Usenet 已關閉，無法新增 NZB 檔案與連結。
-
-請在 選項 → Usenet 中開啟後再試一次。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Hoster Downloads Disabled</source>
-        <translation>網盤下載已停用</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Hoster downloads are turned off, so link containers cannot be opened.
 
 Turn them on under Options → ed3k → Hoster, then try again.</source>
-        <translation>網盤下載已關閉，無法開啟連結容器。
-
-請在 選項 → ed3k → Hoster 中開啟後再試一次。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+206"/>
@@ -19038,10 +19034,6 @@ Download it again?</source>
         <location line="+0"/>
         <source>Symmetric NAT (port untested)</source>
         <translation>對稱 NAT（連接埠未測試）</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">主機名稱：</translation>
     </message>
     <message>
         <location line="+9"/>
@@ -26080,7 +26072,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+59"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
         <source>%1 (disabled)</source>
         <translation>%1（已停用）</translation>
     </message>
@@ -26097,7 +26089,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>否</translation>
     </message>
     <message>
-        <location line="+99"/>
+        <location line="+102"/>
         <source>Server Name</source>
         <translation>伺服器名稱</translation>
     </message>
@@ -26107,8 +26099,9 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>IP</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IP</source>
-        <translation type="vanished">主機名稱 / IP</translation>
+        <translation>主機名稱 / IP</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26176,8 +26169,9 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>IPv6</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IPv6</source>
-        <translation type="vanished">主機名稱 / IPv6</translation>
+        <translation>主機名稱 / IPv6</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26238,7 +26232,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>已下載 server.met，已解壓縮「%1」（%2 位元組）。正在解析...</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+33"/>
         <location line="+91"/>
         <source>Disconnect</source>
         <translation>中斷連線</translation>
@@ -26250,12 +26244,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+2"/>
-        <location line="+424"/>
+        <location line="+425"/>
         <source>Connect</source>
         <translation>連線</translation>
     </message>
     <message>
-        <location line="-351"/>
+        <location line="-352"/>
         <source>Connect To</source>
         <translation>連線到</translation>
     </message>
@@ -26271,12 +26265,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+1"/>
-        <location line="+507"/>
+        <location line="+508"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-506"/>
+        <location line="-507"/>
         <source>High</source>
         <translation>高</translation>
     </message>
@@ -26336,16 +26330,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>尋找...</translation>
     </message>
     <message>
-        <source>Show Raw IPs</source>
-        <translation type="vanished">顯示原始 IP</translation>
-    </message>
-    <message>
         <location line="+56"/>
         <source>▸ Servers (0)</source>
         <translation>▸ 伺服器 (0)</translation>
     </message>
     <message>
-        <location line="+82"/>
+        <location line="+83"/>
         <source>New Server</source>
         <translation>新伺服器</translation>
     </message>
@@ -26450,10 +26440,6 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <location line="+3"/>
         <source>Description:</source>
         <translation>描述：</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">主機名稱：</translation>
     </message>
     <message>
         <location line="+3"/>

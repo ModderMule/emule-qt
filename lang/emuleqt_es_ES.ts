@@ -891,7 +891,7 @@ El núcleo sigue escuchando en el puerto TCP %1 y el puerto UDP %2.</translation
     <message>
         <location line="+2"/>
         <source>The network interface selected in Options has no public address known yet, so nothing could be tested over it. Connect to the network first, then test again.</source>
-        <translation>La interfaz de red seleccionada en Opciones aún no tiene una dirección pública conocida, así que no se pudo probar nada a través de ella. Conéctese primero a la red y vuelva a probar.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
@@ -977,12 +977,12 @@ El núcleo sigue escuchando en el puerto TCP %1 y el puerto UDP %2.</translation
     <message>
         <location line="+5"/>
         <source>Some test packets from the website did not arrive, but peers prove the port open: the packets were lost on the way (often dropped by a VPN or provider), the port is not closed.</source>
-        <translation>Algunos paquetes de prueba del sitio web no llegaron, pero los pares demuestran que el puerto está abierto: los paquetes se perdieron por el camino (a menudo descartados por una VPN o el proveedor), el puerto no está cerrado.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>The website&apos;s test packets did not arrive.</source>
-        <translation>Los paquetes de prueba del sitio web no llegaron.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+17"/>
@@ -1005,63 +1005,63 @@ El núcleo sigue escuchando en el puerto TCP %1 y el puerto UDP %2.</translation
     <message>
         <location line="+58"/>
         <source>other ed3k nodes reach this node at %1</source>
-        <translation>otros nodos ed3k alcanzan este nodo en %1</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>eD2K clients reach this UDP port at %1 (Kad check passed)</source>
-        <translation>los clientes eD2K alcanzan este puerto UDP en %1 (comprobación Kad superada)</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>the eD2K server gave a High ID at %1</source>
-        <translation>el servidor eD2K dio una High ID en %1</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+13"/>
         <source>The website&apos;s test failed (%1).</source>
-        <translation>La prueba del sitio web falló (%1).</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test connection got no answer: it was dropped on the way.</source>
-        <translation>La conexión de prueba del sitio web no obtuvo respuesta: se descartó por el camino.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+2"/>
         <source>None of the %n test packet(s) from the website arrived: lost on the way.</source>
-        <translation>
-            <numerusform>El %n paquete de prueba del sitio web no llegó: perdido por el camino.</numerusform>
-            <numerusform>Ninguno de los %n paquetes de prueba del sitio web llegó: perdidos por el camino.</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test packet did not arrive: lost on the way.</source>
-        <translation>El paquete de prueba del sitio web no llegó: perdido por el camino.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>reachable, %1.</source>
-        <translation>accesible, %1.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+3"/>
         <source>not reachable: none of the %n test packet(s) arrived (firewall or missing port forwarding)</source>
-        <translation>
-            <numerusform>no accesible: el %n paquete de prueba no llegó (cortafuegos o falta de redirección de puertos)</numerusform>
-            <numerusform>no accesible: ninguno de los %n paquetes de prueba llegó (cortafuegos o falta de redirección de puertos)</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+13"/>
         <source>Only IPv4 was tested: the network interface %1 selected in Options has no IPv6.</source>
-        <translation>Solo se probó IPv4: la interfaz de red %1 seleccionada en Opciones no tiene IPv6.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Only IPv6 was tested: the network interface %1 selected in Options has no IPv4.</source>
-        <translation>Solo se probó IPv6: la interfaz de red %1 seleccionada en Opciones no tiene IPv4.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+10"/>
@@ -16971,30 +16971,26 @@ Puerto TCP: %3</translation>
     <message>
         <location line="+812"/>
         <source>Usenet Disabled</source>
-        <translation>Usenet desactivado</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Usenet is turned off, so NZB files and links cannot be added.
 
 Turn it on under Options → Usenet, then try again.</source>
-        <translation>Usenet está desactivado, por lo que no se pueden añadir archivos ni enlaces NZB.
-
-Actívelo en Opciones → Usenet y vuelva a intentarlo.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Hoster Downloads Disabled</source>
-        <translation>Descargas de hosters desactivadas</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Hoster downloads are turned off, so link containers cannot be opened.
 
 Turn them on under Options → ed3k → Hoster, then try again.</source>
-        <translation>Las descargas de hosters están desactivadas, por lo que no se pueden abrir contenedores de enlaces.
-
-Actívelas en Opciones → ed3k → Hoster y vuelva a intentarlo.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+206"/>
@@ -17713,7 +17709,7 @@ Actívalo en Opciones → BitTorrent y vuelve a intentarlo.</translation>
     <message>
         <location line="-421"/>
         <source>Built without the hoster resolver, cannot open %1.</source>
-        <translation>Compilado sin el resolvedor de hosters, no se puede abrir %1.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+422"/>
@@ -19491,10 +19487,6 @@ Download it again?</source>
         <location line="+0"/>
         <source>Symmetric NAT (port untested)</source>
         <translation>NAT simétrico (puerto sin probar)</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">Nombre de host:</translation>
     </message>
     <message>
         <location line="+9"/>
@@ -26688,7 +26680,7 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+59"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
         <source>%1 (disabled)</source>
         <translation>%1 (desactivado)</translation>
     </message>
@@ -26705,7 +26697,7 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation>No</translation>
     </message>
     <message>
-        <location line="+99"/>
+        <location line="+102"/>
         <source>Server Name</source>
         <translation>Nombre del servidor</translation>
     </message>
@@ -26715,8 +26707,9 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation>IP</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IP</source>
-        <translation type="vanished">Nombre de host / IP</translation>
+        <translation>Nombre de host / IP</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26774,8 +26767,9 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation>IPv6</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IPv6</source>
-        <translation type="vanished">Nombre de host / IPv6</translation>
+        <translation>Nombre de host / IPv6</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26820,7 +26814,7 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+336"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+338"/>
         <location line="+91"/>
         <source>Disconnect</source>
         <translation>Desconectar</translation>
@@ -26832,12 +26826,12 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
     </message>
     <message>
         <location line="+2"/>
-        <location line="+424"/>
+        <location line="+425"/>
         <source>Connect</source>
         <translation>Conectar</translation>
     </message>
     <message>
-        <location line="-489"/>
+        <location line="-492"/>
         <source>Invalid URL: %1</source>
         <translation>URL no válida: %1</translation>
     </message>
@@ -26867,7 +26861,7 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation>server.met descargado, &quot;%1&quot; descomprimido (%2 bytes). Analizando...</translation>
     </message>
     <message>
-        <location line="+621"/>
+        <location line="+624"/>
         <location line="+2"/>
         <location line="+25"/>
         <location line="+41"/>
@@ -26965,7 +26959,7 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation>▸ Servidores (%1)</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-643"/>
         <source>Connect To</source>
         <translation>Conectar a</translation>
     </message>
@@ -26981,12 +26975,12 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
     </message>
     <message>
         <location line="+1"/>
-        <location line="+507"/>
+        <location line="+508"/>
         <source>Normal</source>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="-506"/>
+        <location line="-507"/>
         <source>High</source>
         <translation>Alta</translation>
     </message>
@@ -27046,16 +27040,12 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation>Buscar...</translation>
     </message>
     <message>
-        <source>Show Raw IPs</source>
-        <translation type="vanished">Mostrar IP sin resolver</translation>
-    </message>
-    <message>
         <location line="+56"/>
         <source>▸ Servers (0)</source>
         <translation>▸ Servidores (0)</translation>
     </message>
     <message>
-        <location line="+82"/>
+        <location line="+83"/>
         <source>New Server</source>
         <translation>Nuevo servidor</translation>
     </message>
@@ -27126,10 +27116,6 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <location line="+16"/>
         <source>High ID</source>
         <translation>High ID</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">Nombre de host:</translation>
     </message>
     <message>
         <location line="+25"/>

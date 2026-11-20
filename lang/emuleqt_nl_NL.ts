@@ -891,7 +891,7 @@ De core blijft luisteren op TCP-poort %1 en UDP-poort %2.</translation>
     <message>
         <location line="+2"/>
         <source>The network interface selected in Options has no public address known yet, so nothing could be tested over it. Connect to the network first, then test again.</source>
-        <translation>De in Opties gekozen netwerkinterface heeft nog geen bekend openbaar adres, dus er kon niets via deze interface getest worden. Maak eerst verbinding met het netwerk en test dan opnieuw.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
@@ -977,12 +977,12 @@ De core blijft luisteren op TCP-poort %1 en UDP-poort %2.</translation>
     <message>
         <location line="+5"/>
         <source>Some test packets from the website did not arrive, but peers prove the port open: the packets were lost on the way (often dropped by a VPN or provider), the port is not closed.</source>
-        <translation>Sommige testpakketten van de website kwamen niet aan, maar peers bewijzen dat de poort open is: de pakketten gingen onderweg verloren (vaak weggegooid door een VPN of provider), de poort is niet gesloten.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>The website&apos;s test packets did not arrive.</source>
-        <translation>De testpakketten van de website kwamen niet aan.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+17"/>
@@ -1005,63 +1005,63 @@ De core blijft luisteren op TCP-poort %1 en UDP-poort %2.</translation>
     <message>
         <location line="+58"/>
         <source>other ed3k nodes reach this node at %1</source>
-        <translation>andere ed3k-nodes bereiken deze node op %1</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>eD2K clients reach this UDP port at %1 (Kad check passed)</source>
-        <translation>eD2K-clients bereiken deze UDP-poort op %1 (Kad-controle geslaagd)</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>the eD2K server gave a High ID at %1</source>
-        <translation>de eD2K-server gaf een High ID op %1</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+13"/>
         <source>The website&apos;s test failed (%1).</source>
-        <translation>De test van de website is mislukt (%1).</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test connection got no answer: it was dropped on the way.</source>
-        <translation>De testverbinding van de website kreeg geen antwoord: ze werd onderweg weggegooid.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+2"/>
         <source>None of the %n test packet(s) from the website arrived: lost on the way.</source>
-        <translation>
-            <numerusform>Het %n testpakket van de website kwam niet aan: onderweg verloren.</numerusform>
-            <numerusform>Geen van de %n testpakketten van de website kwam aan: onderweg verloren.</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test packet did not arrive: lost on the way.</source>
-        <translation>Het testpakket van de website kwam niet aan: onderweg verloren.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>reachable, %1.</source>
-        <translation>bereikbaar, %1.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+3"/>
         <source>not reachable: none of the %n test packet(s) arrived (firewall or missing port forwarding)</source>
-        <translation>
-            <numerusform>niet bereikbaar: het %n testpakket kwam niet aan (firewall of ontbrekende port forwarding)</numerusform>
-            <numerusform>niet bereikbaar: geen van de %n testpakketten kwam aan (firewall of ontbrekende port forwarding)</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+13"/>
         <source>Only IPv4 was tested: the network interface %1 selected in Options has no IPv6.</source>
-        <translation>Alleen IPv4 is getest: de in Opties gekozen netwerkinterface %1 heeft geen IPv6.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Only IPv6 was tested: the network interface %1 selected in Options has no IPv4.</source>
-        <translation>Alleen IPv6 is getest: de in Opties gekozen netwerkinterface %1 heeft geen IPv4.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+10"/>
@@ -16763,35 +16763,31 @@ Router: %6</translation>
     <message>
         <location line="+1765"/>
         <source>Built without the hoster resolver, cannot open %1.</source>
-        <translation>Gebouwd zonder hoster-resolver, %1 kan niet worden geopend.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+661"/>
         <source>Usenet Disabled</source>
-        <translation>Usenet uitgeschakeld</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Usenet is turned off, so NZB files and links cannot be added.
 
 Turn it on under Options → Usenet, then try again.</source>
-        <translation>Usenet staat uit, dus NZB-bestanden en -links kunnen niet worden toegevoegd.
-
-Zet het aan onder Opties → Usenet en probeer het opnieuw.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Hoster Downloads Disabled</source>
-        <translation>Hoster-downloads uitgeschakeld</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Hoster downloads are turned off, so link containers cannot be opened.
 
 Turn them on under Options → ed3k → Hoster, then try again.</source>
-        <translation>Hoster-downloads staan uit, dus linkcontainers kunnen niet worden geopend.
-
-Zet ze aan onder Opties → ed3k → Hoster en probeer het opnieuw.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+206"/>
@@ -19120,10 +19116,6 @@ Opnieuw downloaden?</translation>
         <location line="+0"/>
         <source>Symmetric NAT (port untested)</source>
         <translation>Symmetrische NAT (poort niet getest)</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">Hostnaam:</translation>
     </message>
     <message>
         <location line="+9"/>
@@ -26167,7 +26159,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+59"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
         <source>%1 (disabled)</source>
         <translation>%1 (uitgeschakeld)</translation>
     </message>
@@ -26184,7 +26176,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Nee</translation>
     </message>
     <message>
-        <location line="+99"/>
+        <location line="+102"/>
         <source>Server Name</source>
         <translation>Servernaam</translation>
     </message>
@@ -26194,8 +26186,9 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>IP</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IP</source>
-        <translation type="vanished">Hostnaam / IP</translation>
+        <translation>Hostnaam / IP</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26263,8 +26256,9 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>IPv6</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IPv6</source>
-        <translation type="vanished">Hostnaam / IPv6</translation>
+        <translation>Hostnaam / IPv6</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26325,7 +26319,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>server.met gedownload, &quot;%1&quot; uitgepakt (%2 bytes). Verwerken...</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+33"/>
         <location line="+91"/>
         <source>Disconnect</source>
         <translation>Verbinding verbreken</translation>
@@ -26337,12 +26331,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
     </message>
     <message>
         <location line="+2"/>
-        <location line="+424"/>
+        <location line="+425"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-351"/>
+        <location line="-352"/>
         <source>Connect To</source>
         <translation>Verbinden met</translation>
     </message>
@@ -26358,12 +26352,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
     </message>
     <message>
         <location line="+1"/>
-        <location line="+507"/>
+        <location line="+508"/>
         <source>Normal</source>
         <translation>Normaal</translation>
     </message>
     <message>
-        <location line="-506"/>
+        <location line="-507"/>
         <source>High</source>
         <translation>Hoog</translation>
     </message>
@@ -26423,16 +26417,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Zoeken...</translation>
     </message>
     <message>
-        <source>Show Raw IPs</source>
-        <translation type="vanished">Ruwe IP&apos;s tonen</translation>
-    </message>
-    <message>
         <location line="+56"/>
         <source>▸ Servers (0)</source>
         <translation>▸ Servers (0)</translation>
     </message>
     <message>
-        <location line="+82"/>
+        <location line="+83"/>
         <source>New Server</source>
         <translation>Nieuwe server</translation>
     </message>
@@ -26537,10 +26527,6 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <location line="+3"/>
         <source>Description:</source>
         <translation>Beschrijving:</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">Hostnaam:</translation>
     </message>
     <message>
         <location line="+3"/>

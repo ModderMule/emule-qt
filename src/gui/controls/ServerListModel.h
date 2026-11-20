@@ -7,6 +7,7 @@
 #include <QString>
 
 #include "AbstractTableModel.h"
+#include "utils/HostnameResolver.h"
 
 #include <cstdint>
 #include <vector>
@@ -112,14 +113,22 @@ public:
     /// Repaint the connected row's colour and font, e.g. after the bold option changed.
     void refreshEmphasis();
 
+    /// IP / IPv6 columns show the PTR name ("Resolve downloaders' hostnames").
+    void setResolveHostnames(bool enabled);
+
 protected:
     [[nodiscard]] int columnCountValue() const override { return ColCount; }
 
 private:
     [[nodiscard]] bool isEmphasised(const ServerRow& r) const;
+    /// "name : port" once resolved, else "ip : port" (MFC spacing); IPv6 bracketed.
+    [[nodiscard]] QString endpointText(const QString& address, uint16_t port, bool bracket) const;
+    void refreshHostnames();
+    void hostnameChanged(const QString& address);
 
     uint32_t m_connectedServerId = 0;
     QStringList m_indexNodeIds;   ///< lower-case hex
+    HostnameResolver m_resolver;
 };
 
 } // namespace eMule

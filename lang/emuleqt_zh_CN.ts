@@ -881,7 +881,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+2"/>
         <source>The network interface selected in Options has no public address known yet, so nothing could be tested over it. Connect to the network first, then test again.</source>
-        <translation>选项中所选的网络接口尚无已知的公网地址，因此无法通过它进行任何测试。请先连接网络，然后再测试。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
@@ -967,12 +967,12 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+5"/>
         <source>Some test packets from the website did not arrive, but peers prove the port open: the packets were lost on the way (often dropped by a VPN or provider), the port is not closed.</source>
-        <translation>网站的部分测试数据包未到达，但对等端证明端口是开放的：数据包在途中丢失（通常被 VPN 或运营商丢弃），端口并未关闭。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>The website&apos;s test packets did not arrive.</source>
-        <translation>网站的测试数据包未到达。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+17"/>
@@ -995,61 +995,61 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+58"/>
         <source>other ed3k nodes reach this node at %1</source>
-        <translation>其他 ed3k 节点可通过 %1 访问本节点</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>eD2K clients reach this UDP port at %1 (Kad check passed)</source>
-        <translation>eD2K 客户端可通过 %1 访问此 UDP 端口（Kad 检查通过）</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>the eD2K server gave a High ID at %1</source>
-        <translation>eD2K 服务器在 %1 给出了 High ID</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+13"/>
         <source>The website&apos;s test failed (%1).</source>
-        <translation>网站测试失败（%1）。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test connection got no answer: it was dropped on the way.</source>
-        <translation>网站的测试连接没有收到应答：它在途中被丢弃。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+2"/>
         <source>None of the %n test packet(s) from the website arrived: lost on the way.</source>
-        <translation>
-            <numerusform>网站的 %n 个测试数据包均未到达：在途中丢失。</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test packet did not arrive: lost on the way.</source>
-        <translation>网站的测试数据包未到达：在途中丢失。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>reachable, %1.</source>
-        <translation>可访问，%1。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+3"/>
         <source>not reachable: none of the %n test packet(s) arrived (firewall or missing port forwarding)</source>
-        <translation>
-            <numerusform>不可访问：%n 个测试数据包均未到达（防火墙或缺少端口转发）</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+13"/>
         <source>Only IPv4 was tested: the network interface %1 selected in Options has no IPv6.</source>
-        <translation>仅测试了 IPv4：选项中所选的网络接口 %1 没有 IPv6。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Only IPv6 was tested: the network interface %1 selected in Options has no IPv4.</source>
-        <translation>仅测试了 IPv6：选项中所选的网络接口 %1 没有 IPv4。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+10"/>
@@ -16893,30 +16893,26 @@ TCP 端口：%3</translation>
     <message>
         <location line="+812"/>
         <source>Usenet Disabled</source>
-        <translation>Usenet 已禁用</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Usenet is turned off, so NZB files and links cannot be added.
 
 Turn it on under Options → Usenet, then try again.</source>
-        <translation>Usenet 已关闭，无法添加 NZB 文件和链接。
-
-请在 选项 → Usenet 中开启后重试。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Hoster Downloads Disabled</source>
-        <translation>网盘下载已禁用</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Hoster downloads are turned off, so link containers cannot be opened.
 
 Turn them on under Options → ed3k → Hoster, then try again.</source>
-        <translation>网盘下载已关闭，无法打开链接容器。
-
-请在 选项 → ed3k → Hoster 中开启后重试。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+206"/>
@@ -17635,7 +17631,7 @@ Turn it on under Options → BitTorrent, then try again.</source>
     <message>
         <location line="-421"/>
         <source>Built without the hoster resolver, cannot open %1.</source>
-        <translation>构建时未包含网盘解析器，无法打开 %1。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+422"/>
@@ -19408,10 +19404,6 @@ Download it again?</source>
         <location line="+0"/>
         <source>Symmetric NAT (port untested)</source>
         <translation>对称 NAT（端口未测试）</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">主机名：</translation>
     </message>
     <message>
         <location line="+9"/>
@@ -26600,7 +26592,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+59"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
         <source>%1 (disabled)</source>
         <translation>%1（已禁用）</translation>
     </message>
@@ -26617,7 +26609,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>否</translation>
     </message>
     <message>
-        <location line="+99"/>
+        <location line="+102"/>
         <source>Server Name</source>
         <translation>服务器名称</translation>
     </message>
@@ -26627,8 +26619,9 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>IP</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IP</source>
-        <translation type="vanished">主机名 / IP</translation>
+        <translation>主机名 / IP</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26686,8 +26679,9 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>IPv6</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IPv6</source>
-        <translation type="vanished">主机名 / IPv6</translation>
+        <translation>主机名 / IPv6</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26732,7 +26726,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+336"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+338"/>
         <location line="+91"/>
         <source>Disconnect</source>
         <translation>断开连接</translation>
@@ -26744,12 +26738,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+2"/>
-        <location line="+424"/>
+        <location line="+425"/>
         <source>Connect</source>
         <translation>连接</translation>
     </message>
     <message>
-        <location line="-489"/>
+        <location line="-492"/>
         <source>Invalid URL: %1</source>
         <translation>无效的URL: %1</translation>
     </message>
@@ -26779,7 +26773,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>已下载 server.met，解压 &quot;%1&quot;（%2 字节）。正在解析...</translation>
     </message>
     <message>
-        <location line="+621"/>
+        <location line="+624"/>
         <location line="+2"/>
         <location line="+25"/>
         <location line="+41"/>
@@ -26877,7 +26871,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>▸ 服务器 (%1)</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-643"/>
         <source>Connect To</source>
         <translation>连接到</translation>
     </message>
@@ -26893,12 +26887,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+1"/>
-        <location line="+507"/>
+        <location line="+508"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-506"/>
+        <location line="-507"/>
         <source>High</source>
         <translation>高</translation>
     </message>
@@ -26958,16 +26952,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>查找...</translation>
     </message>
     <message>
-        <source>Show Raw IPs</source>
-        <translation type="vanished">显示原始 IP</translation>
-    </message>
-    <message>
         <location line="+56"/>
         <source>▸ Servers (0)</source>
         <translation>▸ 服务器 (0)</translation>
     </message>
     <message>
-        <location line="+82"/>
+        <location line="+83"/>
         <source>New Server</source>
         <translation>新服务器</translation>
     </message>
@@ -27038,10 +27028,6 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <location line="+16"/>
         <source>High ID</source>
         <translation>High ID</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">主机名：</translation>
     </message>
     <message>
         <location line="+25"/>

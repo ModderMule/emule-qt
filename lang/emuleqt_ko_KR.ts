@@ -881,7 +881,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+2"/>
         <source>The network interface selected in Options has no public address known yet, so nothing could be tested over it. Connect to the network first, then test again.</source>
-        <translation>옵션에서 선택한 네트워크 인터페이스의 공인 주소를 아직 알 수 없어 해당 인터페이스로는 아무것도 테스트하지 못했습니다. 먼저 네트워크에 연결한 다음 다시 테스트하세요.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
@@ -967,12 +967,12 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+5"/>
         <source>Some test packets from the website did not arrive, but peers prove the port open: the packets were lost on the way (often dropped by a VPN or provider), the port is not closed.</source>
-        <translation>웹사이트의 일부 테스트 패킷이 도착하지 않았지만 피어가 포트가 열려 있음을 증명합니다. 패킷이 도중에 손실되었습니다(주로 VPN이나 공급자가 차단). 포트는 닫혀 있지 않습니다.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>The website&apos;s test packets did not arrive.</source>
-        <translation>웹사이트의 테스트 패킷이 도착하지 않았습니다.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+17"/>
@@ -995,61 +995,61 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+58"/>
         <source>other ed3k nodes reach this node at %1</source>
-        <translation>다른 ed3k 노드가 %1에서 이 노드에 도달합니다</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>eD2K clients reach this UDP port at %1 (Kad check passed)</source>
-        <translation>eD2K 클라이언트가 %1에서 이 UDP 포트에 도달합니다(Kad 검사 통과)</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>the eD2K server gave a High ID at %1</source>
-        <translation>eD2K 서버가 %1에서 High ID를 부여했습니다</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+13"/>
         <source>The website&apos;s test failed (%1).</source>
-        <translation>웹사이트 테스트가 실패했습니다(%1).</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test connection got no answer: it was dropped on the way.</source>
-        <translation>웹사이트의 테스트 연결이 응답을 받지 못했습니다. 도중에 차단되었습니다.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+2"/>
         <source>None of the %n test packet(s) from the website arrived: lost on the way.</source>
-        <translation>
-            <numerusform>웹사이트의 테스트 패킷 %n개 중 하나도 도착하지 않았습니다. 도중에 손실되었습니다.</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test packet did not arrive: lost on the way.</source>
-        <translation>웹사이트의 테스트 패킷이 도착하지 않았습니다. 도중에 손실되었습니다.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>reachable, %1.</source>
-        <translation>도달 가능, %1.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+3"/>
         <source>not reachable: none of the %n test packet(s) arrived (firewall or missing port forwarding)</source>
-        <translation>
-            <numerusform>도달 불가: 테스트 패킷 %n개 중 하나도 도착하지 않았습니다(방화벽 또는 포트 포워딩 누락)</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+13"/>
         <source>Only IPv4 was tested: the network interface %1 selected in Options has no IPv6.</source>
-        <translation>IPv4만 테스트했습니다: 옵션에서 선택한 네트워크 인터페이스 %1에 IPv6가 없습니다.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Only IPv6 was tested: the network interface %1 selected in Options has no IPv4.</source>
-        <translation>IPv6만 테스트했습니다: 옵션에서 선택한 네트워크 인터페이스 %1에 IPv4가 없습니다.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+10"/>
@@ -16893,30 +16893,26 @@ TCP 포트: %3</translation>
     <message>
         <location line="+812"/>
         <source>Usenet Disabled</source>
-        <translation>Usenet 비활성화됨</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Usenet is turned off, so NZB files and links cannot be added.
 
 Turn it on under Options → Usenet, then try again.</source>
-        <translation>Usenet이 꺼져 있어 NZB 파일과 링크를 추가할 수 없습니다.
-
-옵션 → Usenet에서 켠 후 다시 시도하세요.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Hoster Downloads Disabled</source>
-        <translation>호스터 다운로드 비활성화됨</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Hoster downloads are turned off, so link containers cannot be opened.
 
 Turn them on under Options → ed3k → Hoster, then try again.</source>
-        <translation>호스터 다운로드가 꺼져 있어 링크 컨테이너를 열 수 없습니다.
-
-옵션 → ed3k → Hoster에서 켠 후 다시 시도하세요.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+206"/>
@@ -17635,7 +17631,7 @@ Turn it on under Options → BitTorrent, then try again.</source>
     <message>
         <location line="-421"/>
         <source>Built without the hoster resolver, cannot open %1.</source>
-        <translation>호스터 리졸버 없이 빌드되어 %1을(를) 열 수 없습니다.</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+422"/>
@@ -19408,10 +19404,6 @@ Download it again?</source>
         <location line="+0"/>
         <source>Symmetric NAT (port untested)</source>
         <translation>대칭형 NAT (포트 미테스트)</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">호스트 이름:</translation>
     </message>
     <message>
         <location line="+9"/>
@@ -26600,7 +26592,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+59"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
         <source>%1 (disabled)</source>
         <translation>%1 (비활성화됨)</translation>
     </message>
@@ -26617,7 +26609,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>아니오</translation>
     </message>
     <message>
-        <location line="+99"/>
+        <location line="+102"/>
         <source>Server Name</source>
         <translation>서버 이름</translation>
     </message>
@@ -26627,8 +26619,9 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>IP</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IP</source>
-        <translation type="vanished">호스트 이름 / IP</translation>
+        <translation>호스트 이름 / IP</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26686,8 +26679,9 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>IPv6</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IPv6</source>
-        <translation type="vanished">호스트 이름 / IPv6</translation>
+        <translation>호스트 이름 / IPv6</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26732,7 +26726,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+336"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+338"/>
         <location line="+91"/>
         <source>Disconnect</source>
         <translation>연결 해제</translation>
@@ -26744,12 +26738,12 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+424"/>
+        <location line="+425"/>
         <source>Connect</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-489"/>
+        <location line="-492"/>
         <source>Invalid URL: %1</source>
         <translation>잘못된 URL: %1</translation>
     </message>
@@ -26779,7 +26773,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>server.met을 다운로드하고 &quot;%1&quot;의 압축을 풀었습니다(%2바이트). 분석 중...</translation>
     </message>
     <message>
-        <location line="+621"/>
+        <location line="+624"/>
         <location line="+2"/>
         <location line="+25"/>
         <location line="+41"/>
@@ -26877,7 +26871,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>▸ 서버 (%1)</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-643"/>
         <source>Connect To</source>
         <translation>연결 대상</translation>
     </message>
@@ -26893,12 +26887,12 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+507"/>
+        <location line="+508"/>
         <source>Normal</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="-506"/>
+        <location line="-507"/>
         <source>High</source>
         <translation>높음</translation>
     </message>
@@ -26958,16 +26952,12 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>찾기...</translation>
     </message>
     <message>
-        <source>Show Raw IPs</source>
-        <translation type="vanished">원본 IP 표시</translation>
-    </message>
-    <message>
         <location line="+56"/>
         <source>▸ Servers (0)</source>
         <translation>▸ 서버 (0)</translation>
     </message>
     <message>
-        <location line="+82"/>
+        <location line="+83"/>
         <source>New Server</source>
         <translation>새 서버</translation>
     </message>
@@ -27038,10 +27028,6 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <location line="+16"/>
         <source>High ID</source>
         <translation>High ID</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">호스트 이름:</translation>
     </message>
     <message>
         <location line="+25"/>

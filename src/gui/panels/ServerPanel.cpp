@@ -316,8 +316,10 @@ void ServerPanel::refreshUpdateUrl()
 
 void ServerPanel::applyDisplayOptions()
 {
-    if (m_serverListModel)
+    if (m_serverListModel) {
         m_serverListModel->refreshEmphasis();
+        m_serverListModel->setResolveHostnames(theUiState.resolvePeerHostnames());
+    }
 }
 
 void ServerPanel::onRefreshTimer()
@@ -694,6 +696,7 @@ QWidget* ServerPanel::createServerListPanel()
     layout->addWidget(m_serversLabel);
 
     m_serverListModel = new ServerListModel(this);
+    m_serverListModel->setResolveHostnames(theUiState.resolvePeerHostnames());
     auto* serverProxy = new SortValueProxy(this);
     serverProxy->setSourceModel(m_serverListModel);
     serverProxy->setSortRole(Qt::UserRole);

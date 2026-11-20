@@ -881,7 +881,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+2"/>
         <source>The network interface selected in Options has no public address known yet, so nothing could be tested over it. Connect to the network first, then test again.</source>
-        <translation>オプションで選択したネットワークインターフェイスの公開アドレスがまだ不明なため、そのインターフェイスでは何もテストできませんでした。先にネットワークに接続してから、もう一度テストしてください。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
@@ -967,12 +967,12 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+5"/>
         <source>Some test packets from the website did not arrive, but peers prove the port open: the packets were lost on the way (often dropped by a VPN or provider), the port is not closed.</source>
-        <translation>Webサイトからのテストパケットの一部が届きませんでしたが、ピアがポートの開放を証明しています。パケットは途中で失われました（VPNやプロバイダーで破棄されることが多い）。ポートは閉じていません。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>The website&apos;s test packets did not arrive.</source>
-        <translation>Webサイトからのテストパケットが届きませんでした。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+17"/>
@@ -995,61 +995,61 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+58"/>
         <source>other ed3k nodes reach this node at %1</source>
-        <translation>他のed3kノードが %1 でこのノードに到達しています</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>eD2K clients reach this UDP port at %1 (Kad check passed)</source>
-        <translation>eD2Kクライアントが %1 でこのUDPポートに到達しています（Kadチェック合格）</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>the eD2K server gave a High ID at %1</source>
-        <translation>eD2Kサーバーが %1 でHigh IDを付与しました</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+13"/>
         <source>The website&apos;s test failed (%1).</source>
-        <translation>Webサイトのテストに失敗しました（%1）。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test connection got no answer: it was dropped on the way.</source>
-        <translation>Webサイトのテスト接続に応答がありませんでした。途中で破棄されました。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+2"/>
         <source>None of the %n test packet(s) from the website arrived: lost on the way.</source>
-        <translation>
-            <numerusform>Webサイトからの %n 個のテストパケットはどれも届きませんでした。途中で失われました。</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test packet did not arrive: lost on the way.</source>
-        <translation>Webサイトからのテストパケットが届きませんでした。途中で失われました。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
         <source>reachable, %1.</source>
-        <translation>到達可能、%1。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
         <location line="+3"/>
         <source>not reachable: none of the %n test packet(s) arrived (firewall or missing port forwarding)</source>
-        <translation>
-            <numerusform>到達不可: %n 個のテストパケットはどれも届きませんでした（ファイアウォールまたはポート転送の未設定）</numerusform>
+        <translation type="unfinished">
+            <numerusform></numerusform>
         </translation>
     </message>
     <message>
         <location line="+13"/>
         <source>Only IPv4 was tested: the network interface %1 selected in Options has no IPv6.</source>
-        <translation>IPv4 のみテストしました: オプションで選択したネットワークインターフェイス %1 には IPv6 がありません。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Only IPv6 was tested: the network interface %1 selected in Options has no IPv4.</source>
-        <translation>IPv6 のみテストしました: オプションで選択したネットワークインターフェイス %1 には IPv4 がありません。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+10"/>
@@ -16893,30 +16893,26 @@ TCP ポート: %3</translation>
     <message>
         <location line="+812"/>
         <source>Usenet Disabled</source>
-        <translation>Usenet は無効です</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Usenet is turned off, so NZB files and links cannot be added.
 
 Turn it on under Options → Usenet, then try again.</source>
-        <translation>Usenet がオフのため、NZB ファイルやリンクを追加できません。
-
-オプション → Usenet でオンにしてから、もう一度お試しください。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Hoster Downloads Disabled</source>
-        <translation>ホスターダウンロードは無効です</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Hoster downloads are turned off, so link containers cannot be opened.
 
 Turn them on under Options → ed3k → Hoster, then try again.</source>
-        <translation>ホスターダウンロードがオフのため、リンクコンテナーを開けません。
-
-オプション → ed3k → Hoster でオンにしてから、もう一度お試しください。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+206"/>
@@ -17635,7 +17631,7 @@ Turn it on under Options → BitTorrent, then try again.</source>
     <message>
         <location line="-421"/>
         <source>Built without the hoster resolver, cannot open %1.</source>
-        <translation>ホスターリゾルバーなしでビルドされているため、%1 を開けません。</translation>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+422"/>
@@ -19408,10 +19404,6 @@ Download it again?</source>
         <location line="+0"/>
         <source>Symmetric NAT (port untested)</source>
         <translation>対称型 NAT (ポート未テスト)</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">ホスト名:</translation>
     </message>
     <message>
         <location line="+9"/>
@@ -26600,7 +26592,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+59"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
         <source>%1 (disabled)</source>
         <translation>%1 (無効)</translation>
     </message>
@@ -26617,7 +26609,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>いいえ</translation>
     </message>
     <message>
-        <location line="+99"/>
+        <location line="+102"/>
         <source>Server Name</source>
         <translation>サーバー名</translation>
     </message>
@@ -26627,8 +26619,9 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>IP</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IP</source>
-        <translation type="vanished">ホスト名 / IP</translation>
+        <translation>ホスト名 / IP</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26686,8 +26679,9 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>IPv6</translation>
     </message>
     <message>
+        <location line="+0"/>
         <source>Hostname / IPv6</source>
-        <translation type="vanished">ホスト名 / IPv6</translation>
+        <translation>ホスト名 / IPv6</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -26732,7 +26726,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+336"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+338"/>
         <location line="+91"/>
         <source>Disconnect</source>
         <translation>切断</translation>
@@ -26744,12 +26738,12 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
     </message>
     <message>
         <location line="+2"/>
-        <location line="+424"/>
+        <location line="+425"/>
         <source>Connect</source>
         <translation>接続</translation>
     </message>
     <message>
-        <location line="-489"/>
+        <location line="-492"/>
         <source>Invalid URL: %1</source>
         <translation>無効なURL: %1</translation>
     </message>
@@ -26779,7 +26773,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>server.met をダウンロードし、&quot;%1&quot; を展開しました (%2 バイト)。解析中...</translation>
     </message>
     <message>
-        <location line="+621"/>
+        <location line="+624"/>
         <location line="+2"/>
         <location line="+25"/>
         <location line="+41"/>
@@ -26877,7 +26871,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>▸ サーバー (%1)</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-643"/>
         <source>Connect To</source>
         <translation>接続先</translation>
     </message>
@@ -26893,12 +26887,12 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
     </message>
     <message>
         <location line="+1"/>
-        <location line="+507"/>
+        <location line="+508"/>
         <source>Normal</source>
         <translation>通常</translation>
     </message>
     <message>
-        <location line="-506"/>
+        <location line="-507"/>
         <source>High</source>
         <translation>高い</translation>
     </message>
@@ -26958,16 +26952,12 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>検索...</translation>
     </message>
     <message>
-        <source>Show Raw IPs</source>
-        <translation type="vanished">生の IP を表示</translation>
-    </message>
-    <message>
         <location line="+56"/>
         <source>▸ Servers (0)</source>
         <translation>▸ サーバー (0)</translation>
     </message>
     <message>
-        <location line="+82"/>
+        <location line="+83"/>
         <source>New Server</source>
         <translation>新しいサーバー</translation>
     </message>
@@ -27038,10 +27028,6 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <location line="+16"/>
         <source>High ID</source>
         <translation>High ID</translation>
-    </message>
-    <message>
-        <source>Hostname:</source>
-        <translation type="vanished">ホスト名:</translation>
     </message>
     <message>
         <location line="+25"/>
