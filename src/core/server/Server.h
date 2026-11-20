@@ -42,13 +42,13 @@ namespace SrvTcpFlag {
     inline constexpr uint32 TcpObfuscation  = 0x00000400;
     inline constexpr uint32 LugdunumNat     = 0x00001000;   // Lugdunum NAT callback (needs 24-byte OP_IDCHANGE too)
     inline constexpr uint32 Ipv6            = 0x00004000;   // server speaks the IPv6 extension
-    // 0x8000 = ed2k-server OP_IPV6_UPDATE, 0x10000 = eNode-go meta search,
-    // 0x80000 = enodemeta FlagServerSearch (reserved, never sent)
+    inline constexpr uint32 Ipv6Update      = 0x00008000;   // ed2k-server/eNode-go: OP_IPV6_UPDATE 0x63 accepted
+    // 0x10000 = eNode-go meta search, 0x80000 = enodemeta FlagServerSearch (reserved, never sent)
     inline constexpr uint32 LowIdHolePunch  = 0x00020000;   // ed2k-server LowID hole punch (0x60-0x62, 0x9F)
     inline constexpr uint32 NatRendezvous   = 0x00040000;   // eNode-go PR_NAT rendezvous (UDP 0xF1)
     inline constexpr uint32 HolePunchExtension = 0x00100000; // ed2k-server 0.9.85 hole-punch extension (ed2k-server#39)
     inline constexpr uint32 NatWake         = 0x00200000;   // eNode-go PR_NAT wake-up (TCP OP_NAT_WAKE 0x46)
-    // 0x400000 = ed2k-server IPV6_PROBE
+    inline constexpr uint32 Ipv6Probe       = 0x00400000;   // ed2k-server/eNode-go: our IPv6 is dialled back before it is published
     inline constexpr uint32 FirewallRecheck = 0x00800000;   // eNode-go: OP_RECHECKFIREWALL 0x27 re-tests our port mid-session (#156)
 }
 
@@ -324,6 +324,15 @@ public:
     /// The IPv6 dial that followed failed: keep the IPv4 LowID.
     [[nodiscard]] bool ipv6SwitchFailed() const         { return m_ipv6SwitchFailed; }
     void setIPv6SwitchFailed(bool v)                    { m_ipv6SwitchFailed = v; }
+    /// OP_IPV6_UPDATE (0x63) accepted on this connection.
+    [[nodiscard]] bool supportsIPv6Update() const       { return (m_tcpFlags & SrvTcpFlag::Ipv6Update) != 0; }
+    /// The IPv6 this connection's server holds from us: login CT_MOD_IP_V6 or the last
+    /// OP_IPV6_UPDATE (null: none). Transient, per connection.
+    [[nodiscard]] const Address& ipv6Told() const       { return m_ipv6Told; }
+    void setIPv6Told(const Address& a)                  { m_ipv6Told = a; m_ipv6Repeated = false; }
+    /// The one re-dial request after a failed probe of ipv6Told() was sent.
+    [[nodiscard]] bool ipv6Repeated() const             { return m_ipv6Repeated; }
+    void setIPv6Repeated()                              { m_ipv6Repeated = true; }
 
     // -- Identity ---------------------------------------------------------
 
@@ -486,6 +495,8 @@ private:
     bool    m_cryptPingReplyPending = false;
     bool    m_triedCryptOnce = false;
     bool    m_ipv6SwitchFailed = false;    // transient, never saved
+    bool    m_ipv6Repeated = false;        // transient, never saved
+    Address m_ipv6Told;                    // transient, never saved
 
     // Aux
     QString m_auxPortsList;

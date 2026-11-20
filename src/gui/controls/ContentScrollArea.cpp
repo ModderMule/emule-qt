@@ -19,7 +19,8 @@ ContentScrollArea::ContentScrollArea(QWidget* parent)
 {
     setWidgetResizable(true);
     setFrameShape(QFrame::NoFrame);
-    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    // a window dragged narrower than the content scrolls instead of clipping it (#234)
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     // Nothing of its own may be painted here: the area has to be invisible in the common
     // case where the dialog is tall enough and no scrollbar is ever shown.

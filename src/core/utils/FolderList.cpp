@@ -1,5 +1,7 @@
 #include "utils/FolderList.h"
 
+#include <algorithm>
+
 #include <QDir>
 #include <QFileInfo>
 #include <QSet>
@@ -84,6 +86,51 @@ QStringList folderTree(const QString& root, int cap)
     QSet<QString> walked;
     walk(QDir::cleanPath(root), out, walked, cap);
     return out;
+}
+
+QString uncShareRoot(const QString& path)
+{
+    QString p = path.trimmed();
+    p.replace(u'\\', u'/');
+    if (!p.startsWith(QLatin1String("//")))
+        return {};
+    const QStringList parts = p.mid(2).split(u'/');
+    if (parts.size() < 2)
+        return {};
+    const QString& server = parts.at(0);
+    const QString& share = parts.at(1);
+    // "\\?\C:\" and "\\.\pipe\" are device paths, not shares
+    if (server.isEmpty() || share.isEmpty() || server == u'?' || server == u'.')
+        return {};
+    return QStringLiteral("//%1/%2").arg(server, share);
+}
+
+QStringList uncShareRoots(const QStringList& dirs)
+{
+    QStringList out;
+    QSet<QString> seen;
+    for (const QString& d : dirs) {
+        const QString root = uncShareRoot(d);
+        if (!root.isEmpty() && !seen.contains(root.toCaseFolded())) {
+            seen.insert(root.toCaseFolded());
+            out.append(root);
+        }
+    }
+    std::ranges::sort(out, [](const QString& a, const QString& b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    return out;
+}
+
+QString uncLabel(const QString& root)
+{
+    return QString(root).replace(u'/', u'\\');
+}
+
+bool isDriveRoot(const QString& path)
+{
+    return path.size() >= 2 && path.size() <= 3 && path.at(0).isLetter() && path.at(1) == u':'
+        && (path.size() == 2 || path.at(2) == u'/' || path.at(2) == u'\\');
 }
 
 } // namespace eMule

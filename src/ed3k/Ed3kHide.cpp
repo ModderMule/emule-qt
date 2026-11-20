@@ -228,9 +228,6 @@ QString Ed3kHide::keyName(ffi::KeyKind key)
 Ed3kHideSettings Ed3kHide::normalized(Ed3kHideSettings s)
 {
     s.hops = std::clamp(s.hops, 0, 3);
-    // §2.6: 0 only while forwarding for others; else its uses would go over 1 hop anyway
-    if (s.hops == 0 && !s.hopping)
-        s.hops = 1;
     s.sharePercent = std::clamp(s.sharePercent, 1, 100);
     return s;
 }
@@ -292,8 +289,8 @@ void Ed3kHide::applyNode()
     if (!e)
         return;
     const auto t = m_session.now();
-    // §5: forwarding for others while hiding (others' traffic covers its own, §1)
-    const bool hopping = m_settings.on && m_settings.hopping;
+    // §5: forwarding for others always on while hiding (others' traffic covers its own, §1)
+    const bool hopping = m_settings.on;
     if (m_appliedHopping != hopping) {
         if (auto ok = e->hopsSetHopping(t, hopping); ok)
             m_appliedHopping = hopping;

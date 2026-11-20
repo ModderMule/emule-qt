@@ -1580,6 +1580,9 @@ public:
     void setBtI2pTunnelLength(int val);
     [[nodiscard]] int btI2pTunnelQuantity() const;
     void setBtI2pTunnelQuantity(int val);
+    /// Torrent Creator's public tracker drop-down: defaults + user-added, minus removed.
+    [[nodiscard]] QStringList btPublicTrackers() const;
+    void setBtPublicTrackers(const QStringList& val);
     /// Announce URLs added to I2P torrents (and to all while mixed).
     [[nodiscard]] QStringList btI2pTrackers() const;
     void setBtI2pTrackers(const QStringList& val);
@@ -1762,13 +1765,10 @@ public:
     /// the anonymous key while on; files keep their key. Default off; live. IPC/REST `ed3kHide`.
     [[nodiscard]] bool ed3kHide() const;
     void setEd3kHide(bool val);
-    /// Hops 0 to 3 for every use while hiding (0 = deniable, not hidden; only while hopping,
-    /// else 1 is used: hops.md §2.6). Default 1. `ed3kHops`.
+    /// Hops 0 to 3 for every use while hiding (0 = deniable, not hidden: hops.md §2.6).
+    /// Default 1. `ed3kHops`. Forwarding for others is always on while hiding (§1, §5).
     [[nodiscard]] int ed3kHops() const;
     void setEd3kHops(int val);
-    /// Forward for others' paths while hiding (hops.md §5). Default on. `ed3kHopping`.
-    [[nodiscard]] bool ed3kHopping() const;
-    void setEd3kHopping(bool val);
     /// Share of the upload limit for others' paths, 1 to 100 %. Default 25. `ed3kHopShare`.
     [[nodiscard]] int ed3kHopShare() const;
     void setEd3kHopShare(int val);
@@ -2052,6 +2052,11 @@ public:
     /// or a pair secret is out.
     [[nodiscard]] bool ipcTunnel() const;
     void setIpcTunnel(bool val);
+    /// ipc.upnp: map the IPC port by UPnP/NAT-PMP/PCP (needs enableUPnP and a listen address
+    /// beyond loopback). Default off: TLS and the token guard it, but it opens the core to
+    /// the Internet. Set over IPC (phone app), not by REST.
+    [[nodiscard]] bool ipcUPnP() const;
+    void setIpcUPnP(bool val);
     /// ipc.tunnelPeers: paired phones, "<node id 32 hex> <name>" each.
     [[nodiscard]] QStringList ipcTunnelPeers() const;
     void setIpcTunnelPeers(const QStringList& val);

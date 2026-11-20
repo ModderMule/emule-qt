@@ -269,6 +269,14 @@
                         "description": "\"torrent\", \"nzb\", \"web\" or \"container\": a release an eD2K server listed from its catalogue; POST /search/{id}/download hands it to its own queue. \"ed3k\": an ed3k file. Empty for an eD2K file.",
                         "type": "string"
                     },
+                    "metaPeers": {
+                        "description": "Torrent result only: leechers the catalogue last counted, seeders not included. Omitted like metaSeeders. sourceCount and completeSourceCount stay as before.",
+                        "type": "integer"
+                    },
+                    "metaSeeders": {
+                        "description": "Torrent result only: seeders the server's catalogue last counted. Omitted when unknown; the catalogue sends no zero, so absent also covers a count of 0. May be capped by the catalogue.",
+                        "type": "integer"
+                    },
                     "seenBefore": {
                         "description": "This file turned up in an earlier search.",
                         "type": "boolean"
@@ -363,7 +371,7 @@
     "info": {
         "description": "Control and observe an eMuleQt core: eD2K and Kad file sharing plus Usenet downloads.\n\n**Authentication.** Send the API key in the `X-Api-Key` header (or as `Authorization: Bearer <key>`). `/health`, `/openapi.json` and `/docs` need none. The stream routes take `?token=` instead.\n\n**Errors.** Every failure is `{\"error\": {\"code\": <HTTP status>, \"message\": \"...\"}}`. An unknown field or query parameter is a 400, never silently ignored. 409 means the request is fine but the core is in the wrong state for it; 503 that a part of the core is not running.\n\n**Lists.** Answer `{items, total, offset, limit}`; page with `?limit=` (1-1000, default 100) and `?offset=`.\n\n**Destructive calls** need `\"confirm\": true` (in the body, or `?confirm=true` on DELETE).\n\n**Identifiers.** A file is named by its eD2K hash, 32 hexadecimal digits. Sizes are bytes. A category is an index into `GET /categories`.\n\n**Terms.** *HighID*: reachable from outside, the normal state. *LowID* / *firewalled*: not reachable, so fewer sources and slower transfers — check port forwarding. *Kad*: the serverless network; it works alongside the eD2K servers. *Source*: a peer that has (part of) a file.\n\n**Typical flow.** `GET /snapshot` → `POST /search` → `GET /search/{id}/results` until `state` is `finished` → `POST /search/{id}/download` → watch `GET /downloads/{hash}` or the `/events` stream.\n\n**Changes.** Every response carries `X-Contract-Version`. `GET /events` pushes changes so clients need not poll.",
         "title": "eMuleQt REST API",
-        "version": "0.7.35",
+        "version": "0.7.37",
         "x-contract-version": 1
     },
     "openapi": "3.1.0",

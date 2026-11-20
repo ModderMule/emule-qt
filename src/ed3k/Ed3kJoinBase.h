@@ -589,6 +589,8 @@ protected:
 private:
     /// "ed3k <tag>: ", or "<tag>: " in a join's own category
     [[nodiscard]] QString logPrefix() const;
+    /// Options label of this network's anonymous-key switch ("Torrents"); empty: none.
+    [[nodiscard]] QString anonSwitchName() const;
     struct SetTry;
     struct Kept;
     /// Per session: the download holding each source node, and those waiting for it.

@@ -59,6 +59,9 @@ FolderPickerDialog::FolderPickerDialog(IpcClient* ipc, const QString& title, con
         if (!typed.isEmpty())
             m_pathEdit->setText(typed);   // a typed folder that does not exist yet stays
     });
+    // a UNC folder has no drive above it: its share becomes a root
+    if (const QString root = uncShareRoot(startDir); !root.isEmpty())
+        m_model->addRoot(root, uncLabel(root));
     if (startDir.isEmpty())
         connect(m_model, &FolderTreeModel::homeKnown, this, [this](const QString& home) { m_model->reveal(home); });
     else

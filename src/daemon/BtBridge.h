@@ -64,6 +64,8 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 
 /// The peers torrent @p id gets bytes from now, as GetDownloadClients rows (network "bt").
 void appendDownloading(QCborArray& out, const QString& id);
+/// The peers torrent @p id sends bytes to now, as GetUploads "uploading" rows (network "bt").
+void appendUploading(QCborArray& out, const QString& id);
 
 /// Torrent @p id as a Transfers row in single transfer mode (SingleTransfer); nullopt: none.
 [[nodiscard]] std::optional<SingleTransfer::Job> transferJob(const QString& id);

@@ -289,6 +289,9 @@ struct AppContext {
     /// installs it to queue OP_CHANGE_CLIENT_IP for connected peers. A std::function hook
     /// rather than a Qt signal keeps AppContext a plain struct with no moc dependency.
     std::function<void(const Address& effective)> onPublicIPv6Changed;
+    /// An IPv6 pinhole opened for our current address. CoreSession installs it to ask the
+    /// server for one more probe after a failed one (OP_IPV6_UPDATE repeat).
+    std::function<void()> onIPv6PinholeOpened;
 
     /// The bind selection preference was edited: re-resolve and reopen. Set by CoreSession.
     /// Returns whether it reopened and what became of a port change it picked up.

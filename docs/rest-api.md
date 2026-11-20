@@ -126,6 +126,9 @@ search: an eD2K file is queued; an ed3k file (`metaKind` `"ed3k"`, `ed3kRoot`) g
 downloads; a Usenet, torrent or web release of a `usenetServer` / `torrentServer` / `webServer`
 search is fetched from the server's catalogue and handed to the Usenet queue, Torrents or Hoster —
 that call answers once it is there.
+A torrent row of such a search also carries `metaSeeders` and `metaPeers`: the catalogue's last
+seeder and leecher counts (`metaPeers` excludes seeders). A field is left out when the catalogue
+sent no count — it sends none for 0, so absent means unknown or 0. `sourceCount` is unchanged.
 
 Indexer searches have their own ids (the GUI's own searches are listed too).
 `POST /indexer/searches` takes `query`, `network` (`usenet` or `torrent`), `mode`

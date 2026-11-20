@@ -85,6 +85,7 @@ void FriendListModel::refreshEd3k(const QCborArray& arr)
         row.lastSeen = m.value(QStringLiteral("lastSeen")).toInteger();
         row.mutual   = m.value(QStringLiteral("mutual")).toBool();
         row.asking   = m.value(QStringLiteral("asking")).toBool();
+        row.friendSlot = m.value(QStringLiteral("friendSlot")).toBool();
         rows.push_back(std::move(row));
     }
     replaceRows(FriendNetwork::Ed3k, std::move(rows));

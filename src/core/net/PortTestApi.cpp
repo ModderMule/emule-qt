@@ -6,6 +6,7 @@
 #include "app/AppConfig.h"
 
 #include <QCborMap>
+#include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -116,6 +117,34 @@ int sentFamilies(const QCborArray& targets)
             bits |= familyBit(m.value(QStringLiteral("family")).toInteger());
     }
     return bits;
+}
+
+QString hostOf(const QString& address)
+{
+    if (address.startsWith(QLatin1Char('['))) {
+        const qsizetype end = address.indexOf(QLatin1Char(']'));
+        return end > 1 ? address.mid(1, end - 1) : QString();
+    }
+    // one colon: IPv4 with port; none or several: a bare address
+    return address.count(QLatin1Char(':')) == 1 ? address.section(QLatin1Char(':'), 0, 0) : address;
+}
+
+QCborArray applyPeerView(const QCborArray& targets, const PeerView& v4, const PeerView& v6)
+{
+    QCborArray out;
+    for (const QCborValue& t : targets) {
+        QCborMap m = t.toMap();
+        const PeerView& view = m.value(QStringLiteral("family")).toInteger() == 6 ? v6 : v4;
+        const QHostAddress peer(hostOf(view.address));
+        if (!peer.isNull()) {
+            const QHostAddress tested(m.value(QStringLiteral("ip")).toString());
+            m.insert(QStringLiteral("peerAddress"), view.address);
+            m.insert(QStringLiteral("peerOpen"), view.open);
+            m.insert(QStringLiteral("peerSame"), peer.isEqual(tested, QHostAddress::TolerantConversion));
+        }
+        out.append(m);
+    }
+    return out;
 }
 
 QCborArray applySeen(const QCborArray& targets, int seenFamilies)

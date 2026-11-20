@@ -63,6 +63,9 @@ void appendDownloading(QCborArray& out);
 /// GetDownloadClients: the BitTorrent peers, news servers and hosters that torrent, usenet
 /// and hoster jobs joined with ed3k get bytes from now (Ed3kJoinBase::networkJobsAt).
 void appendNetworkDownloading(QCborArray& out);
+/// GetUploads: the BitTorrent peers torrents joined with ed3k send bytes to now; in single
+/// transfer mode (btSingleTransferOn) those of every torrent, the Torrents window is hidden.
+void appendNetworkUploading(QCborArray& uploading);
 
 /// downloadSources rows of the ed3k sources of job @p owner of the torrent/usenet/hoster
 /// join @p tag (Ed3kJoinBase::jobSourcesAt), plus `fileName`: the job's file it serves.

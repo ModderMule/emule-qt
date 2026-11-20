@@ -12,6 +12,7 @@
 #include "dialogs/TorrentCreatorDialog.h"
 #include "dialogs/TorrentOptionsDialog.h"
 #include "dialogs/TorrentDetailsDialog.h"
+#include "prefs/Preferences.h"
 
 #include <QAbstractItemView>
 #include <QCborArray>
@@ -19,6 +20,8 @@
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QLabel>
+#include <QMessageBox>
+#include <QTimer>
 #include <QPlainTextEdit>
 #include <QSignalSpy>
 #include <QSpinBox>
@@ -96,6 +99,22 @@ bool anyLabel(const QWidget* root, const QString& text)
         if (l->text() == text)
             return true;
     return false;
+}
+
+/// Polls for the next message box and clicks @p button (topLevelWidgets: no focus needed).
+void answerNextBox(QMessageBox::StandardButton button)
+{
+    auto* poll = new QTimer;
+    poll->setInterval(10);
+    QObject::connect(poll, &QTimer::timeout, poll, [poll, button] {
+        for (QWidget* w : QApplication::topLevelWidgets())
+            if (auto* box = qobject_cast<QMessageBox*>(w); box && box->isVisible()) {
+                box->button(button)->click();
+                poll->deleteLater();
+                return;
+            }
+    });
+    poll->start();
 }
 
 } // namespace
@@ -484,6 +503,35 @@ void tst_TorrentDetailsGui::torrentCreatorDialog()
     QTest::mouseClick(view->viewport(), Qt::LeftButton, {}, at);
     QCOMPARE(checks.at(0)->checkedValues(), QStringList{checks.at(0)->itemData(1).toString()});
     QVERIFY(view->isVisible());
+    // Del removes the highlighted entry (and its check) from the list
+    const int before = checks.at(0)->count();
+    const QString gone = checks.at(0)->itemData(1).toString();
+    QSignalSpy removed(checks.at(0), &CheckComboBox::itemRemoved);
+    view->setCurrentIndex(view->model()->index(1, 0));
+    QTest::keyClick(view, Qt::Key_Delete);
+    QCOMPARE(removed.size(), 1);
+    QCOMPARE(removed.at(0).at(0).toString(), gone);
+    QCOMPARE(checks.at(0)->count(), before - 1);
+    QVERIFY(!checks.at(0)->values().contains(gone));
+    QVERIFY(checks.at(0)->checkedValues().isEmpty());
+    QTest::keyClick(view, Qt::Key_Backspace);
+    QCOMPARE(checks.at(0)->count(), before - 2);
+    // last row resets the list; Del leaves it alone
+    const QModelIndex resetRow = view->model()->index(view->model()->rowCount() - 1, 0);
+    view->setCurrentIndex(resetRow);
+    QTest::keyClick(view, Qt::Key_Delete);
+    QCOMPARE(checks.at(0)->count(), before - 2);
+    // asks first: No keeps the list
+    answerNextBox(QMessageBox::No);
+    QTest::mouseClick(view->viewport(), Qt::LeftButton, {}, view->visualRect(resetRow).center());
+    QCOMPARE(checks.at(0)->count(), before - 2);
+    checks.at(0)->showPopup();
+    QTRY_VERIFY(view->isVisible());
+    answerNextBox(QMessageBox::Yes);
+    QTest::mouseClick(view->viewport(), Qt::LeftButton, {}, view->visualRect(resetRow).center());
+    QCOMPARE(checks.at(0)->values(), Preferences::defaultBtPublicTrackers());
+    QCOMPARE(thePrefs.btPublicTrackers(), Preferences::defaultBtPublicTrackers());
+    QVERIFY(!checks.at(0)->values().contains(QStringLiteral("Reset to defaults")));
     checks.at(0)->hidePopup();
     checks.at(0)->setCheckedValues({});
     combos.removeAll(checks.at(0));
@@ -502,5 +550,14 @@ void tst_TorrentDetailsGui::torrentCreatorDialog()
     }
 }
 
-QTEST_MAIN(tst_TorrentDetailsGui)
+// a native NSAlert runs its own modal loop the tests cannot close
+int main(int argc, char** argv)
+{
+    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+    QApplication app(argc, argv);
+    app.setAttribute(Qt::AA_Use96Dpi, true);
+    tst_TorrentDetailsGui tc;
+    QTEST_SET_MAIN_SOURCE_PATH
+    return QTest::qExec(&tc, argc, argv);
+}
 #include "tst_TorrentDetailsGui.moc"

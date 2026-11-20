@@ -9,7 +9,10 @@
 #include "IpcProtocol.h"
 
 #include <QCborArray>
+#include <QCoreApplication>
 #include <QDir>
+#include <QInputDialog>
+#include <QMessageBox>
 #include <QPointer>
 
 namespace eMule::FolderLister {
@@ -62,6 +65,29 @@ void tree(IpcClient* ipc, const QString& root, QObject* ctx, std::function<void(
                 paths.append(v.toArray().at(1).toString());
         done(paths);
     });
+}
+
+QString askUncShare(QWidget* parent)
+{
+    bool ok = false;
+    const QString typed = QInputDialog::getText(
+        parent, QCoreApplication::translate("eMule::FolderLister", "Add UNC Share"),
+        QCoreApplication::translate("eMule::FolderLister", "Network folder (\\\\server\\share):"),
+        QLineEdit::Normal, QStringLiteral("\\\\"), &ok).trimmed();
+    if (!ok || typed.isEmpty() || typed == QLatin1String("\\\\"))
+        return {};
+    if (uncShareRoot(typed).isEmpty()) {
+        QMessageBox::warning(parent, QCoreApplication::translate("eMule::FolderLister", "Invalid Path"),
+                             QCoreApplication::translate("eMule::FolderLister",
+                                 "Not a UNC path. Enter it like \\\\server\\share or \\\\server\\share\\folder."));
+        return {};
+    }
+    // '\\' by hand: a GUI on macOS adds shares for a core on Windows
+    QString path = QString(typed).replace(u'\\', u'/');
+    while (path.endsWith(u'/'))
+        path.chop(1);
+    // cleanPath folds a leading "//" off-Windows: keep it apart
+    return QStringLiteral("//") + QDir::cleanPath(path.mid(2));
 }
 
 } // namespace eMule::FolderLister

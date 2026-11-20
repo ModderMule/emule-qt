@@ -318,6 +318,34 @@ QCborMap detailsToCbor(const QString& id)
 /// the request switch; handleRequest() guards it against exceptions
 void dispatchRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply);
 
+/// GetUploads/GetDownloadClients row of peer @p p of torrent @p id (network "bt")
+QCborMap peerClientRow(const QString& id, const bt::BtPeerRow& p)
+{
+    // an I2P peer has no address to show
+    const auto [host, port] = splitPeerAddress(p.address, p.i2p);
+    const QString name = p.i2p ? QString(p.address.left(16) + QStringLiteral("….i2p")) : p.address;
+    return QCborMap{
+        {QStringLiteral("network"), QStringLiteral("bt")},
+        {QStringLiteral("userName"), name},
+        // the details key of the row: one per peer and torrent
+        {QStringLiteral("userHash"), QString(QStringLiteral("bt:") + id + u'|' + p.address)},
+        {QStringLiteral("software"), p.client},
+        {QStringLiteral("softwareId"), -1},
+        {QStringLiteral("datarate"), p.rateDown},
+        {QStringLiteral("upDatarate"), p.rateUp},
+        {QStringLiteral("sessionDown"), p.downloaded},
+        {QStringLiteral("transferredDown"), p.downloaded},
+        {QStringLiteral("sessionUp"), p.uploaded},
+        {QStringLiteral("transferredUp"), p.uploaded},
+        {QStringLiteral("addr"), host},
+        {QStringLiteral("port"), port},
+        {QStringLiteral("cc"), peerCountry(host)},
+        {QStringLiteral("netSource"), p.source},
+        {QStringLiteral("isConnected"), true},
+        {QStringLiteral("noViewSharedFiles"), true},
+    };
+}
+
 #endif // EMULE_HAVE_BITTORRENT
 
 } // namespace
@@ -358,37 +386,36 @@ void appendDownloading(QCborArray& out, const QString& id)
     const auto t = s_session->torrent(id);
     if (!t || t->paused)
         return;
-    for (const auto& p : s_session->peers(id)) {
-        if (p.rateDown <= 0)
-            continue;
-        // an I2P peer has no address to show
-        const auto [host, port] = splitPeerAddress(p.address, p.i2p);
-        const QString name = p.i2p ? QString(p.address.left(16) + QStringLiteral("….i2p")) : p.address;
-        // the details key of the row: one per peer and torrent
-        const QString key = QStringLiteral("bt:") + id + u'|' + p.address;
-        out.append(QCborMap{
-            {QStringLiteral("network"), QStringLiteral("bt")},
-            {QStringLiteral("userName"), name},
-            {QStringLiteral("userHash"), key},
-            {QStringLiteral("software"), p.client},
-            {QStringLiteral("softwareId"), -1},
-            {QStringLiteral("reqFileName"), t->name},
-            {QStringLiteral("downloadState"), QStringLiteral("Downloading")},
-            {QStringLiteral("datarate"), p.rateDown},
-            {QStringLiteral("upDatarate"), p.rateUp},
-            {QStringLiteral("sessionDown"), p.downloaded},
-            {QStringLiteral("transferredDown"), p.downloaded},
-            {QStringLiteral("sessionUp"), p.uploaded},
-            {QStringLiteral("transferredUp"), p.uploaded},
-            {QStringLiteral("addr"), host},
-            {QStringLiteral("port"), port},
-            {QStringLiteral("cc"), peerCountry(host)},
-            {QStringLiteral("netSource"), p.source},
-            {QStringLiteral("isConnected"), true},
-            {QStringLiteral("noViewSharedFiles"), true},
-            {QStringLiteral("sourceFrom"), -1},
-        });
-    }
+    for (const auto& p : s_session->peers(id))
+        if (p.rateDown > 0) {
+            QCborMap m = peerClientRow(id, p);
+            m.insert(QStringLiteral("reqFileName"), t->name);
+            m.insert(QStringLiteral("downloadState"), QStringLiteral("Downloading"));
+            m.insert(QStringLiteral("sourceFrom"), -1);
+            out.append(m);
+        }
+#else
+    (void)out;
+    (void)id;
+#endif
+}
+
+void appendUploading(QCborArray& out, const QString& id)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!s_session)
+        return;
+    const auto t = s_session->torrent(id);
+    if (!t || t->paused)
+        return;
+    for (const auto& p : s_session->peers(id))
+        if (p.rateUp > 0) {
+            QCborMap m = peerClientRow(id, p);
+            m.insert(QStringLiteral("uploadState"), QStringLiteral("Transferring"));
+            m.insert(QStringLiteral("uploadFileName"), t->name);
+            m.insert(QStringLiteral("uploadFileSize"), t->size);
+            out.append(m);
+        }
 #else
     (void)out;
     (void)id;
@@ -470,7 +497,8 @@ QStringList jobIds([[maybe_unused]] bool downloadingOnly)
     if (!s_session || !s_session->isRunning())
         return out;
     for (const bt::BtTorrentRow& t : s_session->torrents())
-        if (!downloadingOnly || (t.hasMetadata && !t.paused && t.state != bt::BtState::Paused && !isComplete(t)))
+        // checking reads progress 0: a complete torrent being checked is no download
+        if (!downloadingOnly || (t.hasMetadata && !t.paused && t.state == bt::BtState::Downloading && !isComplete(t)))
             out << t.id;
 #endif
     return out;

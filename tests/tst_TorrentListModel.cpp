@@ -1,6 +1,7 @@
 /// @file tst_TorrentListModel.cpp
 /// @brief The Torrents tab's row model: decode, upsert/remove, sort, state names.
 
+#include "controls/FolderTreeModel.h"
 #include "controls/SortableItems.h"
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentProgressDelegate.h"
@@ -58,6 +59,8 @@ private slots:
     void barRoles();
     void bucketColours();
     void filesAsChildren();
+    // FolderTreeModel (built here for the Torrent Creator's picker): UNC roots (#213)
+    void folderTreeAddedRoots();
 };
 
 void tst_TorrentListModel::decodesRow()
@@ -269,6 +272,35 @@ void tst_TorrentListModel::filesAsChildren()
     QCOMPARE(model.rowCount(m2), 2);
     model.removeRow(QStringLiteral("m"));
     QCOMPARE(model.rowCount(), 0);
+}
+
+void tst_TorrentListModel::folderTreeAddedRoots()
+{
+    using eMule::FolderTreeModel;
+    // local: drives listed in the constructor. No model tester: it would fetch the real disk
+    FolderTreeModel model(nullptr, true);
+    const int drives = model.rowCount();
+    QVERIFY(drives > 0);
+
+    QSignalSpy checks(&model, &FolderTreeModel::checksChanged);
+    model.addRoot(QStringLiteral("//nas/zeta"), QStringLiteral("\\\\nas\\zeta"));
+    model.addRoot(QStringLiteral("//nas/alpha"), QStringLiteral("\\\\nas\\alpha"));
+    model.addRoot(QStringLiteral("//NAS/Alpha"), QStringLiteral("dup"));   // same share
+    QCOMPARE(model.rowCount(), drives + 2);
+    // after the drives, by name
+    QCOMPARE(model.index(drives, 0).data().toString(), QStringLiteral("\\\\nas\\alpha"));
+    QCOMPARE(model.filePath(model.index(drives + 1, 0)), QStringLiteral("//nas/zeta"));
+    QVERIFY(model.isAddedRoot(model.index(drives, 0)));
+    QVERIFY(!model.isAddedRoot(model.index(0, 0)));
+
+    model.setCheckedPaths({QStringLiteral("//nas/alpha/movies"), QStringLiteral("//nas/zeta")});
+    model.removeRoot(QStringLiteral("//nas/alpha"));
+    QCOMPARE(model.rowCount(), drives + 1);
+    QCOMPARE(model.checkedPaths(), QStringList{QStringLiteral("//nas/zeta")});
+    QCOMPARE(checks.count(), 1);
+
+    model.removeRoot(QStringLiteral("/"));   // a drive is never removed
+    QCOMPARE(model.rowCount(), drives + 1);
 }
 
 QTEST_MAIN(tst_TorrentListModel)

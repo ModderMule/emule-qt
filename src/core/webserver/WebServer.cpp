@@ -70,6 +70,7 @@
 #include <QSslConfiguration>
 #include <QSslKey>
 #include <QSslServer>
+#include <QSslSocket>
 #include <QTcpServer>
 #include <QThreadPool>
 #include <QTimer>
@@ -382,6 +383,11 @@ protected:
 };
 
 /// Load certificate and private key. @return empty on success, else what is wrong.
+bool tlsBackendServesEcKeys()
+{
+    return QSslSocket::activeBackend() != QStringLiteral("securetransport");
+}
+
 QString loadTlsIdentity(const QString& certPath, const QString& keyPath, QSslConfiguration& out)
 {
     if (certPath.isEmpty() || keyPath.isEmpty())
@@ -408,6 +414,10 @@ QString loadTlsIdentity(const QString& certPath, const QString& keyPath, QSslCon
     }
     if (key.isNull())
         return QStringLiteral("the key file holds no usable RSA, EC or DSA key");
+    // SecureTransport loads an EC key but fails every handshake with it
+    if (key.algorithm() == QSsl::Ec && !tlsBackendServesEcKeys())
+        return QStringLiteral("the TLS backend (%1) cannot serve an EC key, use an RSA key")
+            .arg(QSslSocket::activeBackend());
 
     out = QSslConfiguration::defaultConfiguration();
     out.setLocalCertificateChain(chain);
@@ -3098,9 +3108,8 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
                 webRatingToken(*file, m_preferences && m_preferences->indicateRatings());
             lineVars[QStringLiteral("DownloadRatingTitle")] =
                 htmlText(webRatingTitle(*file));
-            // The download list is tens of files and the verdict is cached after the
-            // first look, so this one may read. The share cannot — see the shared page.
-            const ContainerCheck& cc = file->containerCheck();
+            // Never reads here: a pool read fills it for the next page load
+            const ContainerCheck& cc = file->requestContainerCheck();
             lineVars[QStringLiteral("DownloadFake")] =
                 webContainerToken(cc);
             lineVars[QStringLiteral("DownloadFakeTitle")] =

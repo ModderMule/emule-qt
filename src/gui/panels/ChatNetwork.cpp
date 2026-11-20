@@ -58,6 +58,19 @@ void Ed2kChatNetwork::removeFriend(const FriendRow& row, std::function<void()> d
     m_ipc->sendRequest(std::move(msg), [done = std::move(done)](const IpcMessage&) { done(); });
 }
 
+void Ed2kChatNetwork::setFriendSlot(const FriendRow& row, bool on, std::function<void()> done)
+{
+    if (!online())
+        return;
+    IpcMessage msg(IpcMsgType::SetFriendSlot);
+    msg.append(row.hash);
+    msg.append(on);
+    // a friend added by IP has no hash: the daemon matches address + port
+    msg.append(row.addr);
+    msg.append(qint64(row.port));
+    m_ipc->sendRequest(std::move(msg), [done = std::move(done)](const IpcMessage&) { done(); });
+}
+
 void Ed2kChatNetwork::requestFriends(QObject* owner, std::function<void(const QCborArray&, const QCborMap&)> done)
 {
     if (!online())
@@ -98,6 +111,16 @@ void Ed3kChatNetwork::removeFriend(const FriendRow& row, std::function<void()> d
         return;
     IpcMessage msg(IpcMsgType::RemoveEd3kFriend);
     msg.append(row.id);
+    m_ipc->sendRequest(std::move(msg), [done = std::move(done)](const IpcMessage&) { done(); });
+}
+
+void Ed3kChatNetwork::setFriendSlot(const FriendRow& row, bool on, std::function<void()> done)
+{
+    if (!online())
+        return;
+    IpcMessage msg(IpcMsgType::SetEd3kFriendSlot);
+    msg.append(row.id);
+    msg.append(on);
     m_ipc->sendRequest(std::move(msg), [done = std::move(done)](const IpcMessage&) { done(); });
 }
 

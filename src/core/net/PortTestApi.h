@@ -89,6 +89,20 @@ inline constexpr int kSeenIPv6 = 2;
 /// ed3k: turns each "sent" UDP entry into open/filtered by the families the node saw.
 [[nodiscard]] QCborArray applySeen(const QCborArray& targets, int seenFamilies);
 
+/// What peers see of this node in one family: "ip", "ip:port" or "[ip]:port"; empty = unknown.
+struct PeerView {
+    QString address;
+    bool open = false;     ///< peers proved it reachable (ed3k class open, eD2K High ID)
+};
+
+/// Host part of "ip", "ip:port" or "[ip]:port".
+[[nodiscard]] QString hostOf(const QString& address);
+
+/// Adds peerAddress / peerOpen / peerSame (peers see the tested address) to each target
+/// whose family has a known @p v4 / @p v6 view. A VPN or proxy can send the website request
+/// out from another address than the one peers reach (#216).
+[[nodiscard]] QCborArray applyPeerView(const QCborArray& targets, const PeerView& v4, const PeerView& v6);
+
 /// eD2K: the TCP verdict of the targets. Open when one target is open; closed only when the
 /// server reached a target and got no answer it could trust, otherwise unknown.
 /// @p family 4 or 6 = only targets of that family count; 0 = all. HighID checks pass 4:

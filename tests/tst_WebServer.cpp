@@ -62,6 +62,7 @@
 #include <QTemporaryDir>
 #include <QProcess>
 #include <QSslError>
+#include <QSslSocket>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
@@ -705,6 +706,7 @@ private slots:
     void postSearch_offlineIsQueuedAndSaysSo();
     void deleteSearch_removesResults();
     void searchResults_leaveBlendedMetaRowsOut();
+    void searchResultJson_torrentCatalogueCounts();
 
     // CORS tests
     void corsOptionsRequest();
@@ -1476,6 +1478,53 @@ void tst_WebServer::searchResults_leaveBlendedMetaRowsOut()
                          QJsonDocument(pick).toJson(QJsonDocument::Compact)).statusCode, 404);
 }
 
+void tst_WebServer::searchResultJson_torrentCatalogueCounts()
+{
+    // a catalogue torrent row as the server sends it; counts only when non-zero
+    auto row = [](uint32 seeders, uint32 peers) {
+        uint8 metaHash[16] = {0xED, 0x2B, 0x01, 0x10, 0xFF, 0xFF, 0x1E, 0x1B, 0x36, 0x20, 0xAD, 0xE2, 0xAF, 0x9D, 0x6E, 0x01};
+        SafeMemFile mem;
+        mem.write(metaHash, 16);
+        mem.writeUInt32(0);
+        mem.writeUInt16(0);
+        mem.writeUInt32(5 + (seeders != 0) + (peers != 0));
+        Tag(FT_FILENAME, QStringLiteral("catalogue.mkv")).writeNewEd2kTag(mem, UTF8Mode::Raw);
+        Tag(FT_FILESIZE, uint32{700000000}).writeNewEd2kTag(mem);
+        Tag(FT_META_KIND, uint32{1}).writeNewEd2kTag(mem);
+        Tag(FT_META_VERSION, uint32{1}).writeNewEd2kTag(mem);
+        Tag(FT_META_FILEINDEX, uint32{0xFFFFFFFF}).writeNewEd2kTag(mem);
+        if (seeders != 0)
+            Tag(FT_META_SEEDERS, seeders).writeNewEd2kTag(mem);
+        if (peers != 0)
+            Tag(FT_META_PEERS, peers).writeNewEd2kTag(mem);
+        const QByteArray data = mem.takeBuffer();
+        SafeMemFile in(data);
+        return std::make_unique<SearchFile>(in, true);
+    };
+
+    const auto counted = row(12, 34);
+    QVERIFY(counted->isMetaResult());
+    const QJsonObject o = toJson(*counted);
+    QCOMPARE(o[QStringLiteral("metaKind")].toString(), QStringLiteral("torrent"));
+    QCOMPARE(o[QStringLiteral("metaSeeders")].toInteger(), 12);
+    QCOMPARE(o[QStringLiteral("metaPeers")].toInteger(), 34);
+    QVERIFY(o.contains(QStringLiteral("sourceCount")));   // kept for old clients
+
+    // unknown (or 0: the wire can't tell) is left out
+    const QJsonObject none = toJson(*row(0, 0));
+    QVERIFY(!none.contains(QStringLiteral("metaSeeders")));
+    QVERIFY(!none.contains(QStringLiteral("metaPeers")));
+
+    // a plain eD2K row never carries them
+    SearchFile plain;
+    uint8 hash[16]{};
+    hash[0] = 0x42;
+    plain.setFileHash(hash);
+    const QJsonObject p = toJson(plain);
+    QVERIFY(!p.contains(QStringLiteral("metaSeeders")));
+    QVERIFY(!p.contains(QStringLiteral("metaPeers")));
+}
+
 void tst_WebServer::deleteSearch_removesResults()
 {
     SearchParams params;
@@ -1896,6 +1945,13 @@ void tst_WebServer::https_servesRsaAndEcKeys()
         config.keyPath = key;
     });
     QVERIFY(server->isRunning());
+    // SecureTransport can't serve EC: refused up front, not a silent handshake failure
+    if (QTest::currentDataTag() == QByteArrayLiteral("ec")
+        && QSslSocket::activeBackend() == QStringLiteral("securetransport")) {
+        QVERIFY(!server->isHttps());
+        server->stop();
+        return;
+    }
     QVERIFY(server->isHttps());
 
     QNetworkRequest req(QUrl(QStringLiteral("https://127.0.0.1:%1/api/v1/stats").arg(server->port())));
@@ -5825,6 +5881,8 @@ void tst_WebServer::api_openApiDescribesEveryRoute()
     // A search row nothing was judged on says so with an empty band
     SearchFile searchFile;
     actual = toJson(searchFile).keys();
+    QVERIFY(!actual.contains(QStringLiteral("metaSeeders")));
+    actual << QStringLiteral("metaPeers") << QStringLiteral("metaSeeders");   // optional: counted torrent rows
     actual.sort();
     QCOMPARE(fields("SearchResult"), actual);
     QCOMPARE(toJson(searchFile).value(QStringLiteral("confidence")).toString(), QString());

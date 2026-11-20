@@ -24,11 +24,21 @@ public:
     void setCheckedValues(const QStringList& values);
     /// Closed-box text with nothing checked.
     void setEmptyText(const QString& text);
+    /// Every item's value, in list order.
+    [[nodiscard]] QStringList values() const;
+    /// Del/Backspace on the highlighted item of the open list removes it (itemRemoved).
+    void setRemovable(bool on) { m_removable = on; }
+    /// One plain row after the items (e.g. "Reset to defaults"): click or Return emits actionTriggered.
+    void setActionItem(const QString& text);
+    /// Drops every check item; the action row stays.
+    void clearCheckItems();
 
     void showPopup() override;
 
 signals:
     void checkedChanged();
+    void itemRemoved(const QString& value);
+    void actionTriggered();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -36,10 +46,15 @@ protected:
 
 private:
     void toggleRow(int row);
+    void removeRow(int row);
     [[nodiscard]] QString summary() const;
+    [[nodiscard]] int itemCount() const;
+    [[nodiscard]] bool isActionRow(int row) const { return m_hasAction && row == itemCount(); }
 
     QStandardItemModel* m_model;
     QString m_emptyText;
+    bool m_removable = false;
+    bool m_hasAction = false;
 };
 
 } // namespace eMule

@@ -10,6 +10,7 @@
 #include "media/MediaReadBudget.h"
 #include "utils/OtherFunctions.h"
 
+#include <QCborMap>
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
@@ -1478,6 +1479,55 @@ bool extractSharedMediaInfo(const QString& filePath, MediaInfo& info, qint64* by
     case MediaKind::None:      break;
     }
     return done(false);
+}
+
+void insertMediaInfoFields(QCborMap& map, const MediaInfo& info)
+{
+    const auto text = [&map](const char* key, const QString& value) {
+        if (!value.isEmpty())
+            map.insert(QLatin1StringView(key), value);
+    };
+    const auto number = [&map](const char* key, qint64 value) {
+        if (value > 0)
+            map.insert(QLatin1StringView(key), value);
+    };
+    text("mediaTitle", info.title);
+    text("mediaArtist", info.author);
+    text("mediaAlbum", info.album);
+    text("mediaFormat", info.fileFormat);
+
+    const double length = info.lengthSec > 0.0 ? info.lengthSec
+                        : std::max(info.video.lengthSec, info.audio.lengthSec);
+    number("mediaLength", static_cast<qint64>(length + 0.5));
+    if (length > 0.0 && (info.lengthEstimated || info.video.lengthEstimated || info.audio.lengthEstimated))
+        map.insert(QLatin1StringView("mediaLengthEstimated"), true);
+
+    // Stream rates; without them the container average, as ffmpeg prints it
+    qint64 kbps = (qint64(info.video.bitRate) + qint64(info.audio.avgBytesPerSec) * 8 + 500) / 1000;
+    if (kbps <= 0 && length >= 1.0 && info.fileSize > 0)
+        kbps = static_cast<qint64>(double(info.fileSize) * 8.0 / length / 1000.0 + 0.5);
+    number("mediaBitrate", kbps);
+
+    QString videoCodec;
+    if (info.videoStreamCount > 0) {
+        videoCodec = info.video.codecName;
+        if (videoCodec.isEmpty() && info.video.codecTag != 0)
+            videoCodec = videoFormatName(info.video.codecTag);
+        number("mediaWidth", info.video.width);
+        number("mediaHeight", info.video.height);
+        if (info.video.frameRate > 0.0)
+            map.insert(QLatin1StringView("mediaFps"), info.video.frameRate);
+    }
+    QString audioCodec;
+    if (info.audioStreamCount > 0) {
+        audioCodec = info.audio.codecName;
+        if (audioCodec.isEmpty() && info.audio.formatTag != 0)
+            audioCodec = audioFormatName(info.audio.formatTag);
+        text("mediaAudioCodec", audioCodec);
+        number("mediaChannels", info.audio.channels);
+        number("mediaSampleRate", info.audio.sampleRate);
+    }
+    text("mediaCodec", videoCodec.isEmpty() ? audioCodec : videoCodec);
 }
 
 QString mediaInfoSummary(const MediaInfo& info)

@@ -1,7 +1,7 @@
 # eD2K / Kademlia IPv6 Extensions — Interoperability Specification
 
 **Status:** Implemented and shipping in eMuleQt.
-**Document version:** 1.6 — 2026-11-17.
+**Document version:** 1.7 — 2026-11-20.
 **Audience:** implementers of eD2K clients, eD2K servers, and eD2K link generators who want to
 interoperate with eMuleQt over IPv6.
 
@@ -1031,7 +1031,8 @@ into address `0.0.0.0` and silently bootstraps against nothing.
 **Status:** type 7 with the `ip6` route implemented (publish and receive) since 1.3, the pointer
 route `bpv` (§5.6.1) since 1.4; 1.5 adds the receiver-key rule for storers, distinct pointer
 candidates, and `bpv` on 3/5 after a failed callback; 1.6 allows type 7 with `bpv` as its only
-route (MAY). Agreed with one other implementation, which will publish and read type 7 too.
+route (MAY); 1.7 ties the miss cache to the receiver's re-ask, keeps a type 7 record through a
+miss. Agreed with one other implementation, which will publish and read type 7 too.
 
 **Problem.** A node with no IPv4 route — firewalled on IPv4, no buddy, no verified UDP callback —
 can still be reached over its public IPv6, or through its pointer once it finds a buddy (§5.6.1). Kad runs over IPv4 only, so the publisher reaches the
@@ -1058,8 +1059,8 @@ a tag, not another number.
 - MAY publish type 7 with `bpv` as its only route, so a node without buddy and IPv6 publishes
   while it waits for one; the pointer it publishes with its first buddy makes all those records
   reachable at once (§5.6.1). The guard is the receiver's budget: one lookup per source, miss
-  cached (receiver rules below). Never over a live 3/5 record for the same file. eMuleQt does not:
-  it publishes nothing in that state and, once it has a buddy, publishes 3/5 + `bpv`.
+  cached (receiver rules below). Never over a live 3/5 record for the same file: fill only files
+  with no live entry. eMuleQt does not: it publishes nothing in that state, as MFC does.
 - Send type 7, `bpv` and pointer records only to indexing nodes whose receiver key it holds (the
   nodes that answered its lookup); without the key, a storer that enforces the rule above drops them.
 - MUST NOT carry `FT_SERVERIP`, `FT_SERVERPORT`, `FT_BUDDYHASH` or `bi6`. eMuleQt also omits
@@ -1101,9 +1102,17 @@ eMuleQt does both (`KadUDPListener.cpp`, `process_KADEMLIA2_PUBLISH_SOURCE_REQ`)
   a lookup or callback request is allowed only where a route tag defines it (`bpv`, §5.6.1).
 - A route tag resolved over the network costs **at most one lookup per source**, keyed by the
   source ID, across all files the source shares. Cache a hit for one republish-check period
-  (60 min) and a miss for a shorter time (eMuleQt: 10 min). On type 7 a miss is the normal case:
-  the publisher had no buddy when it published, and gets one later. The short miss TTL lets a
-  receiver find the pointer soon after; the budget is what makes `bpv`-only type 7 affordable.
+  (60 min) or until every candidate failed. Cache a miss **until the receiver's next re-ask of
+  that source** (aMule: the source re-ask interval, 15 min by default; eMuleQt: 15 min). A
+  shorter miss TTL buys nothing, as the receiver only retries on a re-ask; a longer one adds a
+  full interval of delay. The budget is what makes `bpv`-only type 7 affordable.
+- On type 7 a miss is the normal case: the publisher had no buddy when it published, and gets
+  one later. A receiver MUST keep such a record through a miss and retry the lookup on the
+  per-source re-ask above, not wait for its next Kad file search: that one runs on a far slower
+  clock (MFC/eMuleQt: 1 h × n, aMule: 30 min × n), so a pointer published minutes after the miss
+  would stay invisible for hours. eMuleQt holds the record per source and file (at most 32 per
+  source) and drops it when a Kad file search has not returned it again within a record lifetime
+  (5 h).
 - A firewalled receiver keeps the record when it can use `ip6`. `bpv` ends in a callback, so like
   type 3/5 it is useless to a firewalled receiver.
 - After the first hello on an `ip6` route, SHOULD compare the presented user hash with the record's
@@ -1134,16 +1143,23 @@ order, so the key is the same whatever UInt128 layout an implementation uses.
 
 **File records.** A type 7 record, or a classic type 3/5 record, MAY carry `bpv` = `1`. Type 7
 keeps its rules: no `FT_BUDDYHASH`, no `FT_SERVERIP`/`FT_SERVERPORT`; `bpv` rides along with
-`ip6` or, optionally, alone (§5.6). eMuleQt puts `bpv` on every 3/5/7 record it sends to a storer whose
-receiver key it holds. Firewalled with no buddy, no direct callback and no IPv6, it publishes
-nothing, as MFC does; the first buddy makes every file due at once. Receivers still resolve
-`bpv`-only type 7 records from other publishers.
+`ip6` or, optionally, alone (§5.6). A publisher MUST NOT put `bpv` on a record unless it also
+publishes the pointer record: a marker without a pointer costs every receiver a lookup that
+always misses.
+
+eMuleQt publishes the pointer record while it has a buddy, and puts `bpv` on every 3/5 record and
+on its type 7 records (which always carry `ip6`), each only to a storer whose receiver key it holds.
+No type 7 with `bpv` alone: firewalled with no buddy, no direct callback and no IPv6, it publishes
+nothing, as MFC does; the first buddy makes every file due at once as 3/5. aMule puts `bpv` on 3/5
+only, not on its type 7.
 
 **Pointer record.** A plain `KADEMLIA2_PUBLISH_SOURCE_REQ` (`0x44`) with fileID = `~sourceID`,
 sourceID = the user hash, `FT_SOURCETYPE` = `3`, `FT_SOURCEPORT`, `FT_ENCRYPTION`, and the buddy
-fields `FT_SERVERIP`, `FT_SERVERPORT`, `FT_BUDDYHASH`. It is outside type 7, and no legacy client
-searches its key. Published while the node has a buddy, republished when the buddy changes, left to
-expire when it has none.
+fields `FT_SERVERIP`, `FT_SERVERPORT`, `FT_BUDDYHASH`. It MAY carry `bpv` = `1` too (aMule
+does); a receiver does not require it, the key identifies the record. It is outside type 7,
+and no legacy client searches its key. Published at once when the node gets a buddy, again on
+every buddy change and every republish period while the buddy holds, left to expire when it has
+none.
 
 **Receiver.** Resolve the pointer by a source search at `~sourceID` (size 0), once per source and
 cached as above:
@@ -1161,6 +1177,17 @@ Accept a pointer record only if
 Then send `KADEMLIA_CALLBACK_REQ` to the buddy for the file in hand, exactly as for type 3/5; the
 source dials back. A pointer that fails a check is ignored.
 
+**BuddyID layout.** Send the 16 bytes of the pointer's `FT_BUDDYHASH` as they travel. Only current
+clients publish `bpv`, and all of them write `FT_BUDDYHASH` in the MFC layout, so a pointer
+callback needs no retry in the other layout (aMule #1835) — that retry stays for classic records.
+
+**Pacing.** MFC buddies accept one `KADEMLIA_CALLBACK_REQ` per minute from one IP
+(`PacketTracking.cpp`, `KADEMLIA_CALLBACK_REQ` budget 1/min). A receiver SHOULD NOT send a second
+callback request to the same buddy within 60 s: it would be dropped. aMule waits 60 s for an answer
+before retrying a buddy; eMuleQt never re-asks the buddy that failed on the pointer path.
+A pointer naming the buddy that just failed means the buddy did not change and the source itself
+did not answer: that buddy is not asked again.
+
 **More than one pointer.** Several storers return the same record; dedupe by buddy endpoint. A
 lookup can still yield distinct pointers that pass both checks: an old one not yet expired, or one
 planted by an attacker-run indexing node (§5.6.2). Keep up to **3** distinct candidates and try
@@ -1171,8 +1198,8 @@ real one. Version 1 has no sequence number. When every candidate failed, the sou
 eMuleQt: at most 5 pointer lookups run at once; a record arriving over that cap is dropped, not
 cached. A source waiting for a candidate is not redialled meanwhile.
 
-Code: `kad::PointerRoute` (`KadPointerRoute.cpp`: publish, cache, candidates, delivery as type 3,
-`reroute`); `Search::buildPointerPublishTags`, `Search::acceptPointerRecord`, `Search::pointerKey`
+Code: `kad::PointerRoute` (`KadPointerRoute.cpp`: cache, candidates, held type 7 records and their
+retry in `process`, delivery as type 3, `reroute`, `publishIfDue`); `Search::buildPointerPublishTags`, `Search::acceptPointerRecord`, `Search::pointerKey`
 (`KadSearch.cpp`); `UpDownClient::rerouteViaPointer` (failed callback).
 
 #### 5.6.2 What `FT_SOURCEIP` binds — and what it does not
@@ -1533,7 +1560,9 @@ A client claiming interoperability with these extensions should implement, at mi
 - [ ] Emit only after the source-type gate on ingest (§5.4)
 - [ ] Never look up an all-zero or missing `FT_BUDDYHASH` (§5.2)
 - [ ] Source type 7: publish only without a classic route, receive only with a usable route tag (§5.6)
-- [ ] Never derive a lookup from `FT_BUDDYHASH` on type 7; one lookup per source for `bpv`, hit cached 60 min, miss shorter (§5.6)
+- [ ] Never derive a lookup from `FT_BUDDYHASH` on type 7; one lookup per source for `bpv`, hit cached 60 min, miss until the next source re-ask (§5.6)
+- [ ] Keep a type 7 + `bpv` record through a miss and retry on the source re-ask, not the Kad file search (§5.6)
+- [ ] `bpv` on a record only when the pointer record is published too (§5.6.1)
 - [ ] Accept a `bpv` pointer only with the same source ID and the same stamped `FT_SOURCEIP` (§5.6.1–2)
 - [ ] Storer: drop type 7, `bpv` and pointer records without a valid receiver key; `bpv` by name (§5.6)
 - [ ] Type 7 with `bpv` alone is optional (eMuleQt: none); publish keyed records only to keyed storers (§5.6)

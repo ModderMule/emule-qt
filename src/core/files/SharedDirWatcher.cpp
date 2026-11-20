@@ -152,7 +152,8 @@ bool SharedDirWatcher::isOnNetworkShare(const QString& dir)
 #else
     static const QSet<QByteArray> kNetworkTypes{
         "nfs", "nfs4", "smbfs", "cifs", "smb2", "smb3", "afpfs", "webdav", "davfs",
-        "fuse.sshfs", "sshfs", "9p", "ncpfs", "ceph", "glusterfs", "fuse.glusterfs"};
+        "fuse.sshfs", "sshfs", "9p", "ncpfs", "ceph", "glusterfs", "fuse.glusterfs",
+        "fuse.gvfsd-fuse"};   // desktop smb:// mounts (/run/user/<uid>/gvfs)
     return kNetworkTypes.contains(QStorageInfo(dir).fileSystemType().toLower());
 #endif
 }

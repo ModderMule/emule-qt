@@ -6,6 +6,9 @@
 /// libtorrent's set_flags(i2p_torrent) only gates new peers; the connected ones stay.
 /// A session plugin keeps each torrent's connections and disconnects the unwanted kind
 /// at its next tick, on libtorrent's network thread.
+///
+/// A strict torrent (I2P only while the session mixes) refuses direct peers for good:
+/// at their handshake, and any left at each tick.
 
 #include <libtorrent/extensions.hpp>
 #include <libtorrent/info_hash.hpp>
@@ -24,6 +27,9 @@ public:
     [[nodiscard]] std::shared_ptr<lt::plugin> plugin() const;
     /// Any thread: the torrent drops its @p which peers at the next tick.
     void drop(const lt::info_hash_t& hashes, Drop which) const;
+    /// Any thread: the torrent refuses direct peers (@p on) or takes them again. Also
+    /// before libtorrent has the torrent: applied when it comes.
+    void setStrict(const lt::info_hash_t& hashes, bool on) const;
 
     struct State;
 

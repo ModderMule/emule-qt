@@ -1052,9 +1052,16 @@ void MainWindow::showNotification(const QString& title, const QString& message,
                                   const QString& soundFile)
 {
     m_notificationClick = nullptr;
-    // System tray popup
-    if (trayInUse() && QSystemTrayIcon::supportsMessages())
-        m_trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 5000);
+    // System tray popup: Windows drops the balloon if the shell lost our icon
+    // (NIM_ADD before Explorer's tray was up), so re-add it first
+    if (trayInUse() && QSystemTrayIcon::supportsMessages()) {
+        if (ensureTrayIconShown()) {
+            m_trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 5000);
+        } else if (!m_popupDropLogged) {
+            m_popupDropLogged = true;
+            logWarning(QStringLiteral("Pop-up not shown: tray icon not in the notification area"));
+        }
+    }
     m_lastNotification = {title, message, soundFile};
 
     if (!soundFile.isEmpty() && QFile::exists(soundFile)) {

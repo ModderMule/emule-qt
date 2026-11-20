@@ -49,6 +49,7 @@
 #include <QCoreApplication>
 #include <QPointer>
 #include <QScopeGuard>
+#include <QThreadPool>
 #include <QTimer>
 #include <QtEndian>
 #include <QDir>
@@ -3446,7 +3447,7 @@ const FakeFileVerdict& PartFile::fakeVerdict() const
     constexpr qint64 kRefreshSecs = 20;
     const qint64 now = QDateTime::currentSecsSinceEpoch();
     // The head check is the strongest signal: do not sit on a verdict made without it.
-    const ContainerCheck& container = containerCheck();
+    const ContainerCheck& container = requestContainerCheck();
     const bool hasHead = containerCheckResolved();
     if (m_fakeVerdictAt != 0 && now - m_fakeVerdictAt < kRefreshSecs && hasHead == m_fakeVerdictHadHead)
         return m_fakeVerdict;
@@ -3485,6 +3486,33 @@ const FakeFileVerdict& PartFile::fakeVerdict() const
     m_fakeVerdictHadHead = hasHead;
     logFakeVerdict();
     return m_fakeVerdict;
+}
+
+const ContainerCheck& PartFile::requestContainerCheck() const
+{
+    if (settleContainerCheckByName() || m_containerReadBusy)
+        return containerCheckIfResolved();
+    auto src = containerHeadSource();
+    if (!src)
+        return containerCheckIfResolved();
+
+    m_containerReadBusy = true;
+    // The notifier dies with the file: a removed download drops the result
+    QPointer<const PartFileNotifier> alive(&m_partNotifier);
+    QThreadPool::globalInstance()->start([this, alive, src = std::move(*src), name = fileName()] {
+        std::optional<QByteArray> head = readContainerHead(src);
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [this, alive, name, head = std::move(head)] {
+            if (!alive)
+                return;
+            m_containerReadBusy = false;
+            // Renamed meanwhile: judged against the old name, ask again
+            if (!head || containerCheckResolved() || fileName() != name)
+                return;
+            applyContainerHead(*head);
+            m_fakeVerdictAt = 0;
+        });
+    });
+    return containerCheckIfResolved();
 }
 
 void PartFile::addObservedNames(const QStringList& names)
@@ -3571,11 +3599,11 @@ std::map<QString, int> PartFile::sourceNameCounts(bool withKadNotes) const
     return counts;
 }
 
-bool PartFile::readContainerHead(QByteArray& head) const
+std::optional<ShareableFile::ContainerHeadSource> PartFile::containerHeadSource() const
 {
     // Finished: the bytes sit in the destination file like any other known file.
     if (m_status == PartFileStatus::Complete)
-        return ShareableFile::readContainerHead(head);
+        return ShareableFile::containerHeadSource();
 
     // Still downloading: only the .part file has them, and only once the first
     // chunk landed. isComplete() is a gap-list scan, far cheaper than an open --
@@ -3585,14 +3613,10 @@ bool PartFile::readContainerHead(QByteArray& head) const
     // The whole probe, not just the signature: zeroes past it would hide an Ogg's video stream.
     const uint64 probe = std::min(static_cast<uint64>(fileSize()), static_cast<uint64>(kContainerProbeBytes));
     if (probe < static_cast<uint64>(kContainerHeadBytes) || !isCompleteBDSafe(0, probe - 1))
-        return false;
+        return std::nullopt;
 
     // The data file: m_fullName is the .part.met, whose first bytes are never a container
-    QFile file(partFilePath());
-    if (!file.open(QIODevice::ReadOnly))
-        return false;
-    head = file.read(static_cast<qint64>(probe));
-    return true;
+    return ContainerHeadSource{partFilePath(), static_cast<qint64>(probe)};
 }
 
 void PartFile::logFakeVerdict() const

@@ -1786,6 +1786,13 @@ emule_add_test(tst_IrcTabActivity FOLDER "Gui"
 target_include_directories(tst_IrcTabActivity PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
 target_link_libraries(tst_IrcTabActivity PRIVATE eMule::Core eMule::Ipc Qt6::Widgets)
 
+# Search name box history: Del / Ctrl+Del in the drop-down, context menu, Options reset
+emule_add_test(tst_SearchHistory FOLDER "Gui"
+    SOURCES tst_SearchHistory.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/panels/SearchPanel.cpp")
+target_include_directories(tst_SearchHistory PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
+target_link_libraries(tst_SearchHistory PRIVATE eMule::Core eMule::Ipc Qt6::Widgets)
+
 emule_add_test(tst_TextLinks FOLDER "Ipc"
     SOURCES tst_TextLinks.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Smileys.cpp")

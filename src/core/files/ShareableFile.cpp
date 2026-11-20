@@ -44,24 +44,50 @@ const QString& ShareableFile::sharedDirectory() const
 
 const ContainerCheck& ShareableFile::containerCheck() const
 {
-    if (m_containerCheck)
+    static const ContainerCheck kUnchecked;
+    if (settleContainerCheckByName())
         return *m_containerCheck;
 
-    // Settle the cheap half first: an extension we hold no promise over is never
-    // worth an open, and most of a shared folder is exactly that.
+    // Deliberately not cached when unreadable. A part file whose first chunk has
+    // not landed yet has told us nothing, and it will have something to say later.
+    const auto src = containerHeadSource();
+    if (!src)
+        return kUnchecked;
+    const auto head = readContainerHead(*src);
+    if (!head)
+        return kUnchecked;
+    applyContainerHead(*head);
+    return *m_containerCheck;
+}
+
+bool ShareableFile::settleContainerCheckByName() const
+{
+    if (m_containerCheck)
+        return true;
+    // The cheap half: an extension we hold no promise over is never worth an open,
+    // and most of a shared folder is exactly that.
     if (expectedContainer(QFileInfo(fileName()).suffix().toLower()).isEmpty()) {
         m_containerCheck.emplace();
-        return *m_containerCheck;
+        return true;
     }
+    return false;
+}
 
-    QByteArray head;
-    if (!readContainerHead(head)) {
-        // Deliberately not cached. A part file whose first chunk has not landed
-        // yet has told us nothing, and it will have something to say later.
-        static const ContainerCheck kUnchecked;
-        return kUnchecked;
-    }
+std::optional<ShareableFile::ContainerHeadSource> ShareableFile::containerHeadSource() const
+{
+    return ContainerHeadSource{m_filePath, kContainerProbeBytes};
+}
 
+std::optional<QByteArray> ShareableFile::readContainerHead(const ContainerHeadSource& src)
+{
+    QFile file(src.path);
+    if (!file.open(QIODevice::ReadOnly))
+        return std::nullopt;
+    return file.read(src.bytes);
+}
+
+void ShareableFile::applyContainerHead(const QByteArray& head) const
+{
     m_containerCheck = checkHead(head, fileName());
     // Once per file: memoised from here on, and kept in known.met (FT_CONTAINERCHECK)
     // so a shared file is only read again after a rename or a sniffer version bump.
@@ -69,7 +95,6 @@ const ContainerCheck& ShareableFile::containerCheck() const
     if (m_containerCheck->isSuspect() && (isPartFile() || thePrefs.logFakeCheckShared()))
         logWarning(QStringLiteral("File header check: %1 — %2")
                        .arg(fileName(), containerWarningText(*m_containerCheck, fileName())));
-    return *m_containerCheck;
 }
 
 const ContainerCheck& ShareableFile::containerCheckIfResolved() const
@@ -88,19 +113,6 @@ QString ShareableFile::infoSummary(bool /*noFormatCommands*/) const
     if (!m_directory.isEmpty())
         summary += QStringLiteral("Folder: %1\n").arg(m_directory);
     return summary;
-}
-
-// ===========================================================================
-// Protected
-// ===========================================================================
-
-bool ShareableFile::readContainerHead(QByteArray& head) const
-{
-    QFile file(m_filePath);
-    if (!file.open(QIODevice::ReadOnly))
-        return false;
-    head = file.read(kContainerProbeBytes);
-    return true;
 }
 
 } // namespace eMule

@@ -13,6 +13,7 @@
 #include <functional>
 
 class QObject;
+class QWidget;
 
 namespace eMule {
 class IpcClient;
@@ -31,5 +32,9 @@ void list(IpcClient* ipc, const QString& path, QObject* ctx, Rows done);
 
 /// @p root and every folder below it (Ctrl+click share), as list()
 void tree(IpcClient* ipc, const QString& root, QObject* ctx, std::function<void(const QStringList&)> done);
+
+/// Asks for a UNC folder (MFC OnBnClickedAddUNC). "//server/share/..." with '/'
+/// separators, "" when cancelled or refused.
+[[nodiscard]] QString askUncShare(QWidget* parent);
 
 } // namespace eMule::FolderLister

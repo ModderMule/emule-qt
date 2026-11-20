@@ -29,7 +29,7 @@ class Ed3kHidingGroup : public QGroupBox {
 public:
     Ed3kHidingGroup(IpcClient* ipc, QWidget* parent = nullptr);
 
-    /// ed3kHide, ed3kHops, ed3kHopping, ed3kHopShare, ed3kReportProxy* of a preferences map.
+    /// ed3kHide, ed3kHops, ed3kHopShare, ed3kReportProxy* of a preferences map.
     void load(const QCborMap& prefs);
     /// The same keys into a SetPreferences request.
     void appendTo(Ipc::IpcMessage& req) const;
@@ -56,7 +56,6 @@ private:
     IpcClient* m_ipc = nullptr;
     QCheckBox* m_hideCheck = nullptr;
     QSpinBox* m_hopsSpin = nullptr;
-    QCheckBox* m_hoppingCheck = nullptr;
     QLabel* m_zeroHint = nullptr;   ///< "0 = deniable, not hidden" (§2.6)
     QSpinBox* m_shareSpin = nullptr;
     QComboBox* m_reportProxyType = nullptr;   ///< data: PROXYTYPE_* (0 = none)

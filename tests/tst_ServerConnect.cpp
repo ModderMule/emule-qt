@@ -16,6 +16,7 @@
 #include "net/ServerSocket.h"
 #include "net/Packet.h"
 #include "protocol/Tag.h"
+#include "utils/Log.h"
 #include "utils/SafeFile.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
@@ -237,6 +238,12 @@ private slots:
     void recheck_highIdNeedsAPortChange();
     void recheck_fromIPv6LogsInOverIPv4();
     void recheck_fromIPv6StillLowIdGoesBackToIPv6();
+
+    // OP_IPV6_UPDATE (ed2k-server#34/#60)
+    void ipv6Update_loginTagNotRepeated();
+    void ipv6Update_sentWhenAddressChanges();
+    void ipv6Update_notWithoutTheFlag();
+    void ipv6Update_pinholeRepeatsOnceAfterFailedProbe();
 };
 
 // ---------------------------------------------------------------------------
@@ -2392,4 +2399,143 @@ void tst_ServerConnect::keepAliveInterval_neverLetsTheServerReapUs()
 }
 
 QTEST_MAIN(tst_ServerConnect)
+// ---------------------------------------------------------------------------
+// Tests: OP_IPV6_UPDATE (ed2k-server#34/#60)
+// ---------------------------------------------------------------------------
+
+/// Waits for OP_IPV6_UPDATE on @p side and returns its 16-byte address, or empty.
+static QByteArray ipv6UpdateArrives(QTcpSocket* side, int timeoutMs = 5000)
+{
+    QByteArray got;
+    QByteArray addr;
+    QTest::qWaitFor([&] {
+        got += side->readAll();
+        while (got.size() >= 6) {
+            const qint32 size = qint32(uint8(got[1]) | (uint8(got[2]) << 8) | (uint8(got[3]) << 16) | (uint8(got[4]) << 24));
+            if (got.size() < 5 + size)
+                return false;
+            if (uint8(got[0]) == OP_EDONKEYPROT && uint8(got[5]) == OP_IPV6_UPDATE && size == 17) {
+                addr = got.mid(6, 16);
+                return true;
+            }
+            got.remove(0, 5 + size);
+        }
+        return false;
+    }, timeoutMs);
+    return addr;
+}
+
+static QByteArray v6Raw(const Address& a)
+{
+    const auto& b = a.ipv6Bytes();
+    return QByteArray(reinterpret_cast<const char*>(b.data()), 16);
+}
+
+// Login way (eMuleQt, eNode-go): the address rides in the login tag, so a server
+// taking OP_IPV6_UPDATE gets no second copy of it right after OP_IDCHANGE.
+void tst_ServerConnect::ipv6Update_loginTagNotRepeated()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restore = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback listed(list, QStringLiteral("S"));
+    QVERIFY(listed.entry);
+    ServerConnect conn(list);
+    QTcpSocket* side = nullptr;
+    QVERIFY(recheckLogin(conn, listed, 0x42, SrvTcpFlag::Ipv6 | SrvTcpFlag::Ipv6Update | SrvTcpFlag::Ipv6Probe, side));
+    const QByteArray extra = ipv6UpdateArrives(side, 300);
+    logInfo(QStringLiteral("input: login to a 0x8000|0x400000 server, publicIPv6=%1; output: update after login=%2")
+                .arg(theApp.publicIPv6().toString(), extra.isEmpty() ? QStringLiteral("none") : QString::fromLatin1(extra.toHex())));
+    QVERIFY(extra.isEmpty());
+    QVERIFY(!conn.syncServerIPv6());
+    conn.disconnect();
+}
+
+void tst_ServerConnect::ipv6Update_sentWhenAddressChanges()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setFilterLANIPs(hadLanFilter);
+        theApp.setPublicIPv6Override(Address{});
+    });
+
+    ServerList list;
+    ListedLoopback listed(list, QStringLiteral("S"));
+    QVERIFY(listed.entry);
+    ServerConnect conn(list);
+    QTcpSocket* side = nullptr;
+    QVERIFY(recheckLogin(conn, listed, 0x42, SrvTcpFlag::Ipv6 | SrvTcpFlag::Ipv6Update | SrvTcpFlag::Ipv6Probe, side));
+
+    const Address a = Address::fromString(QStringLiteral("2606:4700::42"));
+    const Address b = Address::fromString(QStringLiteral("2606:4700::43"));
+    theApp.setPublicIPv6Override(a);
+    QVERIFY(conn.syncServerIPv6());
+    const QByteArray first = ipv6UpdateArrives(side);
+    QCOMPARE(first, v6Raw(a));
+    QVERIFY(!conn.syncServerIPv6());   // the server holds it already
+
+    theApp.setPublicIPv6Override(b);
+    QVERIFY(conn.syncServerIPv6());
+    const QByteArray second = ipv6UpdateArrives(side);
+    QCOMPARE(second, v6Raw(b));
+    logInfo(QStringLiteral("input: override %1 then %2; output: OP_IPV6_UPDATE %3 then %4")
+                .arg(a.toString(), b.toString(), QString::fromLatin1(first.toHex()), QString::fromLatin1(second.toHex())));
+    conn.disconnect();
+}
+
+void tst_ServerConnect::ipv6Update_notWithoutTheFlag()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setFilterLANIPs(hadLanFilter);
+        theApp.setPublicIPv6Override(Address{});
+    });
+
+    ServerList list;
+    ListedLoopback listed(list, QStringLiteral("S"));
+    QVERIFY(listed.entry);
+    ServerConnect conn(list);
+    QTcpSocket* side = nullptr;
+    QVERIFY(recheckLogin(conn, listed, 0x42, SrvTcpFlag::Ipv6, side));
+    theApp.setPublicIPv6Override(Address::fromString(QStringLiteral("2606:4700::44")));
+    QVERIFY(!conn.syncServerIPv6());
+    QVERIFY(ipv6UpdateArrives(side, 300).isEmpty());
+    conn.disconnect();
+}
+
+void tst_ServerConnect::ipv6Update_pinholeRepeatsOnceAfterFailedProbe()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setFilterLANIPs(hadLanFilter);
+        theApp.setPublicIPv6Override(Address{});
+        theApp.clearIPv6Reachability();
+    });
+
+    ServerList list;
+    ListedLoopback listed(list, QStringLiteral("S"));
+    QVERIFY(listed.entry);
+    ServerConnect conn(list);
+    QTcpSocket* side = nullptr;
+    QVERIFY(recheckLogin(conn, listed, 0x42, SrvTcpFlag::Ipv6 | SrvTcpFlag::Ipv6Update | SrvTcpFlag::Ipv6Probe, side));
+
+    const Address a = Address::fromString(QStringLiteral("2606:4700::45"));
+    theApp.setPublicIPv6Override(a);
+    QVERIFY(conn.syncServerIPv6());
+    QCOMPARE(ipv6UpdateArrives(side), v6Raw(a));
+
+    QVERIFY(!conn.ipv6PinholeOpened());                 // no failed probe yet
+    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED);   // server: unreachable
+    QVERIFY(conn.ipv6PinholeOpened());
+    QCOMPARE(ipv6UpdateArrives(side), v6Raw(a));
+    QVERIFY(!conn.ipv6PinholeOpened());                 // once per address
+    logInfo(QStringLiteral("input: probe of %1 failed, pinhole opened twice; output: one repeat").arg(a.toString()));
+    conn.disconnect();
+}
+
 #include "tst_ServerConnect.moc"

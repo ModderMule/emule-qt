@@ -170,6 +170,8 @@ public:
                 line += QLatin1Char('\n') + tr("TCP: %1").arg(reasonText(t.value(QStringLiteral("tcp")).toMap()));
             if (t.contains(QStringLiteral("udp")))
                 line += QLatin1Char('\n') + tr("UDP: %1").arg(reasonText(t.value(QStringLiteral("udp")).toMap()));
+            if (!ok)
+                line += peerNote(network, t);
             details << line;
         }
         if (allReachable)
@@ -262,6 +264,31 @@ public:
             VpnPromo::addTo(box, all ? VpnPromo::Pitch::Anonymity : VpnPromo::Pitch::HighId);
             box.exec();
         });
+    }
+
+private:
+    /// A failed target the core's own view contradicts (#216): peers see another address
+    /// (VPN, proxy) or already reach this one. Empty when nothing is known or nothing contradicts.
+    [[nodiscard]] static QString peerNote(Network network, const QCborMap& target)
+    {
+        const QString peer = target.value(QStringLiteral("peerAddress")).toString();
+        if (peer.isEmpty())
+            return {};
+        if (!target.value(QStringLiteral("peerSame")).toBool())
+            return QLatin1Char('\n')
+                   + tr("Peers see this node at %1, not at the tested address, so this result does not apply to it. "
+                        "The test request likely took another route (VPN, proxy or a second internet line).").arg(peer);
+        if (!target.value(QStringLiteral("peerOpen")).toBool())
+            return {};
+        // eD2K: High ID proves TCP only
+        const QString port = network == Network::Ed3k ? QStringLiteral("udp") : QStringLiteral("tcp");
+        if (target.value(port).toMap().value(QStringLiteral("open")).toBool())
+            return {};
+        return QLatin1Char('\n')
+               + (network == Network::Ed3k
+                      ? tr("ed3k peers already reach this node at %1, so the port is open. The test packet was likely lost on the way.")
+                      : tr("The server gave a High ID at this address, so the TCP port is open. The test connection was likely lost on the way."))
+                     .arg(peer);
     }
 };
 

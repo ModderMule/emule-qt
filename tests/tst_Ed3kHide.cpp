@@ -126,12 +126,13 @@ private slots:
     void cleanup();
     void prefStartsAndStopsTheAnonymousNode();
     void oneHopCountForEveryUse();
-    void zeroHopsOnlyWhileHopping();
+    void zeroHops();
     void newUsesFollowTheSwitch();
     void keyedEventsReachOnlyAnonCapableJoins();
     void newSharesGoAnonymousOldOnesKeepTheirKey();
     void movingAFileClosesItUnderTheOtherKey();
     void aNodeKeyJoinNeverTakesTheSharedFilesKey();
+    void anAnonymousShareIsNotToldOnEd2kWhileEd2kIsOff();
     void aJoinsAnonSwitchTakesItsFilesAndSetAlong();
     void downloadsFollowTheSwitch();
     void anonymousCreditKeyAfterEachStart();
@@ -209,7 +210,7 @@ void tst_Ed3kHide::oneHopCountForEveryUse()
     // out of range: 0 to 3 only
     s.setHideSettings(hidden(7));
     QCOMPARE(s.hide().settings().hops, 3);
-    // was: hidden(0) gave 1 (now 0 while hopping, zeroHopsOnlyWhileHopping)
+    // was: hidden(0) gave 1 (now 0, zeroHops)
     s.stop();
 
     // what anonStart is given: every use at the one count (0 inherits), nothing under the node key
@@ -223,18 +224,12 @@ void tst_Ed3kHide::oneHopCountForEveryUse()
     QVERIFY(Ed3kHide::hideCfg(9).hopsOut != ::ed3k::HideCfg::kHopsOff);
 }
 
-// hops.md §2.6: 0 = deniable, not hidden; offered only while forwarding for others
-void tst_Ed3kHide::zeroHopsOnlyWhileHopping()
+// hops.md §2.6: 0 = deniable, not hidden; forwarding for others is always on while hiding
+void tst_Ed3kHide::zeroHops()
 {
-    // hopping defaults on with hiding (§1)
-    QVERIFY(Ed3kHideSettings{}.hopping);
     Ed3kHideSettings h = hidden(0);
     QCOMPARE(Ed3kHide::normalized(h).hops, 0);
-    h.hopping = false;
-    QCOMPARE(Ed3kHide::normalized(h).hops, 1);   // hopping off at 0: 1
     h.hops = -3;
-    QCOMPARE(Ed3kHide::normalized(h).hops, 1);
-    h.hopping = true;
     QCOMPARE(Ed3kHide::normalized(h).hops, 0);
     const auto zero = Ed3kHide::hideCfg(0);
     QCOMPARE(int(zero.hopsOut), 0);
@@ -246,11 +241,6 @@ void tst_Ed3kHide::zeroHopsOnlyWhileHopping()
     s.setHideSettings(hidden(0));
     QCOMPARE(s.hide().settings().hops, 0);
     // hiding runs (a core without 0 hops yet takes 1)
-    QVERIFY(s.hide().hiding());
-    Ed3kHideSettings noHop = hidden(0);
-    noHop.hopping = false;
-    s.setHideSettings(noHop);
-    QCOMPARE(s.hide().settings().hops, 1);
     QVERIFY(s.hide().hiding());
     s.stop();
 }
@@ -507,6 +497,34 @@ void tst_Ed3kHide::aNodeKeyJoinNeverTakesTheSharedFilesKey()
     shared.stop();
     torrent.stop();
     s.stop();
+}
+
+// #232: a file of the anonymous key is in eD2K's share list too: told, unless eD2K is off
+void tst_Ed3kHide::anAnonymousShareIsNotToldOnEd2kWhileEd2kIsOff()
+{
+    for (const bool ed2kOff : {true, false}) {
+        QTemporaryDir dir;
+        Ed3kSession s;
+        QVERIFY(s.start(loopback(dir.path())));
+        s.setHideSettings(hidden());
+        const QByteArray data = payload(260 * 1024, ed2kOff ? 11 : 12);
+        const QString path = QDir(dir.path()).filePath(QStringLiteral("x.bin"));
+        QVERIFY(writeFile(path, data));
+        FakeSource src;
+        src.entries.push_back(SharedEntry{md4Of('x'), path, QStringLiteral("x.bin"), std::uint64_t(data.size())});
+        Ed3kShared shared(s, src, dir.path());
+        shared.setEd2kHashing(!ed2kOff);   // DaemonApp: !thePrefs.disableEd2k()
+        QSignalSpy told(&shared, &Ed3kShared::anonExposed);
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+        QCOMPARE(shared.keyOfFile(md4Of('x')), std::optional(::ed3k::KeyKind::Anon));
+        QCOMPARE(told.count(), ed2kOff ? 0 : 1);
+        if (!ed2kOff)
+            QCOMPARE(told.at(0).at(1).toString(), QStringLiteral("eD2K/Kad"));
+        shared.stop();
+        s.stop();
+    }
 }
 
 // Options › ed3k › Extended › Kad publishing: a network's join with its switch on holds its
