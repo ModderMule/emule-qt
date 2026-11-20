@@ -1099,6 +1099,13 @@ void MainWindow::dragMoveEvent(QDragMoveEvent* event)
 void MainWindow::dropEvent(QDropEvent* event)
 {
 #ifdef EMULE_HAVE_HOSTER_JD
+    // Hoster downloads off: the drop is taken, and the prompt names the switch
+    if (m_hosterPanel && !gui::containerDropFiles(event->mimeData()).isEmpty() && !thePrefs.hosterDownloadsOn()) {
+        event->acceptProposedAction();
+        // not modal inside the drop: the drag source waits for it
+        QTimer::singleShot(0, this, [this] { std::ignore = requireHoster(); });
+        return;
+    }
     if (m_hosterPanel && !isTabHidden(TabHoster) && m_hosterPanel->acceptContainerDrop(event->mimeData())) {
         switchToTab(TabHoster);
         event->acceptProposedAction();
@@ -1121,6 +1128,12 @@ void MainWindow::dropEvent(QDropEvent* event)
 #endif
     if (m_usenetPanel == nullptr)
         return;
+    // Usenet off: same as BitTorrent above
+    if (!gui::nzbDropCandidates(event->mimeData()).isEmpty() && !thePrefs.usenetEnabled()) {
+        event->acceptProposedAction();
+        QTimer::singleShot(0, this, [this] { std::ignore = requireUsenet(); });
+        return;
+    }
     if (!m_usenetPanel->acceptNzbDrop(event->mimeData()))
         return;
 
@@ -1609,7 +1622,7 @@ void MainWindow::buildToolsMenu()
     // icon and one enabled state. addAction(QAction*) does not take ownership,
     // and this menu is cleared and rebuilt on every aboutToShow, so re-adding it
     // is safe.
-    if (m_usenetPanel)
+    if (m_usenetPanel && !isTabHidden(TabUsenet))
         m_toolsMenu->addAction(m_usenetPanel->addNzbUrlAction());
 #ifdef EMULE_HAVE_BITTORRENT
     if (m_torrentPanel && !isTabHidden(TabTorrents))
@@ -2669,22 +2682,20 @@ void MainWindow::setupPages()
     connect(m_ircPanel, &IrcPanel::roomFileOpened, this, [this](const QString& name, const QByteArray& bytes) {
         switch (MediaSniff::fileKind(bytes, name)) {
         case MediaSniff::FileKind::Nzb:
-            if (!thePrefs.usenetEnabled()) {
-                QMessageBox::information(this, tr("Add NZB"), tr("Usenet is off. Turn it on in Options to add %1.").arg(name));
+            if (!requireUsenet())
                 return;
-            }
             switchToTab(TabUsenet);
             m_usenetPanel->promptAddNzbData(name, bytes);
             return;
         case MediaSniff::FileKind::Dlc:
 #ifdef EMULE_HAVE_HOSTER_JD
-            if (m_hosterPanel && thePrefs.hosterDownloadsOn()) {
+            if (m_hosterPanel && requireHoster()) {
                 switchToTab(TabHoster);
                 m_hosterPanel->openContainerData(name, bytes);
-                return;
             }
+#else
+            QMessageBox::information(this, tr("Open DLC"), tr("Built without the hoster resolver, cannot open %1.").arg(name));
 #endif
-            QMessageBox::information(this, tr("Open DLC"), tr("Hoster downloads are off. Turn them on in Options to open %1.").arg(name));
             return;
         case MediaSniff::FileKind::Torrent:
 #ifdef EMULE_HAVE_BITTORRENT
@@ -3336,24 +3347,34 @@ void MainWindow::showLowIdHint()
 
 bool MainWindow::requireBitTorrent()
 {
-    if (thePrefs.btEnabled())
-        return true;
-    QMessageBox box(QMessageBox::Information, tr("BitTorrent Disabled"),
-                    tr("BitTorrent is turned off, so torrents and magnet links cannot be added.\n\n"
-                       "Turn it on under Options → BitTorrent, then try again."),
-                    QMessageBox::Cancel, this);
-    auto* openOptions = box.addButton(tr("Open Options"), QMessageBox::AcceptRole);
-    box.setDefaultButton(openOptions);
-    box.exec();
-    if (box.clickedButton() == openOptions)
-        showOptionsDialog(OptionsDialog::PageBitTorrent);
-    return false;
+    return requireFeature(thePrefs.btEnabled(), tr("BitTorrent Disabled"),
+                          tr("BitTorrent is turned off, so torrents and magnet links cannot be added.\n\n"
+                             "Turn it on under Options → BitTorrent, then try again."),
+                          OptionsDialog::PageBitTorrent);
+}
+
+bool MainWindow::requireUsenet()
+{
+    return requireFeature(thePrefs.usenetEnabled(), tr("Usenet Disabled"),
+                          tr("Usenet is turned off, so NZB files and links cannot be added.\n\n"
+                             "Turn it on under Options → Usenet, then try again."),
+                          OptionsDialog::PageUsenet);
+}
+
+bool MainWindow::requireHoster()
+{
+    return requireFeature(thePrefs.hosterDownloadsOn(), tr("Hoster Downloads Disabled"),
+                          tr("Hoster downloads are turned off, so link containers cannot be opened.\n\n"
+                             "Turn them on under Options → ed3k → Hoster, then try again."),
+                          OptionsDialog::PageEd3kHoster);
 }
 
 bool MainWindow::isTabHidden(int tab)
 {
     if (singleTransferHides(tab))
         return true;
+    if (tab == TabUsenet)
+        return !thePrefs.usenetEnabled();
     if (tab == TabTorrents)
         return !thePrefs.btEnabled();
     // hoster downloads run on the ed3k node: shown while both are on
@@ -3638,6 +3659,19 @@ bool MainWindow::ensureTrayIconShown()
 #else
     return true;
 #endif
+}
+
+bool MainWindow::requireFeature(bool on, const QString& title, const QString& text, int page)
+{
+    if (on)
+        return true;
+    QMessageBox box(QMessageBox::Information, title, text, QMessageBox::Cancel, this);
+    auto* openOptions = box.addButton(tr("Open Options"), QMessageBox::AcceptRole);
+    box.setDefaultButton(openOptions);
+    box.exec();
+    if (box.clickedButton() == openOptions)
+        showOptionsDialog(page);
+    return false;
 }
 
 } // namespace eMule
