@@ -2387,8 +2387,6 @@ QWidget* OptionsDialog::createDirectoriesPage()
             m_sharedDirsTree->expand(idx);
         });
         connect(m_folderTreeModel, &FolderTreeModel::checksChanged, this, &OptionsDialog::markDirty);
-        if (!m_folderTreeModel->homePath().isEmpty())
-            m_folderTreeModel->reveal(m_folderTreeModel->homePath());   // a local core answered in the constructor
         // MFC MP_REMOVESHARE: an added UNC root goes with every share below it
         m_sharedDirsTree->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(m_sharedDirsTree, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {

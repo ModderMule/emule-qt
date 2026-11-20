@@ -15,6 +15,7 @@
 #include "utils/OtherFunctions.h"
 #include "utils/PriorityText.h"
 #include "utils/RatingIcons.h"
+#include "utils/SharedDirState.h"
 #include "utils/StringUtils.h"
 
 #include <QCoreApplication>
@@ -511,7 +512,7 @@ bool sameDir(const QString& a, const QString& b)
 {
     if (a.isEmpty() || b.isEmpty())
         return false;
-    return QDir::cleanPath(a).compare(QDir::cleanPath(b), Qt::CaseInsensitive) == 0;
+    return SharedDirState::cleanDir(a).compare(SharedDirState::cleanDir(b), Qt::CaseInsensitive) == 0;
 }
 
 /// @p dir is @p root or a folder below it
@@ -519,8 +520,8 @@ bool atOrBelow(const QString& dir, const QString& root)
 {
     if (dir.isEmpty() || root.isEmpty())
         return false;
-    const QString d = QDir::cleanPath(dir);
-    const QString r = QDir::cleanPath(root);
+    const QString d = SharedDirState::cleanDir(dir);
+    const QString r = SharedDirState::cleanDir(root);
     return d.compare(r, Qt::CaseInsensitive) == 0
         || (d.startsWith(r, Qt::CaseInsensitive) && d.size() > r.size() && d.at(r.size()) == u'/');
 }
@@ -604,7 +605,7 @@ SharedCategoryNodes sharedCategoryNodes(const QList<std::pair<QString, QString>>
     if (categories.size() <= 1)
         return nodes;
 
-    const auto key = [](const QString& dir) { return QDir::cleanPath(dir).toCaseFolded(); };
+    const auto key = [](const QString& dir) { return SharedDirState::dirKey(dir); };
     const QString mainKey = key(mainIncomingDir);
     QSet<QString> seen;
     for (int i = 0; i < categories.size(); ++i) {
@@ -613,7 +614,7 @@ SharedCategoryNodes sharedCategoryNodes(const QList<std::pair<QString, QString>>
         if (dir.isEmpty() || key(dir) == mainKey || seen.contains(key(dir)))
             continue;
         seen.insert(key(dir));
-        nodes.incomingDirs << QDir::cleanPath(dir);
+        nodes.incomingDirs << SharedDirState::cleanDir(dir);
     }
     return nodes;
 }

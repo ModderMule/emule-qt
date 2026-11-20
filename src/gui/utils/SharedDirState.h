@@ -17,11 +17,21 @@
 
 namespace eMule::SharedDirState {
 
+/// QDir::cleanPath keeping a UNC path's leading "//" ("\\" too): off-Windows cleanPath
+/// folds it to "/", and a GUI there shows a Windows core's network shares
+[[nodiscard]] inline QString cleanDir(const QString& path)
+{
+    const auto isSep = [](QChar c) { return c == u'/' || c == u'\\'; };
+    if (path.size() > 2 && isSep(path.at(0)) && isSep(path.at(1)) && !isSep(path.at(2)))
+        return QStringLiteral("//") + QDir::cleanPath(path.mid(2).replace(u'\\', u'/'));
+    return QDir::cleanPath(path);
+}
+
 /// Comparable form of a directory path: no trailing separator, case folded — the same
 /// rule the core shares by (SharedFileList::pathKey).
 [[nodiscard]] inline QString dirKey(const QString& path)
 {
-    return path.isEmpty() ? QString() : QDir::cleanPath(path).toCaseFolded();
+    return path.isEmpty() ? QString() : cleanDir(path).toCaseFolded();
 }
 
 /// Is @p childKey strictly below @p parentKey? Both are dirKey() values. Checked on

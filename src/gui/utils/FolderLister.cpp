@@ -7,6 +7,7 @@
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
+#include "utils/SharedDirState.h"
 
 #include <QCborArray>
 #include <QCoreApplication>
@@ -14,8 +15,48 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QPointer>
+#include <QThreadPool>
 
 namespace eMule::FolderLister {
+
+namespace {
+
+/// Disk reads for a local core. Never deleted: a listing stuck on an offline
+/// share must not hold up quitting (QThreadPool's dtor waits).
+QThreadPool& diskPool()
+{
+    static QThreadPool* pool = [] {
+        auto* p = new QThreadPool;
+        p->setMaxThreadCount(4);
+        return p;
+    }();
+    return *pool;
+}
+
+/// Runs @p work on the disk pool, hands its result to @p deliver on the GUI thread
+/// while @p ctx lives. An offline UNC share blocks for seconds (SMB timeout).
+template <typename Work, typename Deliver>
+void runOffThread(QObject* ctx, Work work, Deliver deliver)
+{
+    diskPool().start([guard = QPointer<QObject>(ctx), work, deliver] {
+        auto result = work();
+        auto* app = QCoreApplication::instance();
+        if (!app)
+            return;
+        QMetaObject::invokeMethod(app, [guard, deliver, result] {
+            if (guard)
+                deliver(result);
+        }, Qt::QueuedConnection);
+    });
+}
+
+struct ListResult {
+    bool ok = false;
+    QList<FolderEntry> rows;
+    QString home;
+};
+
+} // namespace
 
 bool remote(const IpcClient* ipc)
 {
@@ -25,8 +66,13 @@ bool remote(const IpcClient* ipc)
 void list(IpcClient* ipc, const QString& path, QObject* ctx, Rows done)
 {
     if (!remote(ipc)) {
-        done(path.isEmpty() || QFileInfo(path).isDir(),
-             path.isEmpty() ? folderRoots() : subfolders(path), QDir::homePath());
+        runOffThread(
+            ctx,
+            [path] {
+                return ListResult{path.isEmpty() || QFileInfo(path).isDir(),
+                                  path.isEmpty() ? folderRoots() : subfolders(path), QDir::homePath()};
+            },
+            [done = std::move(done)](const ListResult& r) { done(r.ok, r.rows, r.home); });
         return;
     }
     Ipc::IpcMessage msg(Ipc::IpcMsgType::ListFolders);
@@ -50,7 +96,8 @@ void list(IpcClient* ipc, const QString& path, QObject* ctx, Rows done)
 void tree(IpcClient* ipc, const QString& root, QObject* ctx, std::function<void(const QStringList&)> done)
 {
     if (!remote(ipc)) {
-        done(folderTree(root));
+        runOffThread(ctx, [root] { return folderTree(root); },
+                     [done = std::move(done)](const QStringList& paths) { done(paths); });
         return;
     }
     Ipc::IpcMessage msg(Ipc::IpcMsgType::ListFolders);
@@ -82,12 +129,8 @@ QString askUncShare(QWidget* parent)
                                  "Not a UNC path. Enter it like \\\\server\\share or \\\\server\\share\\folder."));
         return {};
     }
-    // '\\' by hand: a GUI on macOS adds shares for a core on Windows
-    QString path = QString(typed).replace(u'\\', u'/');
-    while (path.endsWith(u'/'))
-        path.chop(1);
-    // cleanPath folds a leading "//" off-Windows: keep it apart
-    return QStringLiteral("//") + QDir::cleanPath(path.mid(2));
+    // a GUI on macOS adds shares for a core on Windows: '\\' by hand, "//" kept
+    return SharedDirState::cleanDir(typed);
 }
 
 } // namespace eMule::FolderLister
