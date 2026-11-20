@@ -156,11 +156,15 @@ public:
 
     void switchToTab(Tab tab);
 
-    /// Torrents / Hoster buttons follow btEnabled / hosterDownloadsOn; a hidden current
-    /// tab falls back to Transfers. After a toolbar rebuild and a prefs change.
+    /// Usenet / Torrents / Hoster buttons follow usenetEnabled / btEnabled / hosterDownloadsOn;
+    /// a hidden current tab falls back to Transfers. After a toolbar rebuild and a prefs change.
     void applyFeatureTabs();
     /// A torrent or magnet arrived: true while btEnabled, else says so and offers Options
     [[nodiscard]] bool requireBitTorrent();
+    /// An NZB (file, URL, drop) arrived: true while usenetEnabled, else says so and offers Options
+    [[nodiscard]] bool requireUsenet();
+    /// A link container (.dlc) arrived: true while hosterDownloadsOn, else says so and offers Options
+    [[nodiscard]] bool requireHoster();
 
     /// Open the Options dialog, optionally at a specific page index.
     void showOptionsDialog(int page = -1);
@@ -366,9 +370,11 @@ private:
     /// Ctrl+Tab / Ctrl+Shift+Tab: next / previous window button in toolbar order
     /// (MFC CemuleDlg::GetNextWindowToolbarButton, EmuleDlg.cpp:2975).
     void cycleTab(int direction);
-    /// Tab of a switched-off feature (Torrents without btEnabled, Hoster without hosterDownloadsOn),
-    /// or of a network in single transfer mode
+    /// Tab of a switched-off feature (Usenet without usenetEnabled, Torrents without btEnabled,
+    /// Hoster without hosterDownloadsOn), or of a network in single transfer mode
     [[nodiscard]] static bool isTabHidden(int tab);
+    /// requireUsenet/BitTorrent/Hoster: true when @p on, else an info box offering Options @p page
+    [[nodiscard]] bool requireFeature(bool on, const QString& title, const QString& text, int page);
     /// Tab hidden by single transfer mode (ed3k only): its jobs joined with ed3k are in Transfers.
     [[nodiscard]] static bool singleTransferHides(int tab);
     /// Puts a feature button back into a customized toolbar order when its feature
