@@ -1852,8 +1852,9 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Copy ed3k Links / ed3k Links... (only while ed3k is on): ed3k rows by their root,
     // eD2K rows by their MD4 once the daemon knows a root for it (shared or downloading)
     {
+        // the view has no selection model before the first search
         QList<Ed3kLinkMenu::File> files;
-        for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
+        for (const auto& i : selection) {
             const SearchResultRef ref = refAt(i);
             if (!ref)
                 continue;

@@ -1868,14 +1868,45 @@ void Ed3kJoinBase::shareKept()
 
 void Ed3kJoinBase::shareKeptOwner(const QString& owner)
 {
-    if (!sharesKeptOwner(owner) || !QFileInfo::exists(keptDir(owner)))
+    if (!sharesKeptOwner(owner))
         return;
-    const Kept kept = readKept(owner);
-    if (shareKeptBlobs()) {
+    // was: kept.tsv and the .blob files read here, on the daemon thread: a busy disk
+    // stalled the core 8 s at start (report 58, a torrent's .blob); now on the read pool
+    const QString dir = keptDir(owner);
+    const bool withBlobs = shareKeptBlobs();
+    QPointer<Ed3kJoinBase> self(this);
+    const auto cancel = m_cancel;
+    m_session.readPool().start([self, cancel, owner, dir, withBlobs] {
+        if (!QFileInfo::exists(dir))
+            return;
+        Kept kept = readKeptIn(dir);
+        std::vector<QByteArray> blobs;
+        if (withBlobs)
+            for (const auto& b : kept.blobs)
+                blobs.push_back(readBlob(QDir(dir).filePath(blobFile(b.root))));
+        if (cancel->load())
+            return;
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, cancel, owner, kept = std::move(kept), blobs = std::move(blobs)] {
+                if (self && !cancel->load())
+                    self->shareKeptRead(owner, kept, blobs);
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void Ed3kJoinBase::shareKeptRead(const QString& owner, const Kept& kept, const std::vector<QByteArray>& blobs)
+{
+    // dropped or switched off while the pool read
+    if (!sharesKeptOwner(owner))
+        return;
+    if (shareKeptBlobs() && blobs.size() == kept.blobs.size()) {
         // hops.md §1: under the key of its members (blobKeyOf)
         const ffi::KeyKind blobKey = blobKeyOf(owner);
-        for (const auto& b : kept.blobs) {
-            const QByteArray data = readBlob(QDir(keptDir(owner)).filePath(blobFile(b.root)));
+        for (std::size_t i = 0; i < kept.blobs.size(); ++i) {
+            const auto& b = kept.blobs[i];
+            const QByteArray& data = blobs[i];
             if (data.isEmpty())
                 logDebug([&]() -> QString { return QStringLiteral("kept \"%1\" of %2 is gone").arg(b.name, owner); });
             else
@@ -2580,8 +2611,13 @@ bool Ed3kJoinBase::tryNextSet(const QString& owner)
 
 Ed3kJoinBase::Kept Ed3kJoinBase::readKept(const QString& owner) const
 {
+    return readKeptIn(keptDir(owner));
+}
+
+Ed3kJoinBase::Kept Ed3kJoinBase::readKeptIn(const QString& dir)
+{
     Kept kept;
-    const QByteArray raw = readBlob(QDir(keptDir(owner)).filePath(kKeptIndex));
+    const QByteArray raw = readBlob(QDir(dir).filePath(kKeptIndex));
     for (const QString& line : QString::fromUtf8(raw).split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
         const QStringList f = line.split(QLatin1Char('\t'));
         if (f.size() >= 3 && f.at(0) == QLatin1String("b")) {
@@ -2743,11 +2779,39 @@ void Ed3kJoinBase::keptMemberDone(const QString& owner)
 void Ed3kJoinBase::publishKeptRecords(const QString& owner)
 {
     m_keptPending.erase(owner);
+    if (!m_session.engine())
+        return;
+    // was: kept.tsv, the set manifest (.blob) and the records read here, on the daemon
+    // thread (report 58: 8 s stall on a busy disk); now on the read pool
+    const QString dir = keptDir(owner);
+    const bool withSet = shareKeptBlobs();
+    QPointer<Ed3kJoinBase> self(this);
+    const auto cancel = m_cancel;
+    m_session.readPool().start([self, cancel, owner, dir, withSet] {
+        Kept kept = readKeptIn(dir);
+        QByteArray manifest;
+        if (kept.set && withSet)
+            manifest = readBlob(QDir(dir).filePath(blobFile(kept.set->root)));
+        auto records = readRecords(QDir(dir).filePath(kKeptRecords));
+        if (cancel->load())
+            return;
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, cancel, owner, kept = std::move(kept), manifest = std::move(manifest), records = std::move(records)] {
+                if (self && !cancel->load())
+                    self->publishKeptRead(owner, kept, manifest, records);
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void Ed3kJoinBase::publishKeptRead(const QString& owner, const Kept& kept, const QByteArray& manifest,
+                                   const std::vector<ffi::Bytes>& records)
+{
     auto* e = m_session.engine();
     if (!e)
         return;
     const auto t = m_session.now();
-    const Kept kept = readKept(owner);
     // §6: the set is not shared while holding back (its manifest names the article list)
     std::vector<ffi::Root> memberRoots;
     for (const auto& m : kept.members)
@@ -2758,7 +2822,6 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
     if (kept.set && shareKeptBlobs() && !setKey)
         logDebug([&]() -> QString { return QStringLiteral("kept set of %1 not published: its members are not under one key it may use").arg(owner); });
     else if (kept.set && shareKeptBlobs()) {
-        const QByteArray manifest = readBlob(QDir(keptDir(owner)).filePath(blobFile(kept.set->root)));
         const QByteArray n = kept.set->name.toUtf8();
         if (manifest.isEmpty())
             logDebug([&]() -> QString { return QStringLiteral("kept set of %1 is gone: not published").arg(owner); });
@@ -2768,7 +2831,6 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
                  !ok)
             logDebug([&]() -> QString { return QStringLiteral("kept set of %1 not published (error %2)").arg(owner, errorName(ok.error())); });
     }
-    const auto records = readRecords(QDir(keptDir(owner)).filePath(kKeptRecords));
     int published = 0;
     // §6: no ALIAS records while holding back
     int unshared = 0;

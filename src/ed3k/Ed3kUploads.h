@@ -19,6 +19,7 @@
 
 #include "Ed3kFfi.h"
 
+#include <QByteArray>
 #include <QElapsedTimer>
 #include <QObject>
 #include <QString>
@@ -60,6 +61,10 @@ public:
         QString agent;               ///< Hello.agent ("eMuleQt 0.7.0"); empty: not known
         QString nick;                ///< Hello.nick (the peer's user name); may be empty
         std::uint64_t caps = 0;      ///< Hello.caps (§2)
+        QByteArray have;             ///< downloader's FileRequest.have (§12.1), LSB first, missing bit = not held
+        bool haveKnown = false;      ///< a have told on this stream
+        std::optional<std::uint64_t> nextOffset;   ///< holding: offset of the block it gets next
+        std::vector<std::uint64_t> sent;           ///< holding: offsets of the blocks sent on its stream, oldest first
     };
     /// name and size of a shared root; nullopt: not known.
     using NameLookup = std::function<std::optional<std::pair<QString, std::uint64_t>>(const ::ed3k::Root&)>;

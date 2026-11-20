@@ -1196,11 +1196,12 @@ bool DaemonApp::start()
     if (theApp.scheduler)
         theApp.scheduler->setNetworkActions(m_scheduleNetwork.get());
 #ifdef EMULE_HAVE_ED3K
-    // the graphs' ed3k lines: the coordinator's wire rates (B/s → KB/s), cleared before it goes
+    // the graphs' ed3k lines: the coordinator's file rates (B/s → KB/s), cleared before it goes
+    // was: wire rates (ed3kDownRate/ed3kUpRate), overhead drawn as a download
     if (theApp.statsHistory)
         theApp.statsHistory->setEd3kRateSource([bw = m_bandwidth.get()] {
             const auto& s = bw->snapshot();
-            return EngineRates{static_cast<float>(s.ed3kDownRate) / 1024.0f, static_cast<float>(s.ed3kUpRate) / 1024.0f};
+            return EngineRates{static_cast<float>(s.ed3kFileDownRate) / 1024.0f, static_cast<float>(s.ed3kFileUpRate) / 1024.0f};
         });
     m_ed3kStatsTimer = new QTimer(this);
     m_ed3kStatsTimer->setInterval(std::chrono::seconds(1));

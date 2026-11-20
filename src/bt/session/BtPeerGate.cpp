@@ -1,26 +1,29 @@
 #include "session/BtPeerGate.h"
 
+#include <libtorrent/aux_/peer_connection.hpp>
+#include <libtorrent/aux_/socket_type.hpp>
 #include <libtorrent/error_code.hpp>
 #include <libtorrent/operations.hpp>
 #include <libtorrent/peer_connection_handle.hpp>
-#include <libtorrent/peer_info.hpp>
 #include <libtorrent/torrent_handle.hpp>
 
 #include <algorithm>
 #include <atomic>
 #include <map>
 #include <mutex>
+#include <variant>
 #include <vector>
 
 namespace eMule::bt {
 
 namespace {
 
+/// socket type only: get_peer_info() of an incoming peer inside new_connection()
+/// derefs its not-yet-assigned torrent (download_queue_time) -> SIGSEGV
 [[nodiscard]] bool isI2p(const lt::peer_connection_handle& pc)
 {
-    lt::peer_info info;
-    pc.get_peer_info(info);
-    return bool(info.flags & lt::peer_info::i2p_socket);
+    const auto conn = pc.native_handle();
+    return conn && std::get_if<lt::i2p_stream>(&conn->get_socket()) != nullptr;
 }
 
 void close(lt::peer_connection_handle& pc)

@@ -826,6 +826,7 @@ struct Preferences::Data {
     QString btDownloadDir;             // empty = incomingDir
     bool btStopAfterMetadata = false;  // new torrents stop once their file list is known
     int btShareMode = 2;               // finished torrents shared on eD2K/Kad (and ed3k): 0 none, 1 public, 2 all
+    bool btRemoveEmptiedTorrent = true; // Shared Files delete of a torrent's last wanted file removes the torrent
     bool btMetaSelectedFileOnly = true; // search file row of a torrent = that file only
     uint32 btMaxDownloadKb = 0;        // 0 = unlimited
     uint32 btMaxUploadKb = 0;
@@ -2651,6 +2652,8 @@ void Preferences::setBtMaxUploadKb(uint32 val) { set(&Data::btMaxUploadKb, val);
 bool Preferences::btStopAfterMetadata() const { return get(&Data::btStopAfterMetadata); }
 void Preferences::setBtStopAfterMetadata(bool val) { set(&Data::btStopAfterMetadata, val); }
 int Preferences::btShareMode() const { return get(&Data::btShareMode); }
+bool Preferences::btRemoveEmptiedTorrent() const { return get(&Data::btRemoveEmptiedTorrent); }
+void Preferences::setBtRemoveEmptiedTorrent(bool val) { set(&Data::btRemoveEmptiedTorrent, val); }
 void Preferences::setBtShareMode(int val) { set(&Data::btShareMode, std::clamp(val, 0, 2)); }
 bool Preferences::btMetaSelectedFileOnly() const { return get(&Data::btMetaSelectedFileOnly); }
 void Preferences::setBtMetaSelectedFileOnly(bool val) { set(&Data::btMetaSelectedFileOnly, val); }
@@ -6351,6 +6354,8 @@ bool Preferences::load(const QString& filePath)
                 0, bt["maxUploadKb"].as<long long>(m_data->btMaxUploadKb)));
             m_data->btStopAfterMetadata = bt["stopAfterMetadata"].as<bool>(m_data->btStopAfterMetadata);
             m_data->btShareMode = std::clamp(bt["shareMode"].as<int>(m_data->btShareMode), 0, 2);
+            m_data->btRemoveEmptiedTorrent =
+                bt["removeEmptiedTorrent"].as<bool>(m_data->btRemoveEmptiedTorrent);
             m_data->btMetaSelectedFileOnly =
                 bt["selectedFileOnly"].as<bool>(m_data->btMetaSelectedFileOnly);
             m_data->btDht = bt["dht"].as<bool>(m_data->btDht);
@@ -7925,6 +7930,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "maxUploadKb" << YAML::Value << m_data->btMaxUploadKb;
     out << YAML::Key << "stopAfterMetadata" << YAML::Value << m_data->btStopAfterMetadata;
     out << YAML::Key << "shareMode" << YAML::Value << m_data->btShareMode;
+    out << YAML::Key << "removeEmptiedTorrent" << YAML::Value << m_data->btRemoveEmptiedTorrent;
     out << YAML::Key << "selectedFileOnly" << YAML::Value << m_data->btMetaSelectedFileOnly;
     out << YAML::Key << "dht" << YAML::Value << m_data->btDht;
     out << YAML::Key << "lsd" << YAML::Value << m_data->btLsd;

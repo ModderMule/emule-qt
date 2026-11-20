@@ -21,6 +21,7 @@ namespace eMule {
 /// The Obtained Parts bar of one uploading or queued client (MFC DrawUpStatusBar).
 struct UpStatusBar {
     int64_t fileSize = 0;                                 ///< 0 = nothing to draw
+    int64_t partSize = 0;                                 ///< bytes per part; 0 = PARTSIZE (BT: piece length)
     QByteArray parts;                                     ///< one byte per part, non-zero = peer has it
     std::vector<int> nextParts;                           ///< whole parts about to be sent
     std::vector<std::pair<int64_t, int64_t>> sentRanges;  ///< inclusive byte ranges already sent

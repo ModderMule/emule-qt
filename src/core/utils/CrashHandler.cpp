@@ -7,6 +7,7 @@
 
 #include <QDir>
 
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -116,6 +117,7 @@ const char* signalName(int sig)
     case SIGABRT: return "SIGABRT";
     case SIGBUS:  return "SIGBUS";
     case SIGFPE:  return "SIGFPE";
+    case SIGILL:  return "SIGILL";
     default:      return "UNKNOWN";
     }
 }
@@ -364,15 +366,26 @@ void CrashHandler::install(const QString& crashDir)
     }
 
 #ifndef Q_OS_WIN
+    // A stack overflow left no room for the handler: the core died without a .crash file
+    // (report 58). Main thread only, sigaltstack is per thread.
+    static std::array<char, 64 * 1024> altStack;
+    stack_t ss {};
+    ss.ss_sp = altStack.data();
+    ss.ss_size = altStack.size();
+    ss.ss_flags = 0;
+    const bool onAltStack = sigaltstack(&ss, nullptr) == 0;
+
     struct sigaction sa {};
     sa.sa_handler = crashSignalHandler;
     sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESETHAND; // one-shot: restore default after first signal
+    sa.sa_flags = SA_RESETHAND | (onAltStack ? SA_ONSTACK : 0); // one-shot: default after first signal
 
     sigaction(SIGSEGV, &sa, nullptr);
     sigaction(SIGABRT, &sa, nullptr);
     sigaction(SIGBUS,  &sa, nullptr);
     sigaction(SIGFPE,  &sa, nullptr);
+    // was: not handled; a trap instruction (ud2, __builtin_trap) ends in SIGILL
+    sigaction(SIGILL,  &sa, nullptr);
 #else
     SetUnhandledExceptionFilter(crashExceptionFilter);
     // the CRT's fatal exits skip that filter (report 46: closed, no dump)

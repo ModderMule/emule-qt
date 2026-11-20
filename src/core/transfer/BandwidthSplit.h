@@ -100,6 +100,11 @@ struct UploadPlan {
 [[nodiscard]] UploadPlan planUpload(qint64 lineKb, int btSharePercent, const EngineDemand& ed2k,
                                     const EngineDemand& bt, PairState* state = nullptr);
 
+/// eD2K's upload floor inside eMule's share @p shareKb (KB/s) while ed3k uploads too: half
+/// its slot part. The throttler never pays ed3k's debt from it (setOwnFloor), so eD2K's
+/// slots keep sending through ed3k's bursts; 0 without eD2K slots or limit.
+[[nodiscard]] qint64 ed2kUploadFloorKb(qint64 shareKb, int ed2kSlots, int ed3kHolders);
+
 /// ed3k's upload cap inside eMule's share @p shareKb (KB/s, 0 = unlimited → 0): a slot
 /// share like MFC's (each holder of either network an equal part, ed3k at least one), or
 /// what eD2K leaves (its own rate + half its part as room to grow) when that is more.

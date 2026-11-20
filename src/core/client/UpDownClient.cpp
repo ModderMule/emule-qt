@@ -983,6 +983,23 @@ void UpDownClient::initClientSoftwareVersion()
     m_clientSoftwareStr = QStringLiteral("eDonkey v0.%1").arg(minVer);
 }
 
+void UpDownClient::restoreClientSoftwareVersion(uint32 clientVersion, uint8 emuleVersion,
+                                                uint8 compatibleClient)
+{
+    // Feed init the raw form it expects: the CT_EMULE_VERSION bitfield for 0x99, else the
+    // bare minor that the eDonkey/MLdonkey/old eMule paths read (makeClientVersion(0, min, 0))
+    m_clientVersion    = emuleVersion == 0x99 ? emuleVersionBitfield(clientVersion) : clientVersion / 1000;
+    m_emuleVersion     = emuleVersion;
+    m_compatibleClient = compatibleClient;
+
+    // 0x99 means the peer sent CT_EMULE_VERSION, i.e. speaks the eMule protocol; only for the
+    // label here, the next hello sets the real flag
+    const bool savedEmuleProtocol = m_emuleProtocol;
+    m_emuleProtocol |= emuleVersion == 0x99;
+    initClientSoftwareVersion();
+    m_emuleProtocol = savedEmuleProtocol;
+}
+
 // ===========================================================================
 // Debug strings
 // ===========================================================================

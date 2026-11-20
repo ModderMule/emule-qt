@@ -35,7 +35,7 @@ void paintUpStatusBar(QPainter& painter, const QRect& rect, const UpStatusBar& b
         if (end > start)
             shader.fillRange(static_cast<uint64_t>(start), static_cast<uint64_t>(end), color);
     };
-    const auto part = static_cast<int64_t>(PARTSIZE);
+    const int64_t part = bar.partSize > 0 ? bar.partSize : static_cast<int64_t>(PARTSIZE);
 
     fill(0, size, neither);
     for (qsizetype i = 0; i < bar.parts.size(); ++i) {

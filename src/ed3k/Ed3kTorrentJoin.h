@@ -172,7 +172,8 @@ private:
     void onPieceHashed(const QString& id, int piece, const QByteArray& data, std::function<void(bool)> done);
     /// Serves reads a check asked for, then drains the join's events.
     void serveReads(const QString& id, const std::vector<::ed3k::TorrentRead>& reads);
-    void drainEvents(const QString& id);
+    /// @p id by value: a handler may stop the download whose owner it came from (d.owner gone)
+    void drainEvents(QString id);
     /// Tells the sink whether pieces need ed3k's look (BtJoinSink::judges).
     void updateJudging(Join& j);
     void handleEvent(const QString& id, const ::ed3k::TorrentEvent& ev);

@@ -14,14 +14,21 @@
 ///   seals one to itself, the server only sends it, and the node says whether it arrived.
 ///
 /// Result targets (CBOR, also the IPC reply of TestPorts):
-/// `{family: 4|6, ip, tcp?: {open, reason}, udp?: {open, reason}}`. Reasons are the server's
-/// (open, closed, rejected, filtered, server_egress_blocked, server_no_ipv6, send_failed, ...).
+/// `{family: 4|6, ip, tcp?: {open, reason}, udp?: {open, reason, copies?, packets?}}`. Reasons
+/// are the server's (open, closed, rejected, filtered, server_egress_blocked, server_no_ipv6,
+/// send_failed, ...). ed3k: `copies` = datagrams the server sent (plugin >= 1.7.0), `packets` =
+/// all the node waited for, over every attempt. Peer evidence: `peerAddress`, `peerSame`,
+/// `peerTcp` / `peerUdp` (the proof's source: kProof*).
 
 #include <QByteArray>
 #include <QCborArray>
 #include <QString>
 #include <QUrl>
 #include <QtGlobal>
+
+namespace eMule::BindAddress {
+struct Resolution;
+}
 
 namespace eMule::PortTestApi {
 
@@ -40,6 +47,7 @@ struct Request {
     QString ip6;
     QByteArray probe;      ///< ed3k: the sealed PROBE datagram
     QByteArray userHash;   ///< eD2K: 16 bytes; the server then dials obfuscated
+    int families = 0;      ///< kSeenIPv4/kSeenIPv6 bits to test (bound interface); 0 = both
 };
 
 /// TestPorts error codes (IpcMessage::makeError); the GUI words them, the detail is the server's.
@@ -52,6 +60,7 @@ enum class Failure : int {
     Refused = 4006,        ///< detail: the server's message
     OldServer = 4007,      ///< the server ignored `proto`
     Ed2kNotListening = 4008, ///< no eD2K TCP listen port
+    NoBoundAddress = 4009, ///< bound interface: no address of its families known to test (#246)
 };
 
 /// The reply of the server, reduced to what the GUI shows.
@@ -72,6 +81,10 @@ inline constexpr QLatin1StringView kReasonFiltered{"filtered"};
 /// Family bits of PortTestRunner / ed3k_port_test_seen.
 inline constexpr int kSeenIPv4 = 1;
 inline constexpr int kSeenIPv6 = 2;
+inline constexpr int kBothFamilies = kSeenIPv4 | kSeenIPv6;
+
+/// Error reason (data.reason) of a server that had no target of the requested families.
+inline constexpr QLatin1StringView kReasonNoTarget{"no_target"};
 
 [[nodiscard]] QUrl url(const Request& request);
 
@@ -83,23 +96,42 @@ inline constexpr int kSeenIPv6 = 2;
 /// ignores `proto` and runs the eD2K test.
 [[nodiscard]] Reply parseReply(const QByteArray& body, int httpStatus, Network network);
 
+/// Families (kSeenIPv4/kSeenIPv6 bits) the selected network interface @p r can be tested on (#246):
+/// both when nothing is bound; a literal's family; a whole interface: IPv4 when it has one,
+/// IPv6 when it has a global one, each only if pinnable. 0: none.
+[[nodiscard]] int boundFamilies(const BindAddress::Resolution& r);
+
+/// @p targets of the @p families bits only (a server older than plugin 1.8.0 ignores `families`).
+[[nodiscard]] QCborArray onlyFamilies(const QCborArray& targets, int families);
+
 /// Family bits of the targets whose UDP probe the server sent (ed3k).
 [[nodiscard]] int sentFamilies(const QCborArray& targets);
 
-/// ed3k: turns each "sent" UDP entry into open/filtered by the families the node saw.
-[[nodiscard]] QCborArray applySeen(const QCborArray& targets, int seenFamilies);
+/// ed3k: datagrams the server sent to the targets of one family (kSeenIPv4 / kSeenIPv6);
+/// `copies`, 1 from a server older than plugin 1.7.0.
+[[nodiscard]] int sentCopies(const QCborArray& targets, int familyBit);
+
+/// ed3k: turns each "sent" UDP entry into open/filtered by the families the node saw, with
+/// `packets` = @p packets4 / @p packets6 (0: the entry's own copies).
+[[nodiscard]] QCborArray applySeen(const QCborArray& targets, int seenFamilies, int packets4 = 0, int packets6 = 0);
+
+/// Sources of peer evidence that a port is open.
+inline constexpr QLatin1StringView kProofEd3k{"ed3k"};     ///< ed3k NAT check: other nodes reach it (UDP)
+inline constexpr QLatin1StringView kProofKad{"kad"};       ///< Kad UDP firewall check passed (eD2K clients)
+inline constexpr QLatin1StringView kProofServer{"server"}; ///< eD2K server gave a High ID (TCP)
 
 /// What peers see of this node in one family: "ip", "ip:port" or "[ip]:port"; empty = unknown.
 struct PeerView {
     QString address;
-    bool open = false;     ///< peers proved it reachable (ed3k class open, eD2K High ID)
+    QString tcpProof;      ///< kProofServer, or empty: nothing proves TCP open
+    QString udpProof;      ///< kProofEd3k / kProofKad, or empty
 };
 
 /// Host part of "ip", "ip:port" or "[ip]:port".
 [[nodiscard]] QString hostOf(const QString& address);
 
-/// Adds peerAddress / peerOpen / peerSame (peers see the tested address) to each target
-/// whose family has a known @p v4 / @p v6 view. A VPN or proxy can send the website request
+/// Adds peerAddress / peerSame (peers see the tested address) / peerTcp / peerUdp to each
+/// target whose family has a known @p v4 / @p v6 view. A VPN or proxy can send the website request
 /// out from another address than the one peers reach (#216).
 [[nodiscard]] QCborArray applyPeerView(const QCborArray& targets, const PeerView& v4, const PeerView& v6);
 

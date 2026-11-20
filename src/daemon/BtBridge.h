@@ -43,6 +43,10 @@ void setSession(bt::BtSession* session);
 /// (BtSession::streamFrom). found = false: no such torrent/file, or no BitTorrent.
 [[nodiscard]] UsenetStreamSource streamFrom(const QString& id, int fileIndex, qint64 offset, bool fetch);
 
+/// Shared file @p path was deleted: torrents holding it skip it (no download again); one
+/// left with no wanted file is removed when btRemoveEmptiedTorrent is on.
+void fileDeleted(const QString& path);
+
 /// The bundled I2P router (btI2pMode 1); set by DaemonApp, null when absent.
 void setI2pRouter(I2pRouter* router);
 

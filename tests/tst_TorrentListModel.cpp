@@ -346,7 +346,8 @@ void tst_TorrentListModel::folderTreeAddedRoots()
     QCOMPARE(model.rowCount(), 0);   // nothing read on the GUI thread
     model.addRoot(QStringLiteral("//nas/zeta"), QStringLiteral("\\\\nas\\zeta"));   // held until the drives
     QCOMPARE(model.rowCount(), 0);
-    QTRY_COMPARE(loaded.count(), 1);
+    // sleeping external disks wake in seconds: hasSubfolders() reads each volume
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.count(), 1, 60000);
     const int drives = model.rowCount() - 1;
     QVERIFY(drives > 0);
 

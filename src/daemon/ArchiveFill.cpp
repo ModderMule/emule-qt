@@ -25,6 +25,16 @@ ArchiveFill::ArchiveFill(ed3k::Ed3kArchiveContents& contents, usenet::UsenetQueu
     connect(&m_queue, &usenet::UsenetQueue::itemAdded, this, &ArchiveFill::onItemAdded);
     connect(&m_queue, &usenet::UsenetQueue::itemChanged, this, &ArchiveFill::onItemChanged);
     connect(&m_queue, &usenet::UsenetQueue::itemRemoved, this, [this](const QString& id, bool) { onItemRemoved(id); });
+    connect(&m_queue, &usenet::UsenetQueue::articleDecoded, this, [this](const QString& id, int file) {
+        const auto it = m_items.find(id);
+        if (it == m_items.end())
+            return;
+        if (it->second.pending.contains(file))
+            acceptPending(id);
+        // the index .par2 may be sealed by this article: queued, after the queue's bookkeeping
+        if (!it->second.done && !it->second.running && !it->second.sources.isEmpty())
+            QMetaObject::invokeMethod(this, [this, id] { tryFill(id); }, Qt::QueuedConnection);
+    });
 }
 
 ArchiveFill::~ArchiveFill()
@@ -121,8 +131,11 @@ void ArchiveFill::tryFill(const QString& id)
         const auto& st = item->files.at(i);
         const QString name = QFileInfo(item->bestFileName(int(i))).fileName();
         if (name.endsWith(QStringLiteral(".par2"), Qt::CaseInsensitive)) {
-            if (st.finalized && !st.finalPath.isEmpty())
-                par2 << st.finalPath;
+            // was: st.finalized && !st.finalPath.isEmpty(); a sealed file keeps its tempPath
+            // (renamed in the work folder) until the release is published: never filled
+            const QString path = !st.finalPath.isEmpty() ? st.finalPath : st.tempPath;
+            if (st.finalized && !path.isEmpty())
+                par2 << path;
             continue;
         }
         if (!st.finalized && !st.tempPath.isEmpty()) {
@@ -152,19 +165,45 @@ void ArchiveFill::tryFill(const QString& id)
             it->second.running = false;
             it->second.done = true;
             qint64 bytes = 0;
-            int articles = 0;
             for (const auto& r : ranges) {
                 const int file = indexOf.value(QFileInfo(r.fileName).fileName().toLower(), -1);
                 if (file < 0)
                     continue;
                 bytes += r.length;
-                articles += self->m_queue.acceptExternalRange(id, file, r.offset, r.length);
+                it->second.pending[file].emplace_back(r.offset, r.length);
             }
-            logUsenet(QStringLiteral("Usenet: \"%1\": %2 byte(s) of its volumes from disk, %3 article(s) not fetched")
-                          .arg(id).arg(bytes).arg(articles));
+            logUsenet(QStringLiteral("Usenet: \"%1\": %2 byte(s) of its volumes from disk").arg(id).arg(bytes));
             emit self->filled(id, bytes);
+            self->acceptPending(id);
         }, Qt::QueuedConnection);
     });
+}
+
+void ArchiveFill::acceptPending(const QString& id)
+{
+    const auto it = m_items.find(id);
+    const auto* item = m_queue.findItem(id);
+    if (it == m_items.end() || !item)
+        return;
+    auto& pending = it->second.pending;
+    for (auto p = pending.begin(); p != pending.end();) {
+        const int file = p->first;
+        if (file < 0 || file >= item->files.size()) {
+            p = pending.erase(p);
+            continue;
+        }
+        // was: accepted at once; the part size borrowed then may be a lone small .par2's
+        if (item->files.at(file).partLength <= 0) {
+            ++p;
+            continue;
+        }
+        int articles = 0;
+        for (const auto& [offset, length] : p->second)
+            articles += m_queue.acceptExternalRange(id, file, offset, length);
+        logUsenet(QStringLiteral("Usenet: \"%1\": %2 article(s) of file %3 not fetched (on disk here)").arg(id).arg(articles).arg(file));
+        p = pending.erase(p);
+        emit accepted(id, file, articles);
+    }
 }
 
 } // namespace eMule

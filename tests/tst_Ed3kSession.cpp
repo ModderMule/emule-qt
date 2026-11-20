@@ -542,6 +542,9 @@ void tst_Ed3kSession::trafficCountedAcrossRestart()
     const Ed3kTraffic t = a.traffic();
     QVERIFY(t.sent > 0);
     QVERIFY(t.recv > 0);
+    // no file moved: node traffic only, the rates show no transfer (status bar Down)
+    QCOMPARE(t.recvFile, std::uint64_t(0));
+    QCOMPARE(t.sentFile, std::uint64_t(0));
     const Ed3kStatus st = a.status();
     QVERIFY(st.running);
     QCOMPARE(st.udpPort, a.udpPort());

@@ -228,7 +228,7 @@ void StatsHistory::takeSpeedSample()
     const EngineRates bt = btRates();
     s.down += bt.down;
     s.up += bt.up;
-    // ed3k's sent bytes are counted in eD2K's upload rate already (noteForeignBytesSent)
+    // ed3k's sent file bytes are counted in eD2K's upload rate already (noteForeignBytesSent)
     s.down += clamped(m_ed3kRates).down;
 
     m_speed.push_back(s);

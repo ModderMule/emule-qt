@@ -52,14 +52,24 @@ public:
         m_outsideBytesForStats.fetch_add(bytes, std::memory_order_relaxed);
         m_outsideBytesForBudget.fetch_add(bytes, std::memory_order_relaxed);
     }
-    /// Bytes another engine sent on this line (ed3k): in the rate, and a debt the budget
+    /// File bytes another engine sent on this line (ed3k): in the rate, and a debt the budget
     /// pays off in full. Not clamped like the loop's carry-over, which forgave most of a
-    /// 500 ms batch and let the sum run at twice the limit. Any thread.
+    /// 500 ms batch and let the sum run at twice the limit. Paid off spread over
+    /// kForeignDebtSpreadMs and never from setOwnFloor()'s part. Any thread.
     void noteForeignBytesSent(uint32 bytes)
     {
         m_outsideBytesForStats.fetch_add(bytes, std::memory_order_relaxed);
         m_foreignBytesForBudget.fetch_add(bytes, std::memory_order_relaxed);
     }
+    /// B/s of each accrual the foreign debt never takes: eD2K's slots keep sending while
+    /// ed3k's batches are paid off (BandwidthSplit ed2kUploadFloorKb). 0 = none; at most
+    /// half the allowed rate is honoured. Any thread.
+    void setOwnFloor(uint32 bytesPerSec) { m_ownFloor.store(bytesPerSec, std::memory_order_relaxed); }
+    [[nodiscard]] uint32 ownFloor() const { return m_ownFloor.load(std::memory_order_relaxed); }
+
+    /// A foreign batch is paid off at debt × elapsed / this: a 500 ms batch no longer
+    /// takes the next ms of the line in one go (eD2K rows sawed to 0 and back)
+    static constexpr int64 kForeignDebtSpreadMs = 250;
 
     // Wakeup signals
     void newUploadDataAvailable();
@@ -127,6 +137,7 @@ private:
     std::atomic<uint64> m_outsideBytesForOverheadStats{0};
     std::atomic<uint64> m_outsideBytesForBudget{0};
     std::atomic<uint64> m_foreignBytesForBudget{0};
+    std::atomic<uint32> m_ownFloor{0};
     int m_highestNumberOfFullyActivatedSlots = 0;
 
     // Components (not owned)

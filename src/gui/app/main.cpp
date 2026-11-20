@@ -1534,7 +1534,8 @@ int main(int argc, char* argv[])
                 mainWindow.updateTransferRates(
                     upRate, downRate,
                     val(QLatin1StringView("upOverheadRate")),
-                    val(QLatin1StringView("downOverheadRate")));
+                    val(QLatin1StringView("downOverheadRate"))
+                        + val(QLatin1StringView("rateDownEd3kOverhead")));
                 mainWindow.setSessionTotals(stats.value(QStringLiteral("sessionTotals")).toMap());
 
                 // Upload SpeedSense pane; absent while the option is off

@@ -279,8 +279,9 @@ void tst_Ed3kTorrentJoin::completeTorrentGivesItsSet()
     again.setSearchEnabled(false);
     QSignalSpy republished(&again, &Ed3kTorrentJoin::keptRecordsPublished);
     again.start();
-    QVERIFY(again.sharesRoot(manifestRoot));
-    QVERIFY(again.sharesRoot(hashOf(leecher.infoSection(added.id)).root));
+    // kept blobs are read on the read pool (report 58)
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(manifestRoot), 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(hashOf(leecher.infoSection(added.id)).root), 10000);
     QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(hashOf(m_a).root) && again.sharesRoot(hashOf(m_b).root), 10000);
     // the set (MEMBER rows) and the ALIAS records (btih and btmh: hybrid) go out again
     QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 1, 10000);
@@ -489,7 +490,14 @@ void tst_Ed3kTorrentJoin::linkJoinFetchesItsSet()
     join.addSource(added.id, 0, ::ed3k::Source{*a.nodeId(), false, ::ed3k::Address::v4(127, 0, 0, 1, a.udpPort()), std::nullopt, {}});
     join.addSource(added.id, 1, ::ed3k::Source{*c.nodeId(), false, ::ed3k::Address::v4(127, 0, 0, 1, c.udpPort()), std::nullopt, {}});
 
-    QTRY_COMPARE_WITH_TIMEOUT(verified.count(), 2, kTimeoutMs);
+    const auto states = [&] {
+        QString s;
+        for (int i = 0; i < 2; ++i)
+            if (const auto mm = join.member(added.id, i))
+                s += QStringLiteral(" m%1 status %2 blocks %3").arg(i).arg(int(mm->status)).arg(join.receivedBlocks(added.id, i));
+        return s.toUtf8();
+    };
+    QTRY_VERIFY2_WITH_TIMEOUT(verified.count() == 2, states().constData(), kTimeoutMs);
     QCOMPARE(problems.count(), 0);
 
     join.stop();

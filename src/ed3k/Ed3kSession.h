@@ -62,6 +62,9 @@ struct Ed3kSettings {
     bool forceOpen = false;      ///< operator/tests: address open, no NAT tests (§9.2 first nodes)
     std::uint32_t smallNetS = 0; ///< tests: Kad of a few nodes connected this long after the first answer; 0 = default (45 s)
     std::uint32_t storeMiB = 0;  ///< RAM for Kad records of others (pref ed3k.kadStoreMiB); 0 = default (128 MiB)
+    /// contacts before a Kad store/publish runs (bootstrap.md §4.1); 0 = default: 10, or 1 on a
+    /// named network (tests, live rigs of a few nodes)
+    std::uint32_t storeMinContacts = 0;
     /// JSON-RPC endpoints (ed3k.creditRpc / ed3k.chaintubeRpc): operator 0 of a call is the
     /// first, n the n-th (as mode B, packmule_udp::http). Empty: calls answered failed.
     QStringList creditRpc;
@@ -136,6 +139,9 @@ struct Ed3kStatus {
 struct Ed3kTraffic {
     std::uint64_t sent = 0;
     std::uint64_t recv = 0;
+    /// file block bytes only (sent_file / recv_file): what the rates show
+    std::uint64_t sentFile = 0;
+    std::uint64_t recvFile = 0;
 };
 
 class Ed3kSession : public QObject {

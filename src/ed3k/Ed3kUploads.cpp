@@ -154,6 +154,8 @@ bool Ed3kUploads::appendListed(ffi::KeyKind key, std::vector<Row>& out) const
         }
         row.holding = q.slot;
         row.bytes = q.bytes;
+        row.nextOffset = q.nextOffset;
+        row.sent = q.sent;
         row.connected = q.connected;
         row.place = q.slot ? 0 : int(std::min<std::uint32_t>(q.rank, INT32_MAX));
         // its Hello (§5.5); empty before one
@@ -192,6 +194,8 @@ void Ed3kUploads::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* ha
         }
         if (added || row.root != r->root) {
             row.root = r->root;
+            row.have.clear();
+            row.haveKnown = false;
             row.fileName.clear();
             row.fileSize = 0;
             if (m_names)
@@ -201,6 +205,14 @@ void Ed3kUploads::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* ha
                 }
         }
         row.lan = r->lan;
+        // absent: unchanged; a new stream's first without it: not told
+        if (r->have) {
+            row.have = QByteArray(reinterpret_cast<const char*>(r->have->data()), qsizetype(r->have->size()));
+            row.haveKnown = true;
+        } else if (r->first) {
+            row.have.clear();
+            row.haveKnown = false;
+        }
     } else if (const auto* o = std::get_if<e::SlotOfferResult>(&ev)) {
         const auto it = m_rows.find({key, o->node});
         if (it == m_rows.end() || !o->ok)

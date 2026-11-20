@@ -434,9 +434,12 @@ std::vector<std::uint64_t> Ed3kTorrentJoin::wantedBlocks(const Download& d) cons
 void Ed3kTorrentJoin::onFileBlock(const Download& d, const ffi::event::Block& b)
 {
     // was: the write, ed3kBlock and feedPieces here; now takeBlock (a local copy's blocks too)
-    if (!takeBlock(d.owner, d.member, b.offset, std::span<const std::byte>{b.data}))
+    // was: takeBlock(d.owner, ...) / drainEvents(d.owner): a completed member stops its
+    // download (onMemberComplete), d.owner dangled and the member was never hashed
+    const QString id = d.owner;
+    if (!takeBlock(id, d.member, b.offset, std::span<const std::byte>{b.data}))
         return;
-    drainEvents(d.owner);
+    drainEvents(id);
 }
 
 bool Ed3kTorrentJoin::takeLocalBlock(const Download& d, std::uint64_t offset, std::span<const std::byte> data)
@@ -771,7 +774,7 @@ void Ed3kTorrentJoin::serveReads(const QString& id, const std::vector<ffi::Torre
     });
 }
 
-void Ed3kTorrentJoin::drainEvents(const QString& id)
+void Ed3kTorrentJoin::drainEvents(QString id)
 {
     for (int guard = 0; guard < kMaxPerCall; ++guard) {
         Join* j = findJoin(id);

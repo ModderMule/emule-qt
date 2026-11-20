@@ -648,6 +648,15 @@ if(EMULE_ED3K)
     # archive contents records (hoster.md §6.1): reading, extracting chosen entries, Kad publish + lookup
     emule_add_test(tst_Ed3kArchiveContents FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Usenet)
     set_tests_properties(tst_Ed3kArchiveContents PROPERTIES TIMEOUT 300)
+    # #224 ArchiveFill (daemon): a stored volume filled from its entry on disk via par2
+    emule_add_test(tst_ArchiveFill FOLDER "Ed3k"
+        SOURCES tst_ArchiveFill.cpp "${CMAKE_SOURCE_DIR}/src/daemon/ArchiveFill.cpp"
+        LIBRARIES eMule::Ed3k eMule::Usenet)
+    target_include_directories(tst_ArchiveFill PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+    if(EMULE_USENET_PAR2 AND TARGET emule_par2)
+        target_link_libraries(tst_ArchiveFill PRIVATE emule_par2)
+    endif()
+    set_tests_properties(tst_ArchiveFill PROPERTIES TIMEOUT 180)
     emule_add_test(tst_Ed3kSearch FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
     set_tests_properties(tst_Ed3kSearch PROPERTIES TIMEOUT 180)
     # plain ed3k downloads (Ed3kDownloads) and their IPC (Ed3kDownloadsBridge): two nodes on loopback
@@ -755,6 +764,15 @@ emule_add_test(tst_UsenetBandwidthSplit FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_BandwidthSplit FOLDER "Transfer")
 # emule-qt.org port test API (BitTorrent, ed3k): URL, reply, ed3k merge. No network.
 emule_add_test(tst_PortTestApi FOLDER "Net")
+
+# Port test message: peer proof vs a lost website packet (#216). PortTest.h is header-only.
+emule_add_test(tst_PortTestReport FOLDER "Gui"
+    SOURCES tst_PortTestReport.cpp)
+target_include_directories(tst_PortTestReport PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/ipc"
+    "${CMAKE_SOURCE_DIR}/src/core")
+target_link_libraries(tst_PortTestReport PRIVATE eMule::Core Qt6::Widgets)
 # How engine events become Statistics window counters: no socket either.
 emule_add_test(tst_UsenetStatistics FOLDER "Usenet" LIBRARIES eMule::Usenet)
 

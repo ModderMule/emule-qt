@@ -3,6 +3,7 @@
 
 #include "Ed3kUploadsBridge.h"
 
+#include <QCborArray>
 #include <QCborMap>
 #include <QDateTime>
 #include <QHostAddress>
@@ -56,11 +57,14 @@ QString hexOf(std::span<const std::uint8_t> bytes)
     return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(bytes.data()), qsizetype(bytes.size())).toHex());
 }
 
+constexpr std::uint64_t kPiece = 4 * 1024 * 1024;
+constexpr std::uint64_t kBlock = 256 * 1024;   ///< ed3k block (§12.2)
+
 QCborMap rowToCbor(const ed3k::Ed3kUploads::Row& r, qint64 nowMs)
 {
     const QString node = hexOf(r.node.bytes);
     const qint64 held = std::max<qint64>(0, nowMs - r.since);
-    return QCborMap{
+    QCborMap m{
         {QStringLiteral("network"), QStringLiteral("ed3k")},
         // Hello.nick: the peer's user name (its Options); else the node ID's start
         {QStringLiteral("userName"), r.nick.isEmpty() ? node.left(8) : r.nick},
@@ -93,6 +97,56 @@ QCborMap rowToCbor(const ed3k::Ed3kUploads::Row& r, qint64 nowMs)
         // the root belongs to a torrent/usenet/hoster join: the GUI badges the node icon
         {QStringLiteral("join"), s_uploads ? ed3k::Ed3kJoinBase::networkJoinAt(s_uploads->session(), r.root) : QString()},
     };
+    // Uploaded / Downloaded columns: file bytes with the node this daemon run, the running turn too
+    if (s_uploads) {
+        const auto [up, down] = s_uploads->peerBytes(r.key, r.node);
+        m.insert(QStringLiteral("uploadedTotal"), qint64(std::min<std::uint64_t>(up + (r.holding ? r.bytes : 0), INT64_MAX)));
+        m.insert(QStringLiteral("downloadedTotal"), qint64(std::min<std::uint64_t>(down, INT64_MAX)));
+    }
+    // Upload Status bar: the downloader's pieces (FileRequest.have), 4 MiB parts; a slot holder's
+    // next and sent blocks as eD2K draws them
+    const bool sending = r.holding && (r.nextOffset || !r.sent.empty());
+    if ((r.haveKnown || sending) && r.fileSize > 0) {
+        const auto pieces = qint64(std::min<std::uint64_t>((r.fileSize + kPiece - 1) / kPiece, INT32_MAX));
+        QCborMap bar{
+            {QStringLiteral("fileSize"), qint64(std::min<std::uint64_t>(r.fileSize, INT64_MAX))},
+            {QStringLiteral("partSize"), qint64(kPiece)},
+            {QStringLiteral("parts"), r.have},
+        };
+        if (sending) {
+            // whole parts about to go out: the next block and the latest one sent
+            QCborArray next;
+            if (r.nextOffset)
+                next.append(qint64(*r.nextOffset / kPiece));
+            if (!r.sent.empty())
+                next.append(qint64(r.sent.back() / kPiece));
+            bar.insert(QStringLiteral("next"), next);
+            // blocks of the stream, merged into inclusive byte ranges
+            std::vector<std::uint64_t> offsets = r.sent;
+            std::ranges::sort(offsets);
+            QCborArray sent;
+            std::uint64_t start = 0, end = 0;
+            bool open = false;
+            for (const std::uint64_t at : offsets) {
+                if (at >= r.fileSize)
+                    continue;
+                const std::uint64_t last = std::min(at + kBlock, r.fileSize) - 1;
+                if (open && at <= end + 1) {
+                    end = std::max(end, last);
+                    continue;
+                }
+                if (open)
+                    sent.append(QCborArray{qint64(start), qint64(end)});
+                start = at, end = last, open = true;
+            }
+            if (open)
+                sent.append(QCborArray{qint64(start), qint64(end)});
+            bar.insert(QStringLiteral("sent"), sent);
+        }
+        m.insert(QStringLiteral("upPartCount"), pieces);
+        m.insert(QStringLiteral("upStatus"), bar);
+    }
+    return m;
 }
 
 /// rowToCbor plus what only the details show: key, node ID, totals, derived eD2K hash.
@@ -116,7 +170,6 @@ QCborMap detailsOf(const ed3k::Ed3kUploads::Row& r, qint64 nowMs)
 }
 
 using SourceInfo = ed3k::Ed3kJoinBase::SourceInfo;
-constexpr std::uint64_t kPiece = 4 * 1024 * 1024;
 
 QString keyOf(::ed3k::KeyKind key, const ::ed3k::NodeId& node)
 {
@@ -489,8 +542,18 @@ void appendNetworkUploading([[maybe_unused]] QCborArray& uploading)
     for (const auto& job : ed3k::Ed3kJoinBase::networkJobsAt(s_uploads->session()))
         if (job.tag == QLatin1String("torrent") && !ids.contains(job.owner))
             ids << job.owner;
+    const qsizetype first = uploading.size();
     for (const QString& id : std::as_const(ids))
         BtBridge::appendUploading(uploading, id);
+    // numbered after eD2K's and ed3k's slots, as ed3k's after eD2K's
+    qint64 slot = 0;
+    for (qsizetype i = 0; i < first; ++i)
+        slot = std::max(slot, uploading.at(i).toMap().value(QStringLiteral("slot")).toInteger());
+    for (qsizetype i = first; i < uploading.size(); ++i) {
+        QCborMap m = uploading.at(i).toMap();
+        m.insert(QStringLiteral("slot"), ++slot);
+        uploading[i] = m;
+    }
 #endif
 }
 

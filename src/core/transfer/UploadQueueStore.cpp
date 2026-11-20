@@ -395,10 +395,8 @@ UpDownClient* UploadQueueStore::buildClient(const QueuedClientRecord& rec,
     // Display only, refreshed the moment the peer says hello.
     if (!rec.userName.isEmpty())
         client->setUserName(rec.userName);
-    client->setClientVersion(rec.clientVersion);
-    client->setEmuleVersion(rec.emuleVersion);
-    client->setCompatibleClient(rec.compatibleClient);
-    client->initClientSoftwareVersion();
+    // Stored version is already decoded; a plain init would decode it again (0.50a → 0.48g)
+    client->restoreClientSoftwareVersion(rec.clientVersion, rec.emuleVersion, rec.compatibleClient);
 
     return client;
 }

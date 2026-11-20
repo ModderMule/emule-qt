@@ -183,6 +183,21 @@ void tst_Ed3kUploads::eventsBecomeRowsAndStayUnhandled()
     QCOMPARE(row.value(QStringLiteral("uploadFileName")).toString(), QStringLiteral("film.mkv"));
     QCOMPARE(row.value(QStringLiteral("queueRank")).toInteger(), 1);
     QVERIFY(row.value(QStringLiteral("lan")).toBool());
+    QVERIFY(!row.contains(QStringLiteral("upStatus")));   // have not told: no bar
+    // a later FileRequest tells have: the bar; one without it leaves it
+    const auto barOf = [&]() {
+        QCborArray u, w;
+        Ed3kUploadsBridge::appendRows(u, w);
+        return w.at(0).toMap();
+    };
+    QVERIFY(!send(e::FileRequested{node(3), root, std::vector<std::uint8_t>{0x01}, false, true, false}));
+    QVERIFY(!send(e::FileRequested{node(3), root, std::nullopt, false, true, false}));
+    const QCborMap told = barOf();
+    QCOMPARE(told.value(QStringLiteral("upPartCount")).toInteger(), 1);
+    const QCborMap bar = told.value(QStringLiteral("upStatus")).toMap();
+    QCOMPARE(bar.value(QStringLiteral("partSize")).toInteger(), 4 * 1024 * 1024);
+    QCOMPARE(bar.value(QStringLiteral("fileSize")).toInteger(), 1234);
+    QCOMPARE(bar.value(QStringLiteral("parts")).toByteArray(), QByteArray(1, '\x01'));
 
     // GetClientDetails: "ed3k:<node>" finds the row, keyed back; other keys and nodes don't
     const QString key = QStringLiteral("ed3k:") + QStringLiteral("03").repeated(16);
@@ -240,6 +255,7 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     bool rankedWithAddress = false;   // the engine's queueList: rank and endpoint
     bool holderWithAddress = false;
     bool sawNick = false;   // Hello.nick of b
+    bool sawSentBar = false;   // a holder's Upload Status bar: blocks sent, as eD2K draws them
     QCborMap waitingRow;
     connect(&up, &Ed3kUploads::changed, this, [&] {
         const auto h = up.uploading();
@@ -250,6 +266,17 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
             sawNick = sawNick || r.nick == QStringLiteral("bob");
             named = named || (r.fileName == QStringLiteral("q.bin") && r.fileSize == std::uint64_t(data.size()));
             holderWithAddress = holderWithAddress || (r.address == QStringLiteral("127.0.0.1") && r.port != 0);
+            if (!sawSentBar && !r.sent.empty()) {
+                Ed3kUploadsBridge::setUploads(&up);
+                QCborArray uploading, waiting;
+                Ed3kUploadsBridge::appendRows(uploading, waiting);
+                for (const auto& u : uploading) {
+                    const QCborMap bar = u.toMap().value(QStringLiteral("upStatus")).toMap();
+                    const QCborArray sent = bar.value(QStringLiteral("sent")).toArray();
+                    sawSentBar = sawSentBar || (!sent.isEmpty() && !bar.value(QStringLiteral("next")).toArray().isEmpty()
+                                                && sent.at(0).toArray().at(1).toInteger() >= sent.at(0).toArray().at(0).toInteger());
+                }
+            }
         }
         for (const auto& r : w)
             sawNick = sawNick || r.nick == QStringLiteral("bob");
@@ -309,6 +336,7 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     QVERIFY(sawWaiting);         // three nodes, two slots: one waited
     QVERIFY(named);
     QVERIFY(holderWithAddress);
+    QVERIFY(sawSentBar);
     QVERIFY(rankedWithAddress);
     QCOMPARE(waitingRow.value(QStringLiteral("addr")).toString(), QStringLiteral("127.0.0.1"));
     QVERIFY(waitingRow.value(QStringLiteral("port")).toInteger() > 0);

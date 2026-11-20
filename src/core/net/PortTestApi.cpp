@@ -4,6 +4,7 @@
 #include "net/PortTestApi.h"
 
 #include "app/AppConfig.h"
+#include "net/BindAddress.h"
 
 #include <QCborMap>
 #include <QHostAddress>
@@ -12,6 +13,8 @@
 #include <QJsonObject>
 #include <QUrlQuery>
 
+#include <algorithm>
+
 namespace eMule::PortTestApi {
 
 namespace {
@@ -19,10 +22,19 @@ namespace {
 QCborMap entryToCbor(const QJsonValue& v)
 {
     const QJsonObject o = v.toObject();
-    return QCborMap{
+    QCborMap m{
         {QStringLiteral("open"), o.value(QStringLiteral("open")).toBool()},
         {QStringLiteral("reason"), o.value(QStringLiteral("reason")).toString()},
     };
+    // ed3k: datagrams sent (plugin >= 1.7.0)
+    if (const int copies = o.value(QStringLiteral("copies")).toInt(); copies > 0)
+        m.insert(QStringLiteral("copies"), copies);
+    return m;
+}
+
+int copiesOf(const QCborMap& udp)
+{
+    return int(std::max<qint64>(1, udp.value(QStringLiteral("copies")).toInteger()));
 }
 
 int familyBit(qint64 family)
@@ -49,6 +61,11 @@ QUrl url(const Request& request)
         query.addQueryItem(QStringLiteral("ip4"), request.ip4);
     if (!request.ip6.isEmpty())
         query.addQueryItem(QStringLiteral("ip6"), request.ip6);
+    // plugin >= 1.8.0: the observed address of another family is not probed
+    if (request.families == kSeenIPv4)
+        query.addQueryItem(QStringLiteral("families"), QStringLiteral("4"));
+    else if (request.families == kSeenIPv6)
+        query.addQueryItem(QStringLiteral("families"), QStringLiteral("6"));
     result.setQuery(query);
     return result;
 }
@@ -77,6 +94,8 @@ Reply parseReply(const QByteArray& body, int httpStatus, Network network)
         if (msg.isEmpty())
             msg = root.value(QStringLiteral("message")).toString();
         reply.error = msg.isEmpty() ? QStringLiteral("HTTP %1").arg(httpStatus) : msg;
+        if (root.value(QStringLiteral("data")).toObject().value(QStringLiteral("reason")).toString() == kReasonNoTarget)
+            reply.failure = Failure::NoBoundAddress;
         return reply;
     }
     const QJsonObject data = root.value(QStringLiteral("data")).toObject();
@@ -106,6 +125,29 @@ Reply parseReply(const QByteArray& body, int httpStatus, Network network)
     }
     reply.ok = true;
     return reply;
+}
+
+int boundFamilies(const BindAddress::Resolution& r)
+{
+    if (r.state != BindAddress::State::Bound)
+        return kBothFamilies;
+    if (!r.literal.isNull())
+        return r.literal.protocol() == QAbstractSocket::IPv6Protocol ? kSeenIPv6 : kSeenIPv4;
+    int bits = 0;
+    if (r.pin.v4 && !r.v4.isNull())
+        bits |= kSeenIPv4;
+    if (r.pin.v6 && r.hasGlobalIPv6)
+        bits |= kSeenIPv6;
+    return bits;
+}
+
+QCborArray onlyFamilies(const QCborArray& targets, int families)
+{
+    QCborArray out;
+    for (const QCborValue& t : targets)
+        if (families & familyBit(t.toMap().value(QStringLiteral("family")).toInteger()))
+            out.append(t);
+    return out;
 }
 
 int sentFamilies(const QCborArray& targets)
@@ -139,25 +181,44 @@ QCborArray applyPeerView(const QCborArray& targets, const PeerView& v4, const Pe
         if (!peer.isNull()) {
             const QHostAddress tested(m.value(QStringLiteral("ip")).toString());
             m.insert(QStringLiteral("peerAddress"), view.address);
-            m.insert(QStringLiteral("peerOpen"), view.open);
             m.insert(QStringLiteral("peerSame"), peer.isEqual(tested, QHostAddress::TolerantConversion));
+            if (!view.tcpProof.isEmpty())
+                m.insert(QStringLiteral("peerTcp"), view.tcpProof);
+            if (!view.udpProof.isEmpty())
+                m.insert(QStringLiteral("peerUdp"), view.udpProof);
         }
         out.append(m);
     }
     return out;
 }
 
-QCborArray applySeen(const QCborArray& targets, int seenFamilies)
+int sentCopies(const QCborArray& targets, int bit)
+{
+    int n = 0;
+    for (const QCborValue& t : targets) {
+        const QCborMap m = t.toMap();
+        const QCborMap udp = m.value(QStringLiteral("udp")).toMap();
+        if (udp.value(QStringLiteral("reason")).toString() == kReasonSent
+            && familyBit(m.value(QStringLiteral("family")).toInteger()) == bit)
+            n += copiesOf(udp);
+    }
+    return n;
+}
+
+QCborArray applySeen(const QCborArray& targets, int seenFamilies, int packets4, int packets6)
 {
     QCborArray out;
     for (const QCborValue& t : targets) {
         QCborMap m = t.toMap();
         const QCborMap udp = m.value(QStringLiteral("udp")).toMap();
         if (udp.value(QStringLiteral("reason")).toString() == kReasonSent) {
-            const bool seen = (seenFamilies & familyBit(m.value(QStringLiteral("family")).toInteger())) != 0;
+            const int bit = familyBit(m.value(QStringLiteral("family")).toInteger());
+            const bool seen = (seenFamilies & bit) != 0;
+            const int packets = bit == kSeenIPv6 ? packets6 : packets4;
             m.insert(QStringLiteral("udp"), QCborMap{
                 {QStringLiteral("open"), seen},
                 {QStringLiteral("reason"), seen ? QString(kReasonOpen) : QString(kReasonFiltered)},
+                {QStringLiteral("packets"), packets > 0 ? packets : copiesOf(udp)},
             });
         }
         out.append(m);

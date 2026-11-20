@@ -407,7 +407,8 @@ void tst_Ed3kUsenetJoin::articlesFromTheQueueVerifyAClaimedMember()
     again.setSearchEnabled(false);
     QSignalSpy republished(&again, &Ed3kUsenetJoin::keptRecordsPublished);
     again.start();
-    QVERIFY(again.sharesRoot(manifest.root) && again.sharesRoot(list.root));
+    // kept blobs are read on the read pool (report 58)
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(manifest.root) && again.sharesRoot(list.root), 10000);
     QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(h.root), 10000);
     // the set and the ALIAS records (nzb, nzb-file) go out again once the member is shared
     QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 1, 10000);
@@ -422,7 +423,7 @@ void tst_Ed3kUsenetJoin::articlesFromTheQueueVerifyAClaimedMember()
     QCOMPARE(republished.at(1).at(1).toInt(), 0);
     // and off again: all of it back
     again.setHoldBack(false);
-    QVERIFY(again.sharesRoot(manifest.root) && again.sharesRoot(list.root));
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(manifest.root) && again.sharesRoot(list.root), 10000);
     QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 3, 10000);
     QVERIFY(republished.at(2).at(1).toInt() >= 1);
     // the row cleared, the file left in incoming: still shared, its records kept
@@ -437,7 +438,7 @@ void tst_Ed3kUsenetJoin::articlesFromTheQueueVerifyAClaimedMember()
     third.setSearchEnabled(false);
     QSignalSpy republishedCleared(&third, &Ed3kUsenetJoin::keptRecordsPublished);
     third.start();
-    QVERIFY(third.sharesRoot(manifest.root));
+    QTRY_VERIFY_WITH_TIMEOUT(third.sharesRoot(manifest.root), 10000);
     QTRY_VERIFY_WITH_TIMEOUT(third.sharesRoot(h.root), 10000);
     QTRY_COMPARE_WITH_TIMEOUT(republishedCleared.count(), 1, 10000);
     QVERIFY(republishedCleared.at(0).at(1).toInt() >= 1);
@@ -722,7 +723,8 @@ void tst_Ed3kUsenetJoin::fetchPostSet(bool byLink)
     Ed3kUsenetJoin again(b, queue, db.path());
     again.setSearchEnabled(false);
     again.start();
-    QVERIFY(again.sharesRoot(manifest.root) && again.sharesRoot(list.root));
+    // kept blobs are read on the read pool (report 58)
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(manifest.root) && again.sharesRoot(list.root), 10000);
     QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(member.root), 10000);
     again.stop();
 

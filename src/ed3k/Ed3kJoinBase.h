@@ -682,6 +682,13 @@ private:
     /// The next candidate of @p owner's search; another search with roots after the last.
     bool tryNextSet(const QString& owner);
     [[nodiscard]] Kept readKept(const QString& owner) const;
+    /// readKept of the kept dir @p dir; any thread
+    [[nodiscard]] static Kept readKeptIn(const QString& dir);
+    /// shareKeptOwner after the read pool read @p kept and its blobs (@p blobs, one per kept.blobs)
+    void shareKeptRead(const QString& owner, const Kept& kept, const std::vector<QByteArray>& blobs);
+    /// publishKeptRecords after the read pool read the set manifest and the ALIAS records
+    void publishKeptRead(const QString& owner, const Kept& kept, const QByteArray& manifest,
+                         const std::vector<ffi::Bytes>& records);
     void writeKept(const QString& owner, const Kept& kept);
     void shareKeptMember(const QString& owner, int member, const ffi::Root& root, std::uint64_t size, const QString& name,
                          int tries);

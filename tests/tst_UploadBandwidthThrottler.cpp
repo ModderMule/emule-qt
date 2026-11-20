@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <vector>
 
 using namespace eMule;
 
@@ -109,6 +110,7 @@ private slots:
     void controlQueueDrainsWhenSocketEmpty();
     void surplusPassRotatesItsStartSlot();
     void foreignBytesStayInsideTheLimit();
+    void foreignBurstsKeepEveryEd2kSlotSending();
 };
 
 void tst_UploadBandwidthThrottler::construction_defaults()
@@ -466,6 +468,87 @@ void tst_UploadBandwidthThrottler::foreignBytesStayInsideTheLimit()
           static_cast<unsigned long long>(foreign), line);
     QVERIFY2(double(own + foreign) <= line * 1.15, "eD2K and the foreign engine overshoot the line");
     QVERIFY2(double(own) >= line * 0.3, "eD2K is starved below what the foreign engine left");
+}
+
+// Issue: after the ed2k/ed3k identity migration ed3k carried most of the upload; each
+// 500 ms batch was paid off the line at once and all eD2K rows sawed to 0 and back together.
+// ed3k at its cap (line - floor), sent in 1 s bursts, 6 eD2K slots: the floor keeps every
+// slot sending in every window, the spread keeps eD2K's rate steady, the sum in the limit.
+void tst_UploadBandwidthThrottler::foreignBurstsKeepEveryEd2kSlotSending()
+{
+    const uint32 oldLimit = thePrefs.maxUpload();
+    const bool oldDyn = thePrefs.dynUpEnabled();
+    thePrefs.setDynUpEnabled(false);
+    constexpr uint32 kLimitKb = 200;
+    constexpr uint32 kFloor = 60 * 1024;                  // B/s, eD2K's floor
+    constexpr uint32 kForeignBurst = 140 * 1024;          // once a second: line - floor
+    constexpr int kSlots = 6;
+    constexpr int kWindowMs = 500;
+    constexpr int kWindows = 10;
+    thePrefs.setMaxUpload(kLimitKb);
+
+    FakeFileSocket socks[kSlots];
+    for (auto& s : socks)
+        s.perCall = 64 * 1024;
+    UploadBandwidthThrottler throttler;
+    throttler.setOwnFloor(kFloor);
+    for (int i = 0; i < kSlots; ++i)
+        throttler.addToStandardList(i, &socks[i]);
+
+    QElapsedTimer clock;
+    clock.start();
+    uint64 foreign = 0;
+    uint64 last[kSlots] = {};
+    std::vector<uint64> ownPerWindow;
+    std::vector<int> silentSlotsPerSecond;
+    uint64 secondStart[kSlots] = {};
+    for (int w = 0; w < kWindows; ++w) {
+        if (w % 2 == 0) {
+            throttler.noteForeignBytesSent(kForeignBurst);
+            foreign += kForeignBurst;
+        }
+        QTest::qWait(kWindowMs);
+        uint64 own = 0;
+        for (int i = 0; i < kSlots; ++i) {
+            const uint64 now = socks[i].sentBytes.load();
+            own += now - last[i];
+            last[i] = now;
+        }
+        ownPerWindow.push_back(own);
+        if (w % 2 == 1) {
+            int silent = 0;
+            for (int i = 0; i < kSlots; ++i) {
+                if (last[i] == secondStart[i])
+                    ++silent;
+                secondStart[i] = last[i];
+            }
+            silentSlotsPerSecond.push_back(silent);
+        }
+    }
+    const qint64 ms = clock.elapsed();
+    uint64 own = 0;
+    for (auto& s : socks) {
+        throttler.removeFromAllQueues(static_cast<ThrottledFileSocket*>(&s));
+        own += s.sentBytes.load();
+    }
+    throttler.endThread();
+    thePrefs.setMaxUpload(oldLimit);
+    thePrefs.setDynUpEnabled(oldDyn);
+
+    const double line = double(kLimitKb) * 1024.0 * double(ms) / 1000.0;
+    QString windows;
+    for (const uint64 b : ownPerWindow)
+        windows += QStringLiteral(" %1").arg(b / 1024);
+    qInfo("own %llu + foreign %llu of a %.0f byte line; eD2K KiB per %d ms:%s",
+          static_cast<unsigned long long>(own), static_cast<unsigned long long>(foreign), line,
+          kWindowMs, qPrintable(windows));
+    QVERIFY2(double(own + foreign) <= line * 1.15, "eD2K and the foreign engine overshoot the line");
+    // the 1st window may still hold the start's carry; every later one gets the floor's bulk
+    const auto floorWindow = uint64(kFloor) * kWindowMs / 1000;
+    for (size_t w = 1; w < ownPerWindow.size(); ++w)
+        QVERIFY2(ownPerWindow[w] >= floorWindow / 2, "eD2K's rate drops to near 0 while a burst is paid off");
+    for (const int silent : silentSlotsPerSecond)
+        QCOMPARE(silent, 0);   // no row at 0 B/s for a whole second
 }
 
 QTEST_GUILESS_MAIN(tst_UploadBandwidthThrottler)

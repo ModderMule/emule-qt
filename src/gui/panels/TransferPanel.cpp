@@ -199,6 +199,7 @@ ClientRow parseClient(const QCborMap& m, bool downloadSide = false)
     row.addNextConnect     = m.value(QStringLiteral("addNextConnect")).toBool();
     if (const QCborMap bar = m.value(QStringLiteral("upStatus")).toMap(); !bar.isEmpty()) {
         row.upStatus.fileSize = bar.value(QStringLiteral("fileSize")).toInteger();
+        row.upStatus.partSize = bar.value(QStringLiteral("partSize")).toInteger();
         // Bit-packed on the wire, one bit per part
         const QByteArray packed = bar.value(QStringLiteral("parts")).toByteArray();
         row.upStatus.parts = QByteArray(row.upPartCount, '\0');

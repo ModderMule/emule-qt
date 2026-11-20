@@ -61,6 +61,7 @@ private slots:
     void exportsWhatIsSeeded();
     void seedSurvivesARestart_data();
     void seedSurvivesARestart();
+    void deletedFileStaysSkipped();
 
 private:
     QTemporaryDir m_dir;
@@ -367,6 +368,79 @@ void tst_BtTorrentCreator::seedSurvivesARestart()
     QTRY_VERIFY_WITH_TIMEOUT(again.torrent(id)->totalSize > 0 && again.torrent(id)->haveBytes == again.torrent(id)->totalSize,
                              10000);
     again.stop();
+}
+
+// Shared Files delete of a seeded file: skipped, its pieces dropped, never fetched again;
+// the last wanted file gone = the torrent reported empty
+void tst_BtTorrentCreator::deletedFileStaysSkipped()
+{
+    QTemporaryDir data;
+    const QString root = data.filePath(QStringLiteral("set"));
+    QDir().mkpath(root + QStringLiteral("/sub"));
+    writeFile(root + QStringLiteral("/a.bin"), 100 * 1024 + 3, 'a');
+    writeFile(root + QStringLiteral("/b.bin"), 90 * 1024 + 5, 'b');
+    writeFile(root + QStringLiteral("/sub/c.bin"), 70 * 1024, 'c');
+    BtCreateParams p;
+    p.path = root;
+    const BtCreateResult r = create(p);
+    QVERIFY2(r.ok, qPrintable(r.error));
+
+    QTemporaryDir state;
+    BtSettings s;
+    s.listenPort = 0;
+    s.dht = false;
+    s.lsd = false;
+    s.stateDir = state.filePath(QStringLiteral("BT"));
+    s.downloadDir = state.filePath(QStringLiteral("Incoming"));
+    BtSession session;
+    session.start(s);
+    const BtAddResult added = session.addCreatedTorrent(r.data, r.savePath);
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    const QString id = added.id;
+    QTRY_VERIFY_WITH_TIMEOUT(session.torrent(id) && session.torrent(id)->totalSize > 0
+                                 && session.torrent(id)->haveBytes == session.torrent(id)->totalSize,
+                             10000);
+
+    const QString b = root + QStringLiteral("/b.bin");
+    QVERIFY(QFile::remove(b));
+    QVERIFY(session.skipDeletedFile(b).isEmpty());
+    QVERIFY(session.skipDeletedFile(data.filePath(QStringLiteral("other.bin"))).isEmpty());
+    const auto priorityOf = [&](const QString& name) {
+        for (const BtFileRow& f : session.files(id))
+            if (f.path.endsWith(name))
+                return f.priority;
+        return -1;
+    };
+    QTRY_COMPARE_WITH_TIMEOUT(priorityOf(QStringLiteral("b.bin")), 0, 10000);
+    // the recheck drops b's pieces; the wanted rest is complete, nothing to fetch
+    QTRY_VERIFY_WITH_TIMEOUT(session.torrent(id)->haveBytes < session.torrent(id)->totalSize
+                                 && session.torrent(id)->state == BtState::Finished,
+                             15000);
+    QVERIFY(!QFile::exists(b));
+    // exact bytes, no pad: wanted = a + c, all of it done
+    constexpr qint64 kA = 100 * 1024 + 3, kB = 90 * 1024 + 5, kC = 70 * 1024;
+    QTRY_COMPARE_WITH_TIMEOUT(session.torrent(id)->size, kA + kC, 5000);
+    QCOMPARE(session.torrent(id)->done, kA + kC);
+    QCOMPARE(session.torrent(id)->totalSize, kA + kB + kC);
+    QCOMPARE(session.torrent(id)->progress, 1.0);
+
+    // a restart checks the resume data: still finished, b not fetched again
+    session.stop();
+    session.start(s);
+    QTRY_VERIFY_WITH_TIMEOUT(session.torrent(id) && session.torrent(id)->state == BtState::Finished, 15000);
+    QTRY_COMPARE_WITH_TIMEOUT(priorityOf(QStringLiteral("b.bin")), 0, 10000);
+    QVERIFY(!QFile::exists(b));
+    QTRY_COMPARE_WITH_TIMEOUT(session.torrent(id)->done, kA + kC, 5000);
+    QCOMPARE(session.torrent(id)->size, kA + kC);
+
+    const QString a = root + QStringLiteral("/a.bin");
+    QVERIFY(QFile::remove(a));
+    QVERIFY(session.skipDeletedFile(a).isEmpty());
+    const QString c = root + QStringLiteral("/sub/c.bin");
+    QVERIFY(QFile::remove(c));
+    QCOMPARE(session.skipDeletedFile(c), QStringList{id});
+    QVERIFY(session.remove(id, false));
+    session.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_BtTorrentCreator)

@@ -3,6 +3,7 @@
 ///        ed3k merge of what the node saw. No network.
 
 #include "app/AppConfig.h"
+#include "net/BindAddress.h"
 #include "net/PortTestApi.h"
 
 #include <QCborMap>
@@ -24,10 +25,12 @@ private slots:
     void parseGarbage();
     void parseOldServer();
     void ed3kSeenMerge();
+    void ed3kPacketCount();
     void peerView();
     void urlEd2k();
     void parseEd2kObfuscated();
     void ed2kTcpVerdict();
+    void boundInterfaceFamilies();
 };
 
 void tst_PortTestApi::urlBitTorrent()
@@ -134,6 +137,28 @@ void tst_PortTestApi::ed3kSeenMerge()
     QCOMPARE(udp(2).value(QStringLiteral("reason")).toString(), QStringLiteral("server_egress_blocked"));
 }
 
+void tst_PortTestApi::ed3kPacketCount()
+{
+    // plugin 1.7.0 sends 3 copies; an older one says nothing: 1
+    const QByteArray body = R"({"data":{"proto":"ed3k","results":[
+        {"family":4,"ip":"198.51.100.7","udp":{"open":false,"reason":"sent","copies":3}},
+        {"family":6,"ip":"2001:db8::5","udp":{"open":false,"reason":"sent"}}]}})";
+    const Reply r = parseReply(body, 200, Network::Ed3k);
+    QVERIFY(r.ok);
+    QCOMPARE(sentCopies(r.targets, kSeenIPv4), 3);
+    QCOMPARE(sentCopies(r.targets, kSeenIPv6), 1);
+
+    // own copies when no total is given
+    QCborArray out = applySeen(r.targets, kSeenIPv6);
+    QCOMPARE(out.at(0).toMap().value(QStringLiteral("udp")).toMap().value(QStringLiteral("packets")).toInteger(), 3);
+    // the total of two attempts
+    out = applySeen(r.targets, 0, 6, 2);
+    QCOMPARE(out.at(0).toMap().value(QStringLiteral("udp")).toMap().value(QStringLiteral("packets")).toInteger(), 6);
+    QCOMPARE(out.at(1).toMap().value(QStringLiteral("udp")).toMap().value(QStringLiteral("packets")).toInteger(), 2);
+    QCOMPARE(out.at(1).toMap().value(QStringLiteral("udp")).toMap().value(QStringLiteral("reason")).toString(),
+             QString(kReasonFiltered));
+}
+
 void tst_PortTestApi::peerView()
 {
     QCOMPARE(hostOf(QStringLiteral("198.51.100.7:11719")), QStringLiteral("198.51.100.7"));
@@ -147,11 +172,16 @@ void tst_PortTestApi::peerView()
     // #216: the website saw a VPN exit, peers see the node elsewhere
     const QCborArray targets{target(4, QStringLiteral("203.0.113.9")), target(6, QStringLiteral("2001:db8::5")),
                              target(4, QStringLiteral("198.51.100.7"))};
-    const QCborArray out = applyPeerView(targets, {QStringLiteral("198.51.100.7:11719"), true}, {});
+    PeerView v4;
+    v4.address = QStringLiteral("198.51.100.7:11719");
+    v4.udpProof = kProofEd3k;
+    const QCborArray out = applyPeerView(targets, v4, {});
     const auto at = [&](int i) { return out.at(i).toMap(); };
     QCOMPARE(at(0).value(QStringLiteral("peerAddress")).toString(), QStringLiteral("198.51.100.7:11719"));
     QCOMPARE(at(0).value(QStringLiteral("peerSame")).toBool(), false);
-    QCOMPARE(at(0).value(QStringLiteral("peerOpen")).toBool(), true);
+    QCOMPARE(at(0).value(QStringLiteral("peerUdp")).toString(), QString(kProofEd3k));
+    // no TCP proof: no key
+    QVERIFY(!at(0).contains(QStringLiteral("peerTcp")));
     // no IPv6 view: untouched
     QVERIFY(!at(1).contains(QStringLiteral("peerAddress")));
     QCOMPARE(at(2).value(QStringLiteral("peerSame")).toBool(), true);
@@ -213,6 +243,44 @@ void tst_PortTestApi::ed2kTcpVerdict()
     // request went over IPv6 without a known IPv4: no IPv4 target, no verdict
     const QCborArray v6Only{QCborMap{{QStringLiteral("family"), 6}, {QStringLiteral("tcp"), tcp(true, "open")}}};
     QCOMPARE(tcpVerdict(v6Only, true, true, 4), Verdict::Unknown);
+}
+
+void tst_PortTestApi::boundInterfaceFamilies()
+{
+    // #246: interface with IPv4 only, the HTTP request left over another interface's IPv6
+    BindAddress::Resolution r;
+    QCOMPARE(boundFamilies(r), kBothFamilies);
+    r.state = BindAddress::State::Bound;
+    r.v4 = QHostAddress(QStringLiteral("10.8.0.2"));
+    QCOMPARE(boundFamilies(r), kSeenIPv4);
+    r.hasGlobalIPv6 = true;
+    QCOMPARE(boundFamilies(r), kBothFamilies);
+    r.pin.v6 = false;
+    QCOMPARE(boundFamilies(r), kSeenIPv4);
+    r.literal = QHostAddress(QStringLiteral("2001:db8::5"));
+    QCOMPARE(boundFamilies(r), kSeenIPv6);
+
+    Request req;
+    req.network = Network::Ed2k;
+    req.families = kSeenIPv4;
+    QCOMPARE(QUrlQuery(url(req)).queryItemValue(QStringLiteral("families")), QStringLiteral("4"));
+    req.families = kBothFamilies;
+    QVERIFY(!QUrlQuery(url(req)).hasQueryItem(QStringLiteral("families")));
+
+    // an old server tested the observed IPv6 anyway: dropped
+    const QCborArray targets{
+        QCborMap{{QStringLiteral("family"), 6}, {QStringLiteral("ip"), QStringLiteral("2001:db8::1")}},
+        QCborMap{{QStringLiteral("family"), 4}, {QStringLiteral("ip"), QStringLiteral("203.0.113.5")}},
+    };
+    const QCborArray kept = onlyFamilies(targets, kSeenIPv4);
+    QCOMPARE(kept.size(), 1);
+    QCOMPARE(kept.at(0).toMap().value(QStringLiteral("family")).toInteger(), 4);
+    QCOMPARE(onlyFamilies(targets, kBothFamilies).size(), 2);
+
+    // a new server with nothing left to test
+    const Reply none = parseReply(R"({"error":true,"errorMsg":"No address","data":{"reason":"no_target"}})", 400, Network::Ed2k);
+    QVERIFY(!none.ok);
+    QCOMPARE(none.failure, Failure::NoBoundAddress);
 }
 
 QTEST_GUILESS_MAIN(tst_PortTestApi)

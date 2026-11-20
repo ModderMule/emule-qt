@@ -1497,6 +1497,10 @@ public:
     /// Left out: kept out also inside incoming.
     [[nodiscard]] int btShareMode() const;
     void setBtShareMode(int val);
+    /// Deleting the last wanted file of a torrent in Shared Files removes the torrent
+    /// (its other files stay). YAML only (bittorrent.removeEmptiedTorrent). Default on.
+    [[nodiscard]] bool btRemoveEmptiedTorrent() const;
+    void setBtRemoveEmptiedTorrent(bool val);
 
     /// A meta search file row (one file of a torrent) downloads only that file; the
     /// others start skipped. Off: the whole torrent. Default on.

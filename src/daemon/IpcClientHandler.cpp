@@ -3780,6 +3780,8 @@ void IpcClientHandler::handleDeleteSharedFile(const IpcMessage& msg)
         return;
     }
     theApp.sharedFileList->removeFile(file);
+    // a torrent's file: skipped there, else a recheck or restart downloads it again
+    BtBridge::fileDeleted(path);
     // Its finished download leaves the transfer list too (MFC ClearCompleted)
     if (theApp.downloadQueue) {
         PartFile* pf = theApp.downloadQueue->fileByID(hashBuf);

@@ -42,6 +42,8 @@ public:
 signals:
     /// The fill of @p itemId ran: @p bytes written from disk.
     void filled(const QString& itemId, qint64 bytes);
+    /// The articles under file @p fileIndex's filled ranges taken as done (not fetched).
+    void accepted(const QString& itemId, int fileIndex, int articles);
 
 private:
     struct Item {
@@ -49,6 +51,9 @@ private:
         bool running = false;
         bool done = false;
         quint32 lookup = 0;
+        /// file index → ranges written, not yet given to the queue: a volume without an
+        /// article of its own has no part size (the one borrowed may be a small .par2's)
+        std::map<int, std::vector<std::pair<qint64, qint64>>> pending;
     };
 
     void onItemAdded(const QString& id);
@@ -56,6 +61,8 @@ private:
     void onItemRemoved(const QString& id);
     /// The index .par2 is on disk: the fill on a worker.
     void tryFill(const QString& id);
+    /// The pending ranges of files with a part size of their own, to the queue.
+    void acceptPending(const QString& id);
 
     ed3k::Ed3kArchiveContents& m_contents;
     usenet::UsenetQueue& m_queue;

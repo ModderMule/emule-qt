@@ -140,6 +140,27 @@ private slots:
         emit edit->customContextMenuRequested(QPoint(5, 5));
         QVERIFY(theUiState.searchHistory().isEmpty());
     }
+
+    /// Right-click on the empty result list before any search must not crash
+    void resultMenuWithoutSearch()
+    {
+        for (const bool ext : {false, true}) {
+            thePrefs.setShowExtControls(ext);
+            SearchPanel panel;
+            panel.show();
+            QVERIFY(QTest::qWaitForWindowActive(&panel));
+            for (auto* view : panel.findChildren<QAbstractItemView*>()) {
+                if (view->contextMenuPolicy() != Qt::CustomContextMenu)
+                    continue;
+                QTimer::singleShot(50, [] {
+                    if (auto* menu = QApplication::activePopupWidget())
+                        menu->close();
+                });
+                emit view->customContextMenuRequested(QPoint(5, 5));
+                QTest::qWait(100);
+            }
+        }
+    }
 };
 
 QTEST_MAIN(tst_SearchHistory)

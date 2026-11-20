@@ -437,8 +437,12 @@ void insertDownloadSplit(QCborMap& stats)
     stats.insert(QStringLiteral("uploadLineKb"), split.uploadLineKb);
     stats.insert(QStringLiteral("ed2kUploadBudgetKb"), split.ed2kUpKb);
     stats.insert(QStringLiteral("btUpLimitKb"), split.btUpKb);
-    // ed3k's received bytes (B/s → KB/s); its sent bytes are in rateUp already (noteForeignBytesSent)
-    stats.insert(QStringLiteral("rateDownEd3k"), static_cast<double>(split.ed3kDownRate) / 1024.0);
+    // ed3k's received file bytes (B/s → KB/s); its sent bytes are in rateUp already (noteForeignBytesSent)
+    // was: split.ed3kDownRate (wire): Kad, routing and upload acks showed as a download
+    stats.insert(QStringLiteral("rateDownEd3k"), static_cast<double>(split.ed3kFileDownRate) / 1024.0);
+    // the rest of the wire is overhead (added to downOverheadRate by the GUI)
+    stats.insert(QStringLiteral("rateDownEd3kOverhead"),
+                 static_cast<double>(std::max<qint64>(0, split.ed3kDownRate - split.ed3kFileDownRate)) / 1024.0);
     // Added to rateDown by the GUI's status bar and tray.
     const auto* q = queue();
     stats.insert(QStringLiteral("rateDownUsenet"),

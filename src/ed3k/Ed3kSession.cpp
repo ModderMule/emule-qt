@@ -192,6 +192,8 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     cfg.forceOpen6 = settings.forceOpen;
     cfg.smallNetS = settings.smallNetS;
     cfg.storeMiB = settings.storeMiB;
+    // a named network is a test or rig of a few nodes: stores need 1 contact, not 10
+    cfg.storeMinContacts = settings.storeMinContacts ? settings.storeMinContacts : (settings.network.isEmpty() ? 0u : 1u);
     // was: ToDo: one pref per optional extension (cfg.extOff), socket-modes.md "extensions"
     // (done: pref ed3k.extOff → settings.extOff)
     cfg.extOff = settings.extOff;
@@ -448,6 +450,8 @@ Ed3kTraffic Ed3kSession::traffic() const
     if (const auto s = m_engine->stats(now())) {
         t.sent += s->wire_sent;
         t.recv += s->wire_recv;
+        t.sentFile += s->sent_file;
+        t.recvFile += s->recv_file;
     }
     return t;
 }

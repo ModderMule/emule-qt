@@ -15,6 +15,8 @@
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
+#include <algorithm>
+
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -545,18 +547,28 @@ void UploadBandwidthThrottler::runInternal()
                 if (timeSinceLastLoop >= sleepTime + SEC2MS(2))
                     timeSinceLastLoop = sleepTime + SEC2MS(2);
 
-                const int64 accrued = static_cast<int64>(allowedDataRate) * static_cast<int64>(timeSinceLastLoop);
-                // another engine's bytes on this line first; at most 2 s of the line owed
+                const int64 dt = static_cast<int64>(timeSinceLastLoop);
+                const int64 accrued = static_cast<int64>(allowedDataRate) * dt;
+                // another engine's bytes on this line; at most 2 s of the line owed
                 foreignDebt += static_cast<int64>(m_foreignBytesForBudget.exchange(0, std::memory_order_relaxed)) * 1000;
                 foreignDebt = std::min<int64>(foreignDebt, static_cast<int64>(allowedDataRate) * 2000);
-                const int64 paid = std::min(foreignDebt, accrued);
+                // was: paid = min(debt, accrued): each 500 ms batch took the whole line until
+                // paid, eD2K's slots got nothing, then a burst
+                // eD2K's floor stays out of it; the rest pays a spread share of the debt
+                const int64 floorRate = std::min<int64>(m_ownFloor.load(std::memory_order_relaxed),
+                                                        static_cast<int64>(allowedDataRate) / 2);
+                const int64 payable = std::max<int64>(0, accrued - floorRate * dt);
+                const int64 spread = dt >= kForeignDebtSpreadMs
+                    ? foreignDebt
+                    : std::max<int64>(foreignDebt * dt / kForeignDebtSpreadMs, std::min<int64>(foreignDebt, 1000));
+                const int64 paid = std::min({foreignDebt, payable, spread});
                 foreignDebt -= paid;
                 realBytesToSpend += accrued - paid;
                 bytesToSpend = realBytesToSpend / 1000;
             }
         } else {
             realBytesToSpend = 0;
-            foreignDebt = 0;
+            foreignDebt = 0;   // unlimited: nothing to pay off
             m_foreignBytesForBudget.store(0, std::memory_order_relaxed);
             bytesToSpend = INT32_MAX;
         }

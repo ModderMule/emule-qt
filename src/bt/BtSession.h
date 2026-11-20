@@ -94,6 +94,10 @@ public:
     bool pause(const QString& id);
     bool resume(const QString& id);
     bool recheck(const QString& id);
+    /// File @p path of a torrent was deleted outside libtorrent (Shared Files): skipped in
+    /// every torrent holding it, then rechecked so its pieces are neither served nor fetched
+    /// again. Call after the delete. Returns the torrents left with no wanted file.
+    QStringList skipDeletedFile(const QString& path);
     bool reannounce(const QString& id);
     /// Moves the torrent's data to @p dir (#187); an errored torrent (disk full) restarts
     /// there. Async: storage_moved(_failed)_alert finishes it. false: unknown id.

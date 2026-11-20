@@ -130,6 +130,9 @@ public:
             return tr("The test server cannot test this port yet. Please try again later.");
         case Failure::Ed2kNotListening:
             return tr("eD2K is not listening on a TCP port, so it cannot be tested.");
+        case Failure::NoBoundAddress:
+            return tr("The network interface selected in Options has no public address known yet, so nothing "
+                      "could be tested over it. Connect to the network first, then test again.");
         case Failure::UnknownNetwork:
         default:
             return tr("The core did not run the test.") + (detail.isEmpty() ? QString() : QStringLiteral("\n\n") + detail);
@@ -137,13 +140,14 @@ public:
     }
 
     /// Whether a target has every port its network needs: TCP and UDP for BitTorrent and eD2K
-    /// (eD2K TCP only with UDP off), UDP for ed3k.
+    /// (eD2K TCP only with UDP off), UDP for ed3k. A port counts as open when the website
+    /// reached it or peers prove it open at the tested address (#216).
     [[nodiscard]] static bool targetReachable(Network network, const QCborMap& target)
     {
-        const bool udp = target.value(QStringLiteral("udp")).toMap().value(QStringLiteral("open")).toBool();
+        const bool udp = portOpen(target, QStringLiteral("udp"));
         if (network == Network::Ed3k)
             return udp;
-        const bool tcp = target.value(QStringLiteral("tcp")).toMap().value(QStringLiteral("open")).toBool();
+        const bool tcp = portOpen(target, QStringLiteral("tcp"));
         if (network == Network::Ed2k && !target.contains(QStringLiteral("udp")))
             return tcp;
         return udp && tcp;
@@ -158,20 +162,31 @@ public:
 
         bool all = !targets.isEmpty();
         bool any = false;
+        bool lost = false;   // a test packet did not arrive at a port peers prove open
+        bool missed = false; // ed3k: a test packet did not arrive, nothing proves the port open
         QStringList details;
         for (const QCborValue& v : targets) {
             const QCborMap t = v.toMap();
             const bool ok = targetReachable(network, t);
             all = all && ok;
             any = any || ok;
+            for (const QString& port : {QStringLiteral("tcp"), QStringLiteral("udp")}) {
+                const QCborMap e = t.value(port).toMap();
+                if (!t.contains(port) || e.value(QStringLiteral("open")).toBool())
+                    continue;
+                lost = lost || proven(t, port);
+                missed = missed
+                         || (network == Network::Ed3k && !proven(t, port)
+                             && e.value(QStringLiteral("reason")).toString() == PortTestApi::kReasonFiltered);
+            }
             const QString family = t.value(QStringLiteral("family")).toInteger() == 6 ? QStringLiteral("IPv6") : QStringLiteral("IPv4");
             QString line = QStringLiteral("%1 (%2)").arg(family, t.value(QStringLiteral("ip")).toString());
             if (network != Network::Ed3k && t.contains(QStringLiteral("tcp")))
-                line += QLatin1Char('\n') + tr("TCP: %1").arg(reasonText(t.value(QStringLiteral("tcp")).toMap()));
+                line += QLatin1Char('\n') + tr("TCP: %1").arg(portText(network, t, QStringLiteral("tcp")));
             if (t.contains(QStringLiteral("udp")))
-                line += QLatin1Char('\n') + tr("UDP: %1").arg(reasonText(t.value(QStringLiteral("udp")).toMap()));
+                line += QLatin1Char('\n') + tr("UDP: %1").arg(portText(network, t, QStringLiteral("udp")));
             if (!ok)
-                line += peerNote(network, t);
+                line += otherRouteNote(t);
             details << line;
         }
         if (allReachable)
@@ -208,6 +223,14 @@ public:
             else
                 head += tr("UDP is not reachable. The node then finds fewer peers and relies on hole punching.");
         }
+        // say plainly whether test packets got lost, and what that means
+        if (lost)
+            head += QLatin1Char(' ')
+                    + tr("Some test packets from the website did not arrive, but peers prove the port open: "
+                         "the packets were lost on the way (often dropped by a VPN or provider), the port is not closed.");
+        else if (missed)
+            head += QLatin1Char(' ') + tr("The website's test packets did not arrive.");
+        head += boundNote(result);
         return head + QStringLiteral("\n\n") + details.join(QStringLiteral("\n\n"));
     }
 
@@ -267,28 +290,80 @@ public:
     }
 
 private:
-    /// A failed target the core's own view contradicts (#216): peers see another address
-    /// (VPN, proxy) or already reach this one. Empty when nothing is known or nothing contradicts.
-    [[nodiscard]] static QString peerNote(Network network, const QCborMap& target)
+    /// Peers prove @p port ("tcp"/"udp") of @p target open at the tested address.
+    [[nodiscard]] static bool proven(const QCborMap& target, const QString& port)
+    {
+        return target.value(QStringLiteral("peerSame")).toBool() && target.contains(proofKey(port));
+    }
+
+    [[nodiscard]] static QString proofKey(const QString& port)
+    {
+        return port == QLatin1String("tcp") ? QStringLiteral("peerTcp") : QStringLiteral("peerUdp");
+    }
+
+    [[nodiscard]] static bool portOpen(const QCborMap& target, const QString& port)
+    {
+        return target.value(port).toMap().value(QStringLiteral("open")).toBool() || proven(target, port);
+    }
+
+    /// Who proves a port open, by the proof's source: ed3k nodes, eD2K clients (Kad) or the server.
+    [[nodiscard]] static QString proofText(const QString& source, const QString& address)
+    {
+        if (source == PortTestApi::kProofEd3k)
+            return tr("other ed3k nodes reach this node at %1").arg(address);
+        if (source == PortTestApi::kProofKad)
+            return tr("eD2K clients reach this UDP port at %1 (Kad check passed)").arg(address);
+        return tr("the eD2K server gave a High ID at %1").arg(address);
+    }
+
+    /// One port of a target in words: the website's result, or the peers' proof when the
+    /// website did not get through.
+    [[nodiscard]] static QString portText(Network network, const QCborMap& target, const QString& port)
+    {
+        const QCborMap entry = target.value(port).toMap();
+        const bool filtered = entry.value(QStringLiteral("reason")).toString() == PortTestApi::kReasonFiltered;
+        const int packets = int(entry.value(QStringLiteral("packets")).toInteger());
+        if (!entry.value(QStringLiteral("open")).toBool() && proven(target, port)) {
+            QString why;
+            if (!filtered)
+                why = tr("The website's test failed (%1).").arg(reasonText(entry));
+            else if (port == QLatin1String("tcp"))
+                why = tr("The website's test connection got no answer: it was dropped on the way.");
+            else if (packets > 0)
+                why = tr("None of the %n test packet(s) from the website arrived: lost on the way.", nullptr, packets);
+            else
+                why = tr("The website's test packet did not arrive: lost on the way.");
+            const QString proof = proofText(target.value(proofKey(port)).toString(),
+                                            target.value(QStringLiteral("peerAddress")).toString());
+            return tr("reachable, %1.").arg(proof) + QLatin1Char(' ') + why;
+        }
+        if (network == Network::Ed3k && filtered && packets > 0)
+            return tr("not reachable: none of the %n test packet(s) arrived (firewall or missing port forwarding)", nullptr, packets);
+        return reasonText(entry);
+    }
+
+    /// A bound interface of one family (#246): the other family was left out on purpose.
+    [[nodiscard]] static QString boundNote(const QCborMap& result)
+    {
+        const qint64 families = result.value(QStringLiteral("families")).toInteger();
+        if (families != PortTestApi::kSeenIPv4 && families != PortTestApi::kSeenIPv6)
+            return {};
+        const QString name = result.value(QStringLiteral("bindInterface")).toString();
+        return QLatin1Char(' ')
+               + (families == PortTestApi::kSeenIPv4
+                      ? tr("Only IPv4 was tested: the network interface %1 selected in Options has no IPv6.").arg(name)
+                      : tr("Only IPv6 was tested: the network interface %1 selected in Options has no IPv4.").arg(name));
+    }
+
+    /// A failed target peers see at another address (#216): the test likely took another route.
+    [[nodiscard]] static QString otherRouteNote(const QCborMap& target)
     {
         const QString peer = target.value(QStringLiteral("peerAddress")).toString();
-        if (peer.isEmpty())
-            return {};
-        if (!target.value(QStringLiteral("peerSame")).toBool())
-            return QLatin1Char('\n')
-                   + tr("Peers see this node at %1, not at the tested address, so this result does not apply to it. "
-                        "The test request likely took another route (VPN, proxy or a second internet line).").arg(peer);
-        if (!target.value(QStringLiteral("peerOpen")).toBool())
-            return {};
-        // eD2K: High ID proves TCP only
-        const QString port = network == Network::Ed3k ? QStringLiteral("udp") : QStringLiteral("tcp");
-        if (target.value(port).toMap().value(QStringLiteral("open")).toBool())
+        if (peer.isEmpty() || target.value(QStringLiteral("peerSame")).toBool())
             return {};
         return QLatin1Char('\n')
-               + (network == Network::Ed3k
-                      ? tr("ed3k peers already reach this node at %1, so the port is open. The test packet was likely lost on the way.")
-                      : tr("The server gave a High ID at this address, so the TCP port is open. The test connection was likely lost on the way."))
-                     .arg(peer);
+               + tr("Peers see this node at %1, not at the tested address, so this result does not apply to it. "
+                    "The test request likely took another route (VPN, proxy or a second internet line).").arg(peer);
     }
 };
 

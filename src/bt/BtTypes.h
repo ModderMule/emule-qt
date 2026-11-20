@@ -209,6 +209,8 @@ struct BtPeerRow {
     /// status letters as in Transmission: T O D d U u K ? E h H X I, and P = over I2P
     QString flags;
     bool i2p = false;
+    /// pieces the peer has, one bit per piece, LSB first; empty: no bitfield yet
+    QByteArray have;
 };
 
 struct BtTrackerRow {

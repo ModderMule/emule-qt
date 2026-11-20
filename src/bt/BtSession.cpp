@@ -483,6 +483,8 @@ struct BtSession::Impl {
         QElapsedTimer since;
     };
     std::map<QString, PendingPriorities> pendingPriorities;
+    /// torrents a file was deleted from (skipDeletedFile): rechecked together after a pause
+    QSet<QString> recheckDue;
     void prioritizeFiles(const lt::torrent_handle& h, const QString& id, std::vector<lt::download_priority_t> prio)
     {
         h.prioritize_files(prio);
@@ -706,6 +708,12 @@ struct BtSession::Impl {
             r.creator = it->second.creator;
             r.createdAt = it->second.createdAt;
         }
+        static const std::vector<lt::download_priority_t> kAllWanted;
+        const auto pending = pendingPriorities.find(r.id);
+        const auto dt = details.find(r.id);
+        BtTorrentView::exactBytes(r, st, pending != pendingPriorities.end() ? pending->second.priorities
+                                         : dt != details.end()            ? dt->second.priorities
+                                                                          : kAllWanted);
         const qint64 base = sessionUpBase.try_emplace(r.id, r.uploaded).first->second;
         r.sessionUploaded = std::max<qint64>(0, r.uploaded - base);
         return r;
@@ -1204,6 +1212,78 @@ bool BtSession::recheck(const QString& id)
         return false;
     h.force_recheck();
     return true;
+}
+
+QStringList BtSession::skipDeletedFile(const QString& path)
+{
+    QStringList emptied;
+    if (!d->ses)
+        return emptied;
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+    constexpr Qt::CaseSensitivity kPathCase = Qt::CaseInsensitive;
+#else
+    constexpr Qt::CaseSensitivity kPathCase = Qt::CaseSensitive;
+#endif
+    const QString target = QDir::cleanPath(QDir::fromNativeSeparators(path));
+    for (const auto& [id, h] : d->handles) {
+        const auto row = d->rows.find(id);
+        if (!h.is_valid() || row == d->rows.end())
+            continue;
+        const QString savePath = QDir::cleanPath(QDir::fromNativeSeparators(row->second.savePath));
+        if (savePath.isEmpty() || !target.startsWith(savePath + u'/', kPathCase))
+            continue;
+        const auto ti = d->torrentFile(id);
+        if (!ti || !ti->is_valid())
+            continue;
+        const QString relative = target.mid(savePath.size() + 1);
+        const lt::file_storage& fs = ti->layout();
+        std::optional<lt::file_index_t> hit;
+        for (const lt::file_index_t f : fs.file_range()) {
+            if (!fs.pad_file_at(f)
+                && QDir::fromNativeSeparators(QString::fromStdString(fs.file_path(f))).compare(relative, kPathCase) == 0) {
+                hit = f;
+                break;
+            }
+        }
+        if (!hit)
+            continue;
+
+        // a change still on its way counts: libtorrent updates its list only once the disk job is done
+        const auto pending = d->pendingPriorities.find(id);
+        std::vector<lt::download_priority_t> prio =
+            pending != d->pendingPriorities.end() ? pending->second.priorities : h.get_file_priorities();
+        prio.resize(static_cast<std::size_t>(fs.num_files()), lt::default_priority);
+        prio[static_cast<std::size_t>(static_cast<int>(*hit))] = lt::dont_download;
+        d->prioritizeFiles(h, id, prio);
+        logInfo(QStringLiteral("BitTorrent: \"%1\" deleted, skipped in %2").arg(relative, row->second.name));
+
+        bool wantsMore = false;
+        for (const lt::file_index_t f : fs.file_range()) {
+            if (!fs.pad_file_at(f) && fs.file_size(f) > 0
+                && prio[static_cast<std::size_t>(static_cast<int>(f))] != lt::dont_download) {
+                wantsMore = true;
+                break;
+            }
+        }
+        if (!wantsMore)
+            emptied << id;
+
+        // a skipped file's pieces stay "have" (served, and a read of the gone file errors
+        // the torrent) until a recheck drops them; skipped, they are never fetched again
+        d->recheckDue.insert(id);
+        if (d->recheckDue.size() == 1) {
+            constexpr int kRecheckDelayMs = 2000;   // a batch delete: one recheck per torrent
+            QTimer::singleShot(kRecheckDelayMs, this, [this] {
+                for (const QString& due : std::exchange(d->recheckDue, {})) {
+                    if (const auto dh = d->handle(due); dh.is_valid()) {
+                        dh.clear_error();
+                        dh.force_recheck();
+                    }
+                }
+            });
+        }
+    }
+    return emptied;
 }
 
 bool BtSession::moveStorage(const QString& id, const QString& dir)
@@ -2424,8 +2504,8 @@ void BtSession::Impl::enforceSeedLimits(const lt::torrent_status& st, const BtTo
         if (it->second.seedTimeMode != BtLimitMode::Global)
             seedMinutes = it->second.seedTimeMode == BtLimitMode::Custom ? it->second.seedTimeMinutes : 0;
     }
-    // same ratio as the Torrents list shows (#218)
-    const double ratio = shareRatio(st.all_time_upload, st.all_time_download, st.total_done);
+    // same ratio as the Torrents list shows (#218), pad bytes left out
+    const double ratio = shareRatio(row.uploaded, row.downloaded, row.haveBytes);
     const bool ratioReached = ratioPercent > 0 && ratio != kShareRatioNone
                               && (ratio == kShareRatioInfinite || ratio * 100.0 >= ratioPercent);
     const bool timeReached = seedMinutes > 0 && st.seeding_duration.count() >= qint64(seedMinutes) * 60;

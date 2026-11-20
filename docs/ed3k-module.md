@@ -1455,4 +1455,12 @@ A download of a root this node already has on disk is read from there first, in 
   `Par2LocalFill::fill` writes them into the part files, `acceptExternalRange` drops their
   articles. Headers come from Usenet or recovery blocks; verify/repair as always. A
   compressed archive finds nothing.
+  - The index is read at its sealed `tempPath` (`finalPath` is set only on publish).
+  - Ranges wait until the volume has an article of its own: without one the queue borrows
+    the part size of another file (a lone small .par2's), and the wrong articles would be
+    marked done.
+  - It pays off only when the index comes before the payload: the queue hoists it while
+    "unrepairable: pause/fail" is set (the default) or names look obfuscated; with "keep
+    going" the index comes last and the fill saves nothing.
+  - Test: tst_ArchiveFill (fake NNTP server, stored volume, entry elsewhere on disk).
 

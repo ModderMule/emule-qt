@@ -436,12 +436,13 @@ void sampleCounters()
     }
     if (const auto* bw = BandwidthCoordinator::instance()) {
         const auto snap = bw->snapshot();
-        if (snap.ed3kDownRate > 0)
+        // file rates: the wire never stops while the node runs
+        if (snap.ed3kFileDownRate > 0)
             c.downloadTimeMs += 1000;
-        if (snap.ed3kUpRate > 0)
+        if (snap.ed3kFileUpRate > 0)
             c.uploadTimeMs += 1000;
-        raiseCounter(c.maxDownRate, uint64(std::max<qint64>(snap.ed3kDownRate, 0)));
-        raiseCounter(c.maxUpRate, uint64(std::max<qint64>(snap.ed3kUpRate, 0)));
+        raiseCounter(c.maxDownRate, uint64(std::max<qint64>(snap.ed3kFileDownRate, 0)));
+        raiseCounter(c.maxUpRate, uint64(std::max<qint64>(snap.ed3kFileUpRate, 0)));
     }
     raiseCounter(c.peakConnections, st.stats.connections);
     raiseCounter(c.peakContacts, st.contacts);
