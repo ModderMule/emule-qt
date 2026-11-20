@@ -277,13 +277,17 @@ void tst_TorrentListModel::filesAsChildren()
 void tst_TorrentListModel::folderTreeAddedRoots()
 {
     using eMule::FolderTreeModel;
-    // local: drives listed in the constructor. No model tester: it would fetch the real disk
+    // local: drives read off the GUI thread. No model tester: it would fetch the real disk
     FolderTreeModel model(nullptr, true);
-    const int drives = model.rowCount();
+    QSignalSpy loaded(&model, &FolderTreeModel::rootsLoaded);
+    QCOMPARE(model.rowCount(), 0);   // nothing read on the GUI thread
+    model.addRoot(QStringLiteral("//nas/zeta"), QStringLiteral("\\\\nas\\zeta"));   // held until the drives
+    QCOMPARE(model.rowCount(), 0);
+    QTRY_COMPARE(loaded.count(), 1);
+    const int drives = model.rowCount() - 1;
     QVERIFY(drives > 0);
 
     QSignalSpy checks(&model, &FolderTreeModel::checksChanged);
-    model.addRoot(QStringLiteral("//nas/zeta"), QStringLiteral("\\\\nas\\zeta"));
     model.addRoot(QStringLiteral("//nas/alpha"), QStringLiteral("\\\\nas\\alpha"));
     model.addRoot(QStringLiteral("//NAS/Alpha"), QStringLiteral("dup"));   // same share
     QCOMPARE(model.rowCount(), drives + 2);

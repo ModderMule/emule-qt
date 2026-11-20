@@ -23,6 +23,7 @@ private slots:
     void altSort_sessionFiguresAndKadFirst();
     void sharedDirState_matchesWholeFoldersOnly();
     void sharedDirState_unshareWithSubdirs();
+    void sharedDirState_keepsUncRoots();
     void sharedDirState_nestsUnderNearestSharedParent();
     void sharedDirState_collectsSubdirectoriesFromDisk();
     void sharedDirState_followsSymlinksOnce();
@@ -449,6 +450,22 @@ void tst_SharedFilesModel::sharedDirState_unshareWithSubdirs()
     QCOMPARE(withoutDir(dirs, QStringLiteral("/data/music/albums"), true),
              (QStringList{QStringLiteral("/data/music"), QStringLiteral("/data/musicvideos")}));
     QCOMPARE(withoutDir(dirs, QStringLiteral("/data/photos"), true), dirs);
+}
+
+// A Windows core's network shares, seen from a GUI on any host
+void tst_SharedFilesModel::sharedDirState_keepsUncRoots()
+{
+    using namespace SharedDirState;
+    QCOMPARE(cleanDir(QStringLiteral("//nas/share/")), QStringLiteral("//nas/share"));
+    QCOMPARE(cleanDir(QStringLiteral("\\\\nas\\share\\a\\..\\b")), QStringLiteral("//nas/share/b"));
+    QCOMPARE(cleanDir(QStringLiteral("/data//music/")), QStringLiteral("/data/music"));
+    QCOMPARE(dirKey(QStringLiteral("//NAS/Share/Music/")), QStringLiteral("//nas/share/music"));
+
+    const QStringList dirs{QStringLiteral("//nas/share/music")};
+    QVERIFY(isSharedDir(dirs, QStringLiteral("\\\\NAS\\share\\music\\")));
+    QVERIFY(!isSharedDir(dirs, QStringLiteral("/nas/share/music")));
+    QVERIFY(hasSharedSubdir(dirs, QStringLiteral("//nas/share")));
+    QVERIFY(!hasSharedSubdir(dirs, QStringLiteral("/nas")));
 }
 
 void tst_SharedFilesModel::sharedDirState_nestsUnderNearestSharedParent()

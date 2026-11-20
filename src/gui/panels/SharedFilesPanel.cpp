@@ -143,7 +143,7 @@ bool inIncomingTree(const QString& path)
 /// folder says where it lives, "Name  (parent)"; a drive root is its path.
 QString folderLabel(const QString& dir, bool topFolder)
 {
-    const QString clean = QDir::cleanPath(dir);
+    const QString clean = SharedDirState::cleanDir(dir);
     const QFileInfo info(clean);
     if (info.fileName().isEmpty())
         return QDir::toNativeSeparators(clean);
@@ -2672,7 +2672,7 @@ void SharedFilesPanel::rebuildSharedDirsNode()
         const QString parentDir = parents.value(dir);
         QTreeWidgetItem* parentItem = items.value(parentDir, m_sharedDirsItem);
 
-        const QString clean = QDir::cleanPath(dir);
+        const QString clean = SharedDirState::cleanDir(dir);
         auto* item = new QTreeWidgetItem(parentItem, {folderLabel(dir, parentItem == m_sharedDirsItem)});
         item->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::SpecificDir));
         item->setData(0, kRolePath, dir);
