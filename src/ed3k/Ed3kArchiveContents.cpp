@@ -793,8 +793,23 @@ void Ed3kArchiveContents::finish(quint32 id, bool timedOut)
         for (auto& f : l.found)
             if (f.state == State::Pending)
                 f.state = State::TimedOut;
+    markLocal(l.found);
     if (l.done)
         l.done(l.found);
+}
+
+QString Ed3kArchiveContents::localPathOf(const ffi::Root& root, std::uint64_t size) const
+{
+    return localCopyPath(m_session, root, size);
+}
+
+void Ed3kArchiveContents::markLocal(std::vector<Found>& found) const
+{
+    for (auto& f : found) {
+        f.localPaths.clear();
+        for (const auto& e : f.entries)
+            f.localPaths.push_back(localPathOf(e.root, e.size));
+    }
 }
 
 } // namespace eMule::ed3k

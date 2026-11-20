@@ -54,6 +54,10 @@ public:
     [[nodiscard]] QLabel* statusLabel() const { return m_status; }
     [[nodiscard]] QPushButton* downloadEntriesButton() const { return m_downloadEntries; }
     [[nodiscard]] QPushButton* downloadArchiveButton() const { return m_downloadArchive; }
+    [[nodiscard]] QPushButton* takeFromDiskButton() const { return m_takeFromDisk; }
+    /// #224: the archives whose every entry is on disk here, as TakeArchiveFromDisk takes them:
+    /// [{name, parts, entries: [{root, size, path}]}].
+    [[nodiscard]] QCborArray localArchives() const;
     /// A file name that opens an archive (its first volume, or a lone archive).
     [[nodiscard]] static bool opensArchive(const QString& path);
 
@@ -64,6 +68,8 @@ signals:
     void nestedLookupRequested(const QString& name, const QString& rootHex);
     void downloadEntriesRequested(const QCborArray& entries);
     void downloadArchiveRequested(const QHash<QString, QStringList>& entries, const QString& password);
+    /// #224: "Take From Disk" of a queued download: localArchives().
+    void takeFromDiskRequested(const QCborArray& archives);
 
 private:
     void lookUp();
@@ -77,6 +83,7 @@ private:
     QPushButton* m_again = nullptr;
     QPushButton* m_downloadEntries = nullptr;
     QPushButton* m_downloadArchive = nullptr;
+    QPushButton* m_takeFromDisk = nullptr;
     bool m_requested = false;
     bool m_queued = false;
     bool m_editable = true;

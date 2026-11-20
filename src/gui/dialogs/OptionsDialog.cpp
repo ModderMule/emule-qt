@@ -277,6 +277,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_showActiveDownloadsBoldCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showRatesInTitleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showStatusBarFreeSpaceCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_showStatusBarSessionTotalsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showCatTabInfosCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoRemoveFinishedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showTransToolbarCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1325,6 +1326,12 @@ QWidget* OptionsDialog::createDisplayPage()
         tr("Free space of the save folder of the current window: the torrent folder in Torrents, "
            "the Usenet and hoster targets in theirs, the incoming folder everywhere else."));
     layout->addWidget(m_showStatusBarFreeSpaceCheck);
+
+    m_showStatusBarSessionTotalsCheck = new QCheckBox(tr("Show session transfer totals in status bar"), page);
+    m_showStatusBarSessionTotalsCheck->setToolTip(
+        tr("Data downloaded and uploaded since the core started, all networks together. "
+           "The tooltip splits it by network."));
+    layout->addWidget(m_showStatusBarSessionTotalsCheck);
 
     m_showCatTabInfosCheck = new QCheckBox(tr("Show download info on category tabs"), page);
     layout->addWidget(m_showCatTabInfosCheck);
@@ -7653,6 +7660,7 @@ void OptionsDialog::loadSettings()
     m_showActiveDownloadsBoldCheck->setChecked(thePrefs.showActiveDownloadsBold());
     m_showRatesInTitleCheck->setChecked(thePrefs.showRatesInTitle());
     m_showStatusBarFreeSpaceCheck->setChecked(thePrefs.showStatusBarFreeSpace());
+    m_showStatusBarSessionTotalsCheck->setChecked(thePrefs.showStatusBarSessionTotals());
     m_showCatTabInfosCheck->setChecked(thePrefs.showCatTabInfos());
     m_autoRemoveFinishedCheck->setChecked(thePrefs.autoRemoveFinishedDownloads());
     m_showTransToolbarCheck->setChecked(thePrefs.showTransToolbar());
@@ -7898,6 +7906,7 @@ void OptionsDialog::saveSettings()
     thePrefs.setShowActiveDownloadsBold(m_showActiveDownloadsBoldCheck->isChecked());
     thePrefs.setShowRatesInTitle(m_showRatesInTitleCheck->isChecked());
     thePrefs.setShowStatusBarFreeSpace(m_showStatusBarFreeSpaceCheck->isChecked());
+    thePrefs.setShowStatusBarSessionTotals(m_showStatusBarSessionTotalsCheck->isChecked());
     thePrefs.setShowCatTabInfos(m_showCatTabInfosCheck->isChecked());
     thePrefs.setAutoRemoveFinishedDownloads(m_autoRemoveFinishedCheck->isChecked());
     thePrefs.setShowTransToolbar(m_showTransToolbarCheck->isChecked());
@@ -8637,6 +8646,8 @@ void OptionsDialog::saveSettings()
         req.append(m_showRatesInTitleCheck->isChecked());
         req.append(QStringLiteral("showStatusBarFreeSpace"));
         req.append(m_showStatusBarFreeSpaceCheck->isChecked());
+        req.append(QStringLiteral("showStatusBarSessionTotals"));
+        req.append(m_showStatusBarSessionTotalsCheck->isChecked());
         req.append(QStringLiteral("showCatTabInfos"));
         req.append(m_showCatTabInfosCheck->isChecked());
         req.append(QStringLiteral("autoRemoveFinishedDownloads"));

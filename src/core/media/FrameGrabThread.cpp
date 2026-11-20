@@ -85,6 +85,8 @@ void FrameGrabWorker::grabFrames(eMule::FrameGrabRequest request)
     }
 
     qint64 durationMs = player.duration();
+    if (!request.positionsMs.empty())
+        durationMs = std::max<qint64>(durationMs, request.positionsMs.back() + 1);
     if (request.spanFraction > 0.0 && request.spanFraction < 1.0)
         durationMs = static_cast<qint64>(double(durationMs) * request.spanFraction);
     if (durationMs <= 0) {
@@ -103,7 +105,9 @@ void FrameGrabWorker::grabFrames(eMule::FrameGrabRequest request)
     std::vector<qint64> seekPositions;
     seekPositions.reserve(static_cast<size_t>(frameCount));
 
-    if (frameCount == 1) {
+    if (!request.positionsMs.empty()) {
+        seekPositions = request.positionsMs;
+    } else if (frameCount == 1) {
         seekPositions.push_back(startMs);
     } else {
         const qint64 interval = availableMs / frameCount;

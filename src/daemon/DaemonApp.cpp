@@ -102,6 +102,7 @@
 #include "Ed3kEd2kJoin.h"
 #include "Ed3kHosterJoin.h"
 #include "Ed3kArchiveContents.h"
+#include "ArchiveFill.h"
 #include "Ed3kHosterCatalog.h"
 #include "Ed3kLinkGrabber.h"
 #ifdef EMULE_HAVE_HOSTER_JD
@@ -851,6 +852,11 @@ bool DaemonApp::start()
         });
     });
     ArchiveContentsBridge::setTargets(m_archiveContents.get(), m_ed3kDownloads.get(), m_hosterJoin.get(), nullptr);
+    // #224: entries of a Usenet download's archives on disk here fill its stored volumes
+    if (auto* queue = m_usenetSession ? m_usenetSession->queue() : nullptr) {
+        m_archiveFill = std::make_unique<ArchiveFill>(*m_archiveContents, *queue);
+        m_archiveFill->setEnabled(thePrefs.ed3kArchiveContents());
+    }
     // hops.md §1 SHOULD: an ed3k download under the anonymous key of a file in the eD2K queue
     // or a hoster download: the user is told (once, Ed3kShared::tellExposed)
     if (m_ed3kShared)
@@ -1300,6 +1306,7 @@ void DaemonApp::stop()
     m_archiveCancel->store(true);
     setArchiveContentsHook({});
     ArchiveContentsBridge::setTargets(nullptr, nullptr, nullptr, nullptr);
+    m_archiveFill.reset();   // before the contents service it looks up with
     if (m_archiveContents)
         m_archiveContents->stop();
     m_archiveContents.reset();
@@ -1809,6 +1816,8 @@ void DaemonApp::applyEd3kConfig()
     if (const ProxySettings rp = thePrefs.ed3kReportProxy(); rp.useProxy)
         if (const QNetworkProxy p = toNetworkProxy(rp); p.type() != QNetworkProxy::NoProxy)
             hide.reportProxy = p;
+    // hops.md §1: anonymous downloads' HTTP sources only through that proxy
+    hide.anonHttp = thePrefs.ed3kAnonHttp();
     m_ed3kSession->setHideSettings(hide);
     // a server's index node: on is live; off keeps a connection made (no restart)
     m_ed3kSession->setAutoIndexNodes(thePrefs.ed3kAutoIndexNode());
@@ -1918,6 +1927,8 @@ void DaemonApp::applyEd3kConfig()
     // ed3kArchiveContents: off withdraws the published contents records
     if (m_archiveContents)
         m_archiveContents->setPublish(thePrefs.ed3kArchiveContents());
+    if (m_archiveFill)
+        m_archiveFill->setEnabled(thePrefs.ed3kArchiveContents());
     applyTorrentArchiveContents();
     // ed3kOwnSetsWatch: no restart
     if (m_ed3kOwnSets)

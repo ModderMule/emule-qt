@@ -66,6 +66,10 @@ protected:
     qint64 received(int file, qint64* contiguous = nullptr) const;
     /// @p file as far as it arrived, empty when nothing did.
     [[nodiscard]] QByteArray readReceived(int file) const;
+    /// Whether [@p offset, +@p length) of @p file arrived without a hole.
+    [[nodiscard]] bool covers(int file, qint64 offset, qint64 length) const;
+    /// [@p offset, +@p length) of @p file; empty unless covers().
+    [[nodiscard]] QByteArray readRange(int file, qint64 offset, qint64 length) const;
     /// Stop: connections back to the pool, nothing more runs. True the first time.
     bool stop();
     [[nodiscard]] bool isStopped() const { return m_done; }

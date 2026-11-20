@@ -382,10 +382,13 @@ void TorrentPanel::setupUi()
                               TorrentListModel::ColProgress, TorrentListModel::ColDownSpeed,
                               TorrentListModel::ColUpSpeed, TorrentListModel::ColSeeds,
                               TorrentListModel::ColPeers, TorrentListModel::ColRatio,
-                              TorrentListModel::ColAdded});
+                              TorrentListModel::ColAdded, TorrentListModel::ColUploaded,
+                              TorrentListModel::ColSessionUploaded, TorrentListModel::ColDownloaded});
     // After setModel(): a header without sections cannot take a restore
     view->bindColumns(QStringLiteral("torrentList"),
-                      {260, 80, 80, 150, 110, 80, 80, 75, 75, 50, 90, 120});
+                      {260, 80, 80, 150, 110, 80, 80, 75, 75, 50, 90, 120, 90, 90, 90},
+                      {TorrentListModel::ColUploaded, TorrentListModel::ColSessionUploaded,
+                       TorrentListModel::ColDownloaded});
 
     connect(m_model, &TorrentListModel::filesWanted, this, &TorrentPanel::fetchFiles);
     connect(m_view, &QTreeView::expanded, this, [this](const QModelIndex& index) {

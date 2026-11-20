@@ -25,6 +25,8 @@ enum Role {
     RoleSize,
     RoleKind,                  ///< Kind
     RoleFirst,                 ///< top: first volume's name, lower case
+    RoleLocal,                 ///< entry: a whole file of it on disk here; top: all entries are
+    RoleArchive,               ///< top: the archive's map of the answer (name, parts)
 };
 enum Kind { KindArchive = 0, KindEntry };
 
@@ -90,6 +92,12 @@ ArchiveContentsView::ArchiveContentsView(QWidget* parent, bool archiveFallback)
     m_downloadArchive->setVisible(archiveFallback);
     connect(m_downloadArchive, &QPushButton::clicked, this, [this] { emit downloadArchiveRequested(checkedByArchive(), password()); });
     buttons->addWidget(m_downloadArchive);
+    m_takeFromDisk = new QPushButton(tr("Take From Disk"), this);
+    m_takeFromDisk->setToolTip(tr("Every file of the archive is on disk here already: they are copied from there "
+                                  "and the archive is not downloaded."));
+    m_takeFromDisk->setVisible(false);
+    connect(m_takeFromDisk, &QPushButton::clicked, this, [this] { emit takeFromDiskRequested(localArchives()); });
+    buttons->addWidget(m_takeFromDisk);
     layout->addLayout(buttons);
     updateButtons();
 }
@@ -102,6 +110,7 @@ void ArchiveContentsView::setQueued(bool queued)
         m_downloadArchive->setToolTip(tr("When the download unpacks, only the checked files are extracted."));
         m_downloadArchive->setVisible(true);
     }
+    m_takeFromDisk->setVisible(queued);
     updateButtons();
 }
 
@@ -225,6 +234,28 @@ QCborArray ArchiveContentsView::checkedEntries() const
     return out;
 }
 
+QCborArray ArchiveContentsView::localArchives() const
+{
+    QCborArray out;
+    for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
+        QTreeWidgetItem* top = m_tree->topLevelItem(i);
+        if (!top->data(ColName, RoleLocal).toBool())
+            continue;
+        const QCborMap a = QCborValue::fromVariant(top->data(ColName, RoleArchive)).toMap();
+        QCborArray entries;
+        for (int k = 0; k < top->childCount(); ++k) {
+            const QTreeWidgetItem* c = top->child(k);
+            entries.append(QCborMap{{QStringLiteral("root"), c->data(ColName, RoleRoot).toString()},
+                                    {QStringLiteral("size"), c->data(ColName, RoleSize).toLongLong()},
+                                    {QStringLiteral("path"), c->data(ColName, RolePath).toString()}});
+        }
+        out.append(QCborMap{{QStringLiteral("name"), a.value(QStringLiteral("name"))},
+                            {QStringLiteral("parts"), a.value(QStringLiteral("parts"))},
+                            {QStringLiteral("entries"), entries}});
+    }
+    return out;
+}
+
 QHash<QString, QStringList> ArchiveContentsView::checkedByArchive() const
 {
     QHash<QString, QStringList> out;
@@ -304,11 +335,23 @@ void ArchiveContentsView::fillArchive(QTreeWidgetItem* top, const QCborMap& arch
         item->setData(ColName, RoleSize, size);
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(ColName, Qt::Checked);
+        // #224: the same file is here already (Shared Files, a download, a folder scan)
+        if (e.value(QStringLiteral("local")).toBool()) {
+            item->setData(ColName, RoleLocal, true);
+            item->setText(ColStatus, tr("On disk"));
+        }
         if (opensArchive(path))
             item->setToolTip(ColName, tr("An archive: right-click to look inside."));
     }
     top->setText(ColSize, formatByteSize(total));
     top->setCheckState(ColName, Qt::Checked);
+    if (!nested && archive.value(QStringLiteral("allLocal")).toBool()) {
+        top->setData(ColName, RoleLocal, true);
+        top->setData(ColName, RoleArchive, QCborMap{{QStringLiteral("name"), archive.value(QStringLiteral("name"))},
+                                                    {QStringLiteral("parts"), archive.value(QStringLiteral("parts"))}}
+                                               .toVariantMap());
+        top->setText(ColStatus, stateText(archive) + QStringLiteral(" · ") + tr("All on disk"));
+    }
 }
 
 void ArchiveContentsView::updateButtons()
@@ -319,6 +362,7 @@ void ArchiveContentsView::updateButtons()
     for (int i = 0; i < m_tree->topLevelItemCount() && !listed; ++i)
         listed = m_tree->topLevelItem(i)->childCount() > 0;
     m_downloadArchive->setEnabled(listed && any && (!m_queued || m_editable));
+    m_takeFromDisk->setEnabled(m_queued && m_editable && !localArchives().isEmpty());
 }
 
 void ArchiveContentsView::showMenu(const QPoint& pos)

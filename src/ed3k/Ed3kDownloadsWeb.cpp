@@ -120,12 +120,18 @@ void Ed3kDownloads::webAttach(Entry& e)
     auto* eng = m_session.engine();
     if (!eng || !downloading(e.info.root))
         return;
-    // hops.md §1: a GET from this address would tie it to the anonymous download
-    if (keyOf(e.info.root) == ffi::KeyKind::Anon) {
+    // hops.md §1: a GET from this address would tie it to the anonymous download; only
+    // through the anonymous proxy (Ed3kHttp routes it, never direct)
+    const bool anon = keyOf(e.info.root) == ffi::KeyKind::Anon;
+    if (anon && !anonWebAllowed()) {
         if (!std::exchange(e.web.loggedAnon, true))
             logInfo(QStringLiteral("\"%1\": HTTP sources not used under the anonymous key").arg(e.info.name));
         return;
     }
+    // its fetcher is the anonymous node's: none before that runs (webDrive tries again)
+    if (anon && !m_session.hide().hiding())
+        return;
+    e.web.loggedAnon = false;
     while (e.web.urlIndex < e.webUrls.size()) {
         const QString& url = e.webUrls.at(e.web.urlIndex);
         const QByteArray u8 = url.toUtf8();
@@ -136,7 +142,9 @@ void Ed3kDownloads::webAttach(Entry& e)
             const QByteArray h8 = e.webHashUrls.constFirst().toUtf8();
             src.hashes = std::string(h8.constData(), std::size_t(h8.size()));
         }
-        const auto id = eng->httpAddUserSource(m_session.now(), e.info.root, e.info.size, src);
+        // http-source.md §3.2: the engine sends its requests only through the anonymous proxy
+        const auto id = anon ? eng->httpAddAnonSource(m_session.now(), e.info.root, e.info.size, src)
+                             : eng->httpAddUserSource(m_session.now(), e.info.root, e.info.size, src);
         if (id) {
             e.web.source = *id;
             e.web.fetch.reset();
@@ -144,8 +152,9 @@ void Ed3kDownloads::webAttach(Entry& e)
             e.web.wholeNext = 0;
             e.web.failures = 0;
             e.web.retryAt = QDeadlineTimer();
-            logInfo(QStringLiteral("\"%1\": HTTP source %2%3")
-                        .arg(e.info.name, url, src.hashes.empty() ? QString() : QStringLiteral(" (with hash body)")));
+            logInfo(QStringLiteral("\"%1\": HTTP source %2%3%4")
+                        .arg(e.info.name, url, src.hashes.empty() ? QString() : QStringLiteral(" (with hash body)"),
+                             anon ? QStringLiteral(" through the anonymous proxy") : QString()));
             if (e.wholeAt >= kBlock)
                 webResume(e);
             QTimer::singleShot(0, this, [this] { webDrive(); });
@@ -171,14 +180,31 @@ void Ed3kDownloads::webDetach(Entry& e)
     e.web.loggedAnon = loggedAnon;
 }
 
+bool Ed3kDownloads::anonWebAllowed() const
+{
+    const Ed3kHideSettings& s = m_session.hide().settings();
+    return s.anonHttp && s.reportProxy.has_value();
+}
+
 void Ed3kDownloads::webDrive()
 {
     if (!m_started || !m_session.engine())
         return;
     bool fetched = false;
+    // the anonymous proxy or its switch went away: those sources stop (rows show them dropped)
+    const bool anonAllowed = anonWebAllowed();
+    if (anonAllowed != m_anonWebAllowed) {
+        m_anonWebAllowed = anonAllowed;
+        markChanged();
+    }
     for (auto& [root, e] : m_entries) {
         if (e.info.state != Ed3kDownloadInfo::State::Downloading || e.moving)
             continue;
+        if (e.web.source != 0 && !anonAllowed && keyOf(root) == ffi::KeyKind::Anon) {
+            logInfo(QStringLiteral("\"%1\": HTTP source dropped, no anonymous proxy").arg(e.info.name));
+            webDetach(e);
+            continue;
+        }
         if (e.web.source == 0) {
             webAttach(e);   // a dropped one: the next URL
             continue;
@@ -227,6 +253,7 @@ void Ed3kDownloads::webFetch(Entry& e)
         e.web.fetchAt = offset;
         return;
     }
+    logEd3kDebug([&]() -> QString { return QStringLiteral("\"%1\": HTTP fetch at %2: %3").arg(e.info.name).arg(offset).arg(errorName(fetch.error())); });
     switch (fetch.error()) {
     case ffi::Error::State:
         // no block values: the whole file in order from 0 (§3 "Verification")
@@ -320,6 +347,7 @@ void Ed3kDownloads::webUnverified(Entry& e, std::uint64_t offset, const ffi::Byt
     e.wholeAt = std::max(e.wholeAt, end);
     e.metDirty = true;   // how far it got: the next save
     e.received += std::uint64_t(data.size());
+    e.info.transferred += std::uint64_t(data.size());
     markChanged();
 }
 

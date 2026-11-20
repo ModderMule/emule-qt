@@ -1765,6 +1765,10 @@ public:
     /// the anonymous key while on; files keep their key. Default off; live. IPC/REST `ed3kHide`.
     [[nodiscard]] bool ed3kHide() const;
     void setEd3kHide(bool val);
+    /// HTTP sources (ws=/wh=) of anonymous downloads through the report proxy alone, never
+    /// direct (hops.md §1); without that proxy they are not used. Default off; live. `ed3kAnonHttp`.
+    [[nodiscard]] bool ed3kAnonHttp() const;
+    void setEd3kAnonHttp(bool val);
     /// Hops 0 to 3 for every use while hiding (0 = deniable, not hidden: hops.md §2.6).
     /// Default 1. `ed3kHops`. Forwarding for others is always on while hiding (§1, §5).
     [[nodiscard]] int ed3kHops() const;
@@ -2417,6 +2421,10 @@ public:
     /// Free space of the current window's save folder in the status bar (#165)
     [[nodiscard]] bool showStatusBarFreeSpace() const;
     void setShowStatusBarFreeSpace(bool val);
+
+    /// Session download/upload totals of all networks in the status bar (#223)
+    [[nodiscard]] bool showStatusBarSessionTotals() const;
+    void setShowStatusBarSessionTotals(bool val);
 
     [[nodiscard]] bool showCatTabInfos() const;
     void setShowCatTabInfos(bool val);

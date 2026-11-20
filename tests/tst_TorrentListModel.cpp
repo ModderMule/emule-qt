@@ -5,6 +5,7 @@
 #include "controls/SortableItems.h"
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentProgressDelegate.h"
+#include "utils/ShareRatio.h"
 
 #include <QAbstractItemModelTester>
 #include <QCborArray>
@@ -55,6 +56,10 @@ private slots:
     void upsertAndRemove();
     void setRowsMergesByKey();
     void sortsByValueNotText();
+    // #219: lifetime / session upload and download columns
+    void transferColumns();
+    // #218: qBittorrent's ratio rule, not infinite for files that were on disk
+    void shareRatioRule();
     void stateNames();
     void barRoles();
     void bucketColours();
@@ -160,6 +165,64 @@ void tst_TorrentListModel::sortsByValueNotText()
              QStringLiteral("Alpha,Bravo,Charlie"));
     QCOMPARE(sortedColumn(proxy, TorrentListModel::ColName, Qt::DescendingOrder),
              QStringLiteral("Charlie,Bravo,Alpha"));
+}
+
+void tst_TorrentListModel::transferColumns()
+{
+    QCborMap a = row(QStringLiteral("a"), QStringLiteral("Alpha"), 1000, 1.0, 5);
+    a.insert(QStringLiteral("uploaded"), qint64(9'000'000));
+    a.insert(QStringLiteral("sessionUploaded"), qint64(2'000));
+    a.insert(QStringLiteral("downloaded"), qint64(1'000));
+    QCborMap b = row(QStringLiteral("b"), QStringLiteral("Bravo"), 1000, 1.0, 5);
+    b.insert(QStringLiteral("uploaded"), qint64(500));
+    b.insert(QStringLiteral("sessionUploaded"), qint64(500));
+    b.insert(QStringLiteral("downloaded"), qint64(1'048'576));
+
+    const TorrentRow ra = torrentRowFromCbor(a);
+    QCOMPARE(ra.sessionUploaded, 2'000);
+    // absent = 0, not unknown
+    QCOMPARE(torrentRowFromCbor(row(QStringLiteral("c"), QStringLiteral("C"), 1, 1.0, 5)).sessionUploaded, 0);
+
+    TorrentListModel model;
+    model.setRows({ra, torrentRowFromCbor(b)});
+    QCOMPARE(model.headerData(TorrentListModel::ColUploaded, Qt::Horizontal).toString(),
+             QStringLiteral("Uploaded"));
+    QVERIFY(!model.index(0, TorrentListModel::ColSessionUploaded).data().toString().isEmpty());
+
+    SortValueProxy proxy;
+    proxy.setSourceModel(&model);
+    proxy.setSortRole(Qt::UserRole);
+    QCOMPARE(sortedColumn(proxy, TorrentListModel::ColUploaded, Qt::DescendingOrder),
+             QStringLiteral("Alpha,Bravo"));
+    QCOMPARE(sortedColumn(proxy, TorrentListModel::ColSessionUploaded, Qt::DescendingOrder),
+             QStringLiteral("Alpha,Bravo"));
+    QCOMPARE(sortedColumn(proxy, TorrentListModel::ColDownloaded, Qt::DescendingOrder),
+             QStringLiteral("Bravo,Alpha"));
+}
+
+void tst_TorrentListModel::shareRatioRule()
+{
+    constexpr qint64 GB = 1'000'000'000;
+    // seeded from files already on disk: base = what we have
+    QCOMPARE(shareRatio(GB / 2, 0, GB), 0.5);
+    // downloaded under 1 % of have: lost stats, base = have
+    QCOMPARE(shareRatio(GB, GB / 200, GB), 1.0);
+    // a real download
+    QCOMPARE(shareRatio(GB, GB / 2, GB), 2.0);
+    QCOMPARE(shareRatio(0, 0, 0), kShareRatioNone);
+    QCOMPARE(shareRatio(0, 0, GB), 0.0);
+    QCOMPARE(shareRatio(1, 0, 0), kShareRatioInfinite);
+    QCOMPARE(shareRatio(qint64(kMaxShareRatio) * 10, 10, 10), kShareRatioInfinite);
+
+    QCborMap m = row(QStringLiteral("a"), QStringLiteral("Alpha"), GB, 1.0, 5);
+    m.insert(QStringLiteral("uploaded"), GB / 2);
+    m.insert(QStringLiteral("downloaded"), qint64(0));
+    m.insert(QStringLiteral("haveBytes"), GB);
+    TorrentListModel model;
+    model.setRows({torrentRowFromCbor(m)});
+    const QString shown = model.index(0, TorrentListModel::ColRatio).data().toString();
+    QVERIFY2(shown != QStringLiteral("∞"), qPrintable(shown));
+    QCOMPARE(model.index(0, TorrentListModel::ColRatio).data(Qt::UserRole).toDouble(), 0.5);
 }
 
 void tst_TorrentListModel::stateNames()

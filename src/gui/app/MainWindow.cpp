@@ -86,6 +86,7 @@
 #include <QPushButton>
 #include <QTreeView>
 #include <QClipboard>
+#include <QCborArray>
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QRegularExpression>
@@ -664,6 +665,7 @@ void MainWindow::showOptionsDialog(int page)
     applyFeatureTabs();
     m_serverPanel->refreshUpdateUrl();   // Options "List..." edits the same URL
     updateFreeSpaceLabel();
+    updateSessionTotalsLabel();
 
     // The daemon reacts to logToDiskCore over IPC; logToDiskGui is ours to act on.
     LogWidget::applyLogFileSettings();
@@ -999,6 +1001,14 @@ void MainWindow::updateTransferRates(double upKBs, double downKBs,
     // from the same rates.
     updateTrayIcon();
     updateTrayToolTip();
+}
+
+void MainWindow::setSessionTotals(const QCborMap& totals)
+{
+    if (totals == m_sessionTotals)
+        return;
+    m_sessionTotals = totals;
+    updateSessionTotalsLabel();
 }
 
 void MainWindow::updateWindowTitle()
@@ -2441,6 +2451,11 @@ void MainWindow::setupStatusBar()
     sb->addPermanentWidget(m_statusFreeSpace);
     connect(m_pages, &QStackedWidget::currentChanged, this, &MainWindow::updateFreeSpaceLabel);
 
+    // Session totals of all networks (#223, as qBittorrent's status bar)
+    m_statusSessionTotals = new QLabel(this);
+    m_statusSessionTotals->hide();
+    sb->addPermanentWidget(m_statusSessionTotals);
+
     // Users/Files indicator with green person icon (matching MFC status bar)
     m_statusUsersWidget = new QWidget(this);
     auto* usersLayout = new QHBoxLayout(m_statusUsersWidget);
@@ -3523,6 +3538,40 @@ void MainWindow::updateFreeSpaceLabel()
                                    .arg(free.isInteger() ? formatByteSize(free.toInteger()) : tr("N/A")));
     m_statusFreeSpace->setToolTip(QDir::toNativeSeparators(folder.value(QStringLiteral("path")).toString()));
     m_statusFreeSpace->show();
+}
+
+void MainWindow::updateSessionTotalsLabel()
+{
+    if (!m_statusSessionTotals)
+        return;
+    if (!thePrefs.showStatusBarSessionTotals() || m_sessionTotals.isEmpty()) {
+        m_statusSessionTotals->hide();
+        return;
+    }
+    static constexpr std::pair<QLatin1StringView, const char*> kNetworks[] = {
+        {QLatin1StringView("ed2k"), QT_TR_NOOP("eD2K")},
+        {QLatin1StringView("ed3k"), QT_TR_NOOP("ed3k")},
+        {QLatin1StringView("bt"), QT_TR_NOOP("BitTorrent")},
+        {QLatin1StringView("usenet"), QT_TR_NOOP("Usenet")},
+        {QLatin1StringView("hoster"), QT_TR_NOOP("Hoster")},
+    };
+    qint64 down = 0;
+    qint64 up = 0;
+    QStringList lines;
+    for (const auto& [key, name] : kNetworks) {
+        const QCborArray pair = m_sessionTotals.value(QString(key)).toArray();
+        const qint64 d = pair.at(0).toInteger();
+        const qint64 u = pair.at(1).toInteger();
+        down += d;
+        up += u;
+        if (d > 0 || u > 0)   // a network that moved nothing would only be noise
+            lines.append(tr("%1: Down %2 / Up %3").arg(tr(name), formatByteSize(d), formatByteSize(u)));
+    }
+    m_statusSessionTotals->setText(tr("Session: Down %1 / Up %2")
+                                       .arg(formatByteSize(down), formatByteSize(up)));
+    m_statusSessionTotals->setToolTip(lines.isEmpty() ? tr("Nothing transferred since the core started")
+                                                      : lines.join(QLatin1Char('\n')));
+    m_statusSessionTotals->show();
 }
 
 // MFC CemuleDlg::ShowUserCount: "Users:ed2k(kad)|Files:ed2k(kad)" when both are up

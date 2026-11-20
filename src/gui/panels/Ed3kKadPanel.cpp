@@ -492,12 +492,14 @@ void Ed3kKadPanel::applyStatus(const QCborMap& status)
         m_lookupGraph->clear();
         setLookupTabTitle({});
     }
+    // verdict not open, but no test proved it (no prober / no 2nd site); bit 0 IPv4, bit 1 IPv6
+    const qint64 untested = status.value(QStringLiteral("natUntested")).toInteger();
     // short: the column is narrow
-    const auto className = [](qint64 c) {
+    const auto className = [untested](qint64 c, int bit) -> QString {
         switch (c) {
         case 1: return tr("open");
-        case 2: return tr("cone");
-        case 3: return tr("symmetric");
+        case 2: return (untested & bit) ? tr("cone (untested)") : tr("cone");
+        case 3: return (untested & bit) ? tr("symmetric (untested)") : tr("symmetric");
         default: return QStringLiteral("?");
         }
     };
@@ -514,10 +516,12 @@ void Ed3kKadPanel::applyStatus(const QCborMap& status)
         m_stateLabel->setText(tr("UDP %1 · %2 contacts\nIPv4: %3 · IPv6: %4\nRouter: %5")
                                   .arg(status.value(QStringLiteral("udpPort")).toInteger())
                                   .arg(m_contacts)
-                                  .arg(className(status.value(QStringLiteral("class4")).toInteger()),
-                                       className(status.value(QStringLiteral("class6")).toInteger()),
+                                  .arg(className(status.value(QStringLiteral("class4")).toInteger(), 1),
+                                       className(status.value(QStringLiteral("class6")).toInteger(), 2),
                                        status.value(QStringLiteral("router")).toBool() ? tr("yes") : tr("no")));
-        m_stateLabel->setToolTip(tr("NAT class per address family: open, cone NAT, symmetric NAT or ? (not known yet)"));
+        m_stateLabel->setToolTip(tr("NAT class per address family: open, cone NAT, symmetric NAT or ? (not known yet).\n"
+                                    "Untested: no ed3k node could test the port yet, so it is not proven open. "
+                                    "Without the word, a port test failed."));
     }
     updateControls();
 }

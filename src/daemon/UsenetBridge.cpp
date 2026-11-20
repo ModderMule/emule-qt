@@ -437,6 +437,8 @@ void insertDownloadSplit(QCborMap& stats)
     stats.insert(QStringLiteral("uploadLineKb"), split.uploadLineKb);
     stats.insert(QStringLiteral("ed2kUploadBudgetKb"), split.ed2kUpKb);
     stats.insert(QStringLiteral("btUpLimitKb"), split.btUpKb);
+    // ed3k's received bytes (B/s → KB/s); its sent bytes are in rateUp already (noteForeignBytesSent)
+    stats.insert(QStringLiteral("rateDownEd3k"), static_cast<double>(split.ed3kDownRate) / 1024.0);
     // Added to rateDown by the GUI's status bar and tray.
     const auto* q = queue();
     stats.insert(QStringLiteral("rateDownUsenet"),

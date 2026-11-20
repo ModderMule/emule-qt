@@ -565,6 +565,9 @@ QWidget* FileDetailDialog::createDownloadGeneralTab(const QCborMap& d)
     if (ed3kRow && !multi) {
         DetailGroup ed3k(tr("ed3k"), layout);
         ed3k.pair(tr("Key"), ed3kKeyText(str(d, QLatin1StringView("ed3kKey"))));
+        // hops.md §1: no HTTP source under the anonymous key; no row when none was dropped
+        if (const qint64 dropped = count("ed3kWebDropped"); dropped > 0)
+            ed3k.wide(tr("HTTP sources"), ed3kWebDroppedText(int(dropped)));
         if (!aliases.isEmpty())
             ed3k.wide(tr("Also known as"), aliases.join(u'\n'));
         if (const QString joins = ed3kJoinsText(d.value(QLatin1StringView("ed3kJoins")).toArray()); !joins.isEmpty())

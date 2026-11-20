@@ -600,6 +600,8 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::LookupArchiveContents: handleLookupArchiveContents(msg); break;
     case IpcMsgType::DownloadArchiveEntries: handleDownloadArchiveEntries(msg); break;
     case IpcMsgType::SetArchiveEntries: handleSetArchiveEntries(msg); break;
+    case IpcMsgType::TakeArchiveFromDisk: handleTakeArchiveFromDisk(msg); break;
+    case IpcMsgType::LocateLocalCopies: handleLocateLocalCopies(msg); break;
     case IpcMsgType::FetchMetaFile:       handleFetchMetaFile(msg); break;
     case IpcMsgType::DownloadMetaResult:  handleDownloadMetaResult(msg); break;
     case IpcMsgType::GetMetaAuthStatus:   handleGetMetaAuthStatus(msg); break;
@@ -2362,9 +2364,34 @@ void IpcClientHandler::handleSetFriendSlot(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
+namespace {
+
+/// Payload bytes this session per network, {down, up}: status bar totals (#223)
+QCborMap sessionTotals()
+{
+    const auto* s = theApp.statistics;
+    if (!s)
+        return {};
+    const auto clamp = [](uint64 v) { return static_cast<qint64>(std::min<uint64>(v, INT64_MAX)); };
+    const auto pair = [&](uint64 down, uint64 up) {
+        return QCborArray{clamp(down), clamp(up)};
+    };
+    QCborMap out;
+    out.insert(QStringLiteral("ed2k"), pair(s->sessionReceivedBytes(), s->sessionSentBytes()));
+    out.insert(QStringLiteral("ed3k"), pair(s->ed3kSession().recvFile, s->ed3kSession().sentFile));
+    out.insert(QStringLiteral("bt"), pair(s->btSession().payloadDownBytes, s->btSession().payloadUpBytes));
+    out.insert(QStringLiteral("usenet"), pair(s->usenetSession().decodedBytes, 0));
+    // peerBytes came from ed3k peers: already in ed3k's recvFile
+    out.insert(QStringLiteral("hoster"), pair(s->hosterSession().hosterBytes, 0));
+    return out;
+}
+
+} // namespace
+
 void IpcClientHandler::handleGetStats(const IpcMessage& msg)
 {
     QCborMap stats = toCborMap(collectStatsSnapshot());
+    stats.insert(QStringLiteral("sessionTotals"), sessionTotals());
 
     // Upload SpeedSense, for the status bar pane (MFC CemuleDlg::ShowPing)
     // Also after it gave up and switched the option off: the pane then says why.
@@ -5330,6 +5357,8 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setShowRatesInTitle(val.toBool());
     else if (key == QStringLiteral("showStatusBarFreeSpace"))
         thePrefs.setShowStatusBarFreeSpace(val.toBool());
+    else if (key == QStringLiteral("showStatusBarSessionTotals"))
+        thePrefs.setShowStatusBarSessionTotals(val.toBool());
     else if (key == QStringLiteral("showCatTabInfos"))
         thePrefs.setShowCatTabInfos(val.toBool());
     else if (key == QStringLiteral("autoRemoveFinishedDownloads"))
@@ -5601,6 +5630,8 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kAutoIndexNode(val.toBool());
     else if (key == QStringLiteral("ed3kHide"))
         thePrefs.setEd3kHide(val.toBool());
+    else if (key == QStringLiteral("ed3kAnonHttp"))
+        thePrefs.setEd3kAnonHttp(val.toBool());
     else if (key == QStringLiteral("ed3kHops"))
         thePrefs.setEd3kHops(static_cast<int>(std::clamp<qint64>(val.toInteger(), 0, 3)));
     else if (key == QStringLiteral("ed3kHopShare"))
@@ -7447,6 +7478,30 @@ void IpcClientHandler::handleSetArchiveEntries(const IpcMessage& msg)
     const int seqId = msg.seqId();
     ArchiveContentsBridge::setEntries(msg.field(0).toMap(), msg.field(1).toMap(), [this, seqId](bool ok, const QCborValue& result) {
         sendMessage(IpcMessage::makeResult(seqId, ok, result));
+    });
+}
+
+void IpcClientHandler::handleTakeArchiveFromDisk(const IpcMessage& msg)
+{
+    QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    ArchiveContentsBridge::takeFromDisk(msg.field(0).toMap(), msg.field(1).toArray(), msg.fieldString(2), int(msg.fieldInt(3)),
+                                        [self, seqId](bool ok, const QCborValue& result) {
+        if (self)
+            self->sendMessage(IpcMessage::makeResult(seqId, ok, result));
+    });
+}
+
+void IpcClientHandler::handleLocateLocalCopies(const IpcMessage& msg)
+{
+    QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    QStringList folders;
+    for (const QCborValue& v : msg.field(0).toArray())
+        folders << v.toString();
+    ArchiveContentsBridge::locateLocalCopies(folders, [self, seqId](bool ok, const QCborValue& result) {
+        if (self)
+            self->sendMessage(IpcMessage::makeResult(seqId, ok, result));
     });
 }
 

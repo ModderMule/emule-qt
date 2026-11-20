@@ -133,6 +133,8 @@ struct BtTorrentRow {
     int seedsTotal = -1;
     qint64 downloaded = 0;
     qint64 uploaded = 0;
+    /// uploaded since this core started (BtSession baseline), not libtorrent's per-resume counter
+    qint64 sessionUploaded = 0;
     /// bytes of pieces that failed their hash, and were fetched again
     qint64 failedBytes = 0;
     QString error;

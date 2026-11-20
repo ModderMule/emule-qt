@@ -21,6 +21,16 @@ namespace eMule {
     return {};
 }
 
+/// HTTP sources (ws=) of an ed3k download left out under the anonymous key (hops.md §1),
+/// with the way out. Only shown when @p count > 0.
+[[nodiscard]] inline QString ed3kWebDroppedText(int count)
+{
+    return QCoreApplication::translate("eMule::Ed3kKey",
+                                       "%1 discarded: not used under the anonymous key without its proxy "
+                                       "(Options > ed3k > General > Hiding, or \"Move to Node ed3k Key\")")
+        .arg(count);
+}
+
 /// What the GUI knows of the node for the "Move to ... ed3k Key" entries (GetEd3kStatus).
 struct Ed3kKeyState {
     bool running = false;     ///< the ed3k node runs

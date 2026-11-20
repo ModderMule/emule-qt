@@ -11,6 +11,7 @@
 #include "dialogs/AddSourceDialog.h"
 #include "utils/MassRenameAction.h"
 #include "utils/MoveDownloadsAction.h"
+#include "utils/LocateFilesAction.h"
 #include "utils/Clipboard.h"
 #include "utils/Opcodes.h"
 #include "controls/AbstractListView.h"
@@ -631,6 +632,14 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         moveAct->setEnabled(anyUnfinished && std::ranges::any_of(selectedDls, [](const DownloadRow* d) {
             return d->status != QLatin1String("completing") && d->fileOp == 0;
         }));
+        // #224: a folder with files of the ed3k downloads (any network's): copied from there
+        m_downloadMenu->addAction(menuIcon("Folders.ico"), LocateFilesAction::menuText(), this, [this]() {
+            QPointer<TransferPanel> self(this);
+            LocateFilesAction::run(this, m_ipc, QString(), [self] {
+                if (self)
+                    self->requestDownloads();
+            });
+        });
     }
 
     m_downloadMenu->addSeparator();
@@ -794,7 +803,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                                         tr("Open File"), tr("Preview"), tr("Preview with"), tr("Clear Completed"),
                                         tr("Assign To Category"),
                                         pasteLinksText(), tr("Find..."), tr("Show Toolbar"),
-                                        MoveDownloadsAction::menuText(), Ed3kLinkMenu::copyText(),
+                                        MoveDownloadsAction::menuText(), LocateFilesAction::menuText(), Ed3kLinkMenu::copyText(),
                                         Ed3kLinkMenu::showText(), tr("Mass Rename..."),
                                         tr("Source Handling"), tr("Search Related Files"), tr("Web Services")};
         for (QAction* act : m_downloadMenu->actions())

@@ -430,6 +430,15 @@ it before either session.
   Blocks whose pieces libtorrent has already (`havePieces` at the start of the downloads and
   after its resume check, `torrentChecked`; then its verdicts) are not asked for, and a member
   libtorrent has whole gets no ed3k download.
+- **Local copies (#224):** once a member's root is known (set or link), a file another join of
+  the session serves under that root (Shared Files, a finished ed3k download, an eD2K part
+  file's verified blocks, another torrent's member) is read first (`Ed3kJoinBase::localCopyRead`,
+  the sharer's own `sharedRead`: verified bytes, size and date as hashed), 16 blocks per
+  batch on the read pool, and taken like ed3k blocks (`takeLocalBlock` → `takeBlock`). A
+  piece libtorrent fails gives its local blocks back to the network. Only roots this node
+  has hashed count: without ed3k on, or before the set is found, nothing matches.
+  Was torrent-only (`copyLocal`/`endCopy` here); now the base's, for every join — see
+  "Local copies" below. BiglyBT's folder scan by size + piece hash: biglybt-locate-files.md.
 - **Completion:** `TORRENT_COMPLETE` waits until every member is hashed (`complete()` needs
   it), then shares the manifest and the info dictionary from memory, `setPublish` and
   `publishAlias` (not while holding back). Verified members are shared and published at once.
@@ -1402,3 +1411,48 @@ on ed3k search rows (done: batch 13, "Publishing", "Search rows" above).
 - was: An owner-only DACL for `node.key` on Windows (done, batch 14: `Ed3kKeyFile` `ownerOnly`, a protected DACL
   for the current user, used by `Ed3kStore` for every secret file and state blob; not compiled here, read only).
 - `tests/vs` projects: every ed3k test has one (`Tests\Ed3k`, `tst_Ed3kTorrentJoin` in `Tests\BitTorrent`). A new test: add a `TEST_EXTRAS` entry in `scripts/generate_test_vcxprojs.py` if it needs more than the core libs and run it with `--only`, which leaves `specialdlp` and `emuleqt-mcp` in the `.sln` (a run without `--only` drops them).
+
+## Local copies (#224)
+
+A download of a root this node already has on disk is read from there first, in every join.
+
+- **Base (`Ed3kJoinBase`):** `copyLocal(root)` on an open file download: when
+  `hasLocalCopy` (a join of the session serves the root, not the download's own owner, or a
+  found copy), the blocks `wantedBlocks()` lists are read in batches of `kCopyBatch` (16) on
+  the read pool through `localCopyRead` and handed to `takeLocalBlock()`. `requestBlocks`
+  sends nothing while `Download::copying`; `endLocalCopy` → `onLocalCopyDone()` → the network
+  asks for the rest. A block the sharer will not serve (unverified, changed) is skipped; an
+  unreadable one ends the copy. Once per open download (`Download::copied`).
+- **Torrent:** members at `startDownloads`; blocks remembered (`Member::local`) for a failed piece.
+- **Hoster:** after the §4 ALIAS lookup gave the root (`startRooted`): the link is opened only
+  in `onLocalCopyDone` — a whole local copy completes the item with no hoster wait, puzzle or
+  quota. Local bytes count neither as hoster nor as peer bytes.
+- **Usenet:** at `startDownload`; blocks go through `writeBlock` → `ed3kBlock` → ACCEPT_RANGE →
+  `acceptExternalRange`, so their articles are not fetched. The temp file is made when the
+  first article is not there yet. Ranges accepted before the queue knew its part size are
+  offered again at the next decoded article (`Post::reaccept`). Under a §4.2 claim (no post
+  set) blocks are held until an article was compared, as for peers' blocks.
+- **Plain ed3k downloads (`Ed3kDownloads`):** at `startDownload`; the whole file is hashed at
+  the end as always. Archive entries downloaded by root (DownloadArchiveEntries) come from disk
+  this way.
+- **Found copies (folder scan):** `Ed3kJoinBase::addFoundCopy(session, root, path, size, mtime)`
+  registers a file per session (`NodeTurns::found`); `hasLocalCopy`/`localCopyRead` take it
+  (reads check size and date), and every open download of the root starts copying.
+  `Ed3kLocalScan` (IPC 749 LocateLocalCopies, Transfers › "Locate Files...") walks folders for
+  files the size of `wantedFiles()` (open file downloads of any join), skips part files, hashes
+  only those (folder with most candidates first) and registers matches. BiglyBT's way, with
+  the BLAKE3 root as proof instead of piece hashes: biglybt-locate-files.md.
+- **Archives:** `Ed3kArchiveContents::markLocal` fills `Found::localPaths` (`localCopyPath`: a
+  whole servable file or a found copy); LookupArchiveContents entries carry `local`, archives
+  `allLocal`. Details › Archive shows "On disk"; for a queued download "Take From Disk" (IPC 748
+  TakeArchiveFromDisk) downloads every entry by root (from disk) into incoming/<folder>/ and
+  skips the archive's volumes (Usenet `setFilesSkipped`, hoster items removed). All entries or
+  nothing: a compressed archive cannot be rebuilt from its files.
+- **Stored archives (Usenet):** `ArchiveFill` (daemon, with ed3kArchiveContents) looks up a new
+  item's archives by NZB file ids; entries on disk become par2 extra files once the index
+  .par2 is there. `Par2Verifier::locate` (par2's rolling scan; base = the extras' common
+  folder, par2 drops extras outside it) finds the volumes' blocks inside them,
+  `Par2LocalFill::fill` writes them into the part files, `acceptExternalRange` drops their
+  articles. Headers come from Usenet or recovery blocks; verify/repair as always. A
+  compressed archive finds nothing.
+

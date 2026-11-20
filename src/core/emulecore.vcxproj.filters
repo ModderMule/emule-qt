@@ -875,6 +875,9 @@
     <ClInclude Include="utils\ContainerUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\ShareRatio.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\CorroborationTally.h">
       <Filter>Header Files</Filter>
     </ClInclude>

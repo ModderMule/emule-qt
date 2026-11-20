@@ -694,6 +694,7 @@ struct Preferences::Data {
     bool showActiveDownloadsBold = false;   // MFC ShowActiveDownloadsBold, INI only, off; MorphXT on
     bool showRatesInTitle = false;
     bool showStatusBarFreeSpace = false;   // #165, as qBittorrent: off
+    bool showStatusBarSessionTotals = false;   // #223, session up/down beside free space
     bool showCatTabInfos = false;
     bool autoRemoveFinishedDownloads = false;
     bool showTransToolbar = true;
@@ -893,6 +894,7 @@ struct Preferences::Data {
     bool ed3kAutoIndexNode = false;    // dial eD2K servers' ST_ED3K index nodes
     bool ed3kForceOpen = false;        // operator: node reachable, no NAT tests (§9.2 first nodes)
     bool ed3kHide = false;             // hiding (hops.md §1): new searches, downloads, shares anonymous
+    bool ed3kAnonHttp = false;         // HTTP sources of anonymous downloads through the report proxy
     int ed3kHops = 1;                  // 0 to 3, every use (0: deniable, hops.md §2.6)
     int ed3kHopShare = 25;             // % of the upload limit for others' paths (§5)
     // share reports under the anonymous key (subscription.md §5.3): only through this proxy
@@ -2908,6 +2910,8 @@ bool Preferences::ed3kAutoIndexNode() const { return get(&Data::ed3kAutoIndexNod
 void Preferences::setEd3kAutoIndexNode(bool val) { set(&Data::ed3kAutoIndexNode, val); }
 bool Preferences::ed3kHide() const { return get(&Data::ed3kHide); }
 void Preferences::setEd3kHide(bool val) { set(&Data::ed3kHide, val); }
+bool Preferences::ed3kAnonHttp() const { return get(&Data::ed3kAnonHttp); }
+void Preferences::setEd3kAnonHttp(bool val) { set(&Data::ed3kAnonHttp, val); }
 int Preferences::ed3kHops() const { return get(&Data::ed3kHops); }
 void Preferences::setEd3kHops(int val) { set(&Data::ed3kHops, std::clamp(val, 0, 3)); }
 int Preferences::ed3kHopShare() const { return get(&Data::ed3kHopShare); }
@@ -4098,6 +4102,10 @@ bool Preferences::showStatusBarFreeSpace() const { return get(&Data::showStatusB
 
 void Preferences::setShowStatusBarFreeSpace(bool val) { set(&Data::showStatusBarFreeSpace, val); }
 
+bool Preferences::showStatusBarSessionTotals() const { return get(&Data::showStatusBarSessionTotals); }
+
+void Preferences::setShowStatusBarSessionTotals(bool val) { set(&Data::showStatusBarSessionTotals, val); }
+
 bool Preferences::showCatTabInfos() const { return get(&Data::showCatTabInfos); }
 
 void Preferences::setShowCatTabInfos(bool val) { set(&Data::showCatTabInfos, val); }
@@ -4565,6 +4573,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kForceOpen"), ed3kForceOpen());
     prefs.insert(QStringLiteral("ed3kAutoIndexNode"), ed3kAutoIndexNode());
     prefs.insert(QStringLiteral("ed3kHide"), ed3kHide());
+    prefs.insert(QStringLiteral("ed3kAnonHttp"), ed3kAnonHttp());
     prefs.insert(QStringLiteral("ed3kHops"), static_cast<qint64>(ed3kHops()));
     prefs.insert(QStringLiteral("ed3kHopShare"), static_cast<qint64>(ed3kHopShare()));
     prefs.insert(QStringLiteral("ed3kReportProxyType"), static_cast<qint64>(ed3kReportProxyType()));
@@ -4994,6 +5003,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kForceOpen = p.value(QStringLiteral("ed3kForceOpen")).toBool(false);
     m_data->ed3kAutoIndexNode = p.value(QStringLiteral("ed3kAutoIndexNode")).toBool(false);
     m_data->ed3kHide = p.value(QStringLiteral("ed3kHide")).toBool(false);
+    m_data->ed3kAnonHttp = p.value(QStringLiteral("ed3kAnonHttp")).toBool(false);
     m_data->ed3kHops = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHops")).toInteger(1), 0, 3));
     m_data->ed3kHopShare = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHopShare")).toInteger(25), 1, 100));
     m_data->ed3kReportProxyType = reportProxyType(static_cast<int>(p.value(QStringLiteral("ed3kReportProxyType")).toInteger(0)));
@@ -5993,6 +6003,7 @@ bool Preferences::load(const QString& filePath)
             m_data->showActiveDownloadsBold = d["showActiveDownloadsBold"].as<bool>(m_data->showActiveDownloadsBold);
             m_data->showRatesInTitle = d["showRatesInTitle"].as<bool>(m_data->showRatesInTitle);
             m_data->showStatusBarFreeSpace = d["showStatusBarFreeSpace"].as<bool>(m_data->showStatusBarFreeSpace);
+            m_data->showStatusBarSessionTotals = d["showStatusBarSessionTotals"].as<bool>(m_data->showStatusBarSessionTotals);
             m_data->showCatTabInfos = d["showCatTabInfos"].as<bool>(m_data->showCatTabInfos);
             m_data->autoRemoveFinishedDownloads = d["autoRemoveFinishedDownloads"].as<bool>(m_data->autoRemoveFinishedDownloads);
             m_data->showTransToolbar = d["showTransToolbar"].as<bool>(m_data->showTransToolbar);
@@ -6460,6 +6471,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kForceOpen = e3["forceOpen"].as<bool>(m_data->ed3kForceOpen);
             m_data->ed3kAutoIndexNode = e3["autoIndexNode"].as<bool>(m_data->ed3kAutoIndexNode);
             m_data->ed3kHide = e3["hide"].as<bool>(m_data->ed3kHide);
+            m_data->ed3kAnonHttp = e3["anonHttp"].as<bool>(m_data->ed3kAnonHttp);
             m_data->ed3kHops = std::clamp(e3["hops"].as<int>(m_data->ed3kHops), 0, 3);
             m_data->ed3kHopShare = std::clamp(e3["hopShare"].as<int>(m_data->ed3kHopShare), 1, 100);
             if (auto rp = e3["reportProxy"]) {
@@ -7646,6 +7658,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "showActiveDownloadsBold" << YAML::Value << m_data->showActiveDownloadsBold;
     out << YAML::Key << "showRatesInTitle" << YAML::Value << m_data->showRatesInTitle;
     out << YAML::Key << "showStatusBarFreeSpace" << YAML::Value << m_data->showStatusBarFreeSpace;
+    out << YAML::Key << "showStatusBarSessionTotals" << YAML::Value << m_data->showStatusBarSessionTotals;
     out << YAML::Key << "showCatTabInfos" << YAML::Value << m_data->showCatTabInfos;
     out << YAML::Key << "autoRemoveFinishedDownloads" << YAML::Value << m_data->autoRemoveFinishedDownloads;
     out << YAML::Key << "showTransToolbar" << YAML::Value << m_data->showTransToolbar;
@@ -7982,6 +7995,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "forceOpen" << YAML::Value << m_data->ed3kForceOpen;
     out << YAML::Key << "autoIndexNode" << YAML::Value << m_data->ed3kAutoIndexNode;
     out << YAML::Key << "hide" << YAML::Value << m_data->ed3kHide;
+    out << YAML::Key << "anonHttp" << YAML::Value << m_data->ed3kAnonHttp;
     out << YAML::Key << "hops" << YAML::Value << m_data->ed3kHops;
     out << YAML::Key << "hopShare" << YAML::Value << m_data->ed3kHopShare;
     out << YAML::Key << "reportProxy" << YAML::Value << YAML::BeginMap;

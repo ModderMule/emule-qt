@@ -41,6 +41,7 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/PathUtils.h"
+#include "utils/ShareRatio.h"
 #include "utils/StringUtils.h"
 #include "utils/UsenetDisplay.h"
 
@@ -3796,8 +3797,10 @@ QString WebServer::buildTorrentsPage(bool isAdmin, const QString& sessionId, con
                                                 .arg(r.value(QStringLiteral("seedsTotal")).toInteger());
         v[QStringLiteral("TorrentPeers")] = QStringLiteral("%1 (%2)").arg(r.value(QStringLiteral("peers")).toInteger())
                                                 .arg(r.value(QStringLiteral("peersTotal")).toInteger());
-        v[QStringLiteral("TorrentRatio")] = downloaded > 0
-            ? QString::number(double(uploaded) / double(downloaded), 'f', 2) : QString();
+        const double ratio = shareRatio(uploaded, downloaded, r.value(QStringLiteral("haveBytes")).toInteger());
+        v[QStringLiteral("TorrentRatio")] = ratio == kShareRatioInfinite ? QStringLiteral("∞")
+                                            : ratio < 0                  ? QString()
+                                                                         : QString::number(ratio, 'f', 2);
         lines += WebTemplateEngine::substitute(lineTmpl, v);
     }
 

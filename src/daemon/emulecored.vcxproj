@@ -224,6 +224,7 @@
     <ClCompile Include="Ed3kTunnelBridge.cpp" />
     <ClCompile Include="Ed3kHosterBridge.cpp" />
     <ClCompile Include="ArchiveContentsBridge.cpp" />
+    <ClCompile Include="ArchiveFill.cpp" />
     <ClCompile Include="Ed3kKadBridge.cpp" />
     <ClCompile Include="Ed3kLinksBridge.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
@@ -234,6 +235,7 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="ApiEventFeeder.h" />
+    <QtMoc Include="ArchiveFill.h" />
     <QtMoc Include="CliIpcClient.h" />
     <ClInclude Include="CommandLineExec.h" />
     <ClInclude Include="IpcTlsIdentity.h" />

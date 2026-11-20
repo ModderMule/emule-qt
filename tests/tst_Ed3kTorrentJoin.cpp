@@ -5,12 +5,14 @@
 /// peer is filled from ed3k alone (blocks into the files, pieces to libtorrent); the join
 /// is saved and loaded again; what completed is shared again after a restart, and its
 /// records published again; ed3k is not asked for what libtorrent has already; a member
-/// file gone before the worker reads it fails its pieces.
+/// file gone before the worker reads it fails its pieces; a member whose root another join
+/// of the node serves from disk is read from there (#224).
 
 #include "BtSession.h"
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 #include "Ed3kTorrentJoin.h"
+#include "Ed3kLocalSharer.h"
 
 #include <libtorrent/create_torrent.hpp>
 
@@ -125,6 +127,9 @@ QByteArray readFile(const QString& path)
     return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
 }
 
+// was: LocalSharer here (#224); now tests/Ed3kLocalSharer.h, shared with the other joins' tests
+using test::LocalSharer;
+
 } // namespace
 
 class tst_Ed3kTorrentJoin : public QObject {
@@ -135,6 +140,7 @@ private slots:
     void completeTorrentGivesItsSet();
     void createdTorrentGivesItsSet();
     void ed3kAloneFillsATorrent();
+    void aLocalCopyFillsATorrent();
     void linkJoinFetchesItsSet();
     void ed3kSkipsPiecesLibtorrentHas();
     void aGoneMemberFailsItsRead();
@@ -323,6 +329,51 @@ void tst_Ed3kTorrentJoin::completeTorrentGivesItsSet()
 // §4.2 with the set: no BitTorrent peer at all, both members come from another ed3k
 // node; each piece their blocks complete goes to libtorrent, which finishes the torrent.
 // Then the join is saved, and loaded again with its set.
+// #224: with the set, members whose roots are here already (another join serves them from
+// disk) are read from there: no BitTorrent peer, no ed3k source, the torrent finishes
+void tst_Ed3kTorrentJoin::aLocalCopyFillsATorrent()
+{
+    if (m_manifest.isEmpty())
+        QSKIP("needs the set of completeTorrentGivesItsSet");
+    const QString dir = m_dir.filePath(QStringLiteral("local1"));
+    Ed3kSession node;
+    QVERIFY(node.start(loopback(dir)));
+    LocalSharer local(node, dir);
+    local.start();
+    QVERIFY(local.shareFile(m_seedDir + QStringLiteral("/set/a.bin"), m_a));
+    QVERIFY(local.shareFile(m_seedDir + QStringLiteral("/set/b.bin"), m_b));
+
+    BtSession leecher;
+    leecher.start(btSettings(dir));
+    Ed3kTorrentJoin join(node, leecher, dir);
+    join.setSearchEnabled(false);
+    join.start();
+    QSignalSpy finished(&leecher, &BtSession::torrentFinished);
+
+    const BtAddResult added = leecher.addTorrentFile(m_torrent);
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY_WITH_TIMEOUT(join.hasJoin(added.id), kTimeoutMs);
+    QVERIFY(join.setManifest(added.id, {reinterpret_cast<const std::byte*>(m_manifest.constData()), std::size_t(m_manifest.size())}));
+
+    QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), kTimeoutMs);
+    QVERIFY(join.receivedBlocks(added.id, 0) > 0);
+    QVERIFY(join.receivedBlocks(added.id, 1) > 0);
+    const auto layout = leecher.layout(added.id);
+    QVERIFY(layout.has_value());
+    QStringList paths;
+    for (const auto& f : layout->files)
+        if (!f.pad)
+            paths << f.path;
+    QCOMPARE(paths.size(), 2);
+    QCOMPARE(readFile(paths.at(0)), m_a);
+    QCOMPARE(readFile(paths.at(1)), m_b);
+
+    join.stop();
+    local.stop();
+    leecher.stop();
+    node.stop();
+}
+
 void tst_Ed3kTorrentJoin::ed3kAloneFillsATorrent()
 {
     if (m_manifest.isEmpty())

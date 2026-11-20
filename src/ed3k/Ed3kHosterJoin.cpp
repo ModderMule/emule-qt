@@ -1087,6 +1087,29 @@ void Ed3kHosterJoin::onFileBlock(const Download& d, const ev::Block& b)
     checkComplete(*e);
 }
 
+bool Ed3kHosterJoin::takeLocalBlock(const Download& d, std::uint64_t offset, std::span<const std::byte> data)
+{
+    Entry* e = find(idOf(d.owner));
+    if (!e || !e->root || e->have.contains(offset))
+        return false;
+    if (!writeAt(*e, offset, data))
+        return false;
+    e->have.insert(offset);
+    e->item.done += data.size();
+    touch(*e);   // not counted: neither hoster nor peer bytes
+    checkComplete(*e);
+    return true;
+}
+
+void Ed3kHosterJoin::onLocalCopyDone(const Download& d, int blocks)
+{
+    Entry* e = find(idOf(d.owner));
+    if (!e || e->item.retired || e->item.state == State::Complete || !e->root)
+        return;
+    logInfo(QStringLiteral("%1: %2 block(s) from a local copy, the rest from peers and the link").arg(e->item.host).arg(blocks));
+    askOpen(*e);
+}
+
 void Ed3kHosterJoin::onBlobFetched(const QString&, int, const ffi::Root&, const QByteArray&)
 {
     // no blobs: hoster items are files
@@ -1601,6 +1624,13 @@ void Ed3kHosterJoin::startRooted(Entry& e, const ffi::Root& root, std::uint64_t 
     touch(e);
     logInfo(QStringLiteral("%1 is known in ed3k, downloading from peers and the link").arg(e.item.host));
     openDownload(root, size, ownerOf(e.item.id), 0);
+    // #224: the same root on disk here: its blocks first, no hoster wait, captcha or quota;
+    // the link only for what it lacks (onLocalCopyDone)
+    if (e.have.size() < (size + kBlock - 1) / kBlock && hasLocalCopy(root, ownerOf(e.item.id))) {
+        setState(e, State::Downloading);
+        if (copyLocal(root))
+            return;
+    }
     askOpen(e);
 }
 

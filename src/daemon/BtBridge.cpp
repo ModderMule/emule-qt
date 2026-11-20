@@ -142,6 +142,7 @@ QCborMap toCbor(const bt::BtTorrentRow& r)
         {QStringLiteral("seedsTotal"), r.seedsTotal},
         {QStringLiteral("downloaded"), r.downloaded},
         {QStringLiteral("uploaded"), r.uploaded},
+        {QStringLiteral("sessionUploaded"), r.sessionUploaded},
         {QStringLiteral("failedBytes"), r.failedBytes},
         {QStringLiteral("error"), r.error},
         {QStringLiteral("hashV1"), r.hashV1},

@@ -376,6 +376,7 @@ private:
     QCheckBox* m_showActiveDownloadsBoldCheck = nullptr;
     QCheckBox* m_showRatesInTitleCheck = nullptr;
     QCheckBox* m_showStatusBarFreeSpaceCheck = nullptr;
+    QCheckBox* m_showStatusBarSessionTotalsCheck = nullptr;
     QCheckBox* m_showCatTabInfosCheck = nullptr;
     QCheckBox* m_autoRemoveFinishedCheck = nullptr;
     QCheckBox* m_showTransToolbarCheck = nullptr;

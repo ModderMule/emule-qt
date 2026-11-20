@@ -105,6 +105,7 @@ struct Ed3kDownloadInfo {
     QString path;
     std::uint64_t done = 0;        ///< bytes held (verified blocks)
     std::uint64_t rate = 0;        ///< B/s over the last second
+    std::uint64_t transferred = 0; ///< bytes received, all runs (MFC Transferred)
     int sources = 0;               ///< streams open
     int transferring = 0;          ///< streams holding a slot
     int a4af = 0;                  ///< nodes held by another download of ours, this one waits (eD2K A4AF)
@@ -123,6 +124,8 @@ struct Ed3kDownloadInfo {
     int maxSources = 0;
     /// media file, unfinished, first eD2K part held (PartFile::isPreviewPossible)
     bool previewPossible = false;
+    /// HTTP sources (ws=) left out: the file is under the anonymous key (hops.md §1); 0: none
+    int webDropped = 0;
 };
 
 class Ed3kDownloads : public Ed3kJoinBase {
@@ -245,6 +248,7 @@ protected:
     [[nodiscard]] std::vector<std::uint64_t> wantedBlocks(const Download& d) const override;
     [[nodiscard]] QString downloadName(const ffi::Root& root, const Download& d) const override;
     void onFileBlock(const Download& d, const ::ed3k::event::Block& b) override;
+    bool takeLocalBlock(const Download& d, std::uint64_t offset, std::span<const std::byte> data) override;
     void onBlobFetched(const QString& owner, int member, const ::ed3k::Root& root, const QByteArray& data) override;
     void onDownloadHashes(const Download& d, const ::ed3k::Bytes& blob) override;
     [[nodiscard]] std::optional<FileRead> sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
@@ -316,13 +320,16 @@ private:
     void sharePieces(Entry& e);
     void fail(Entry& e, const QString& error);
     /// A verified block into the part file; false: not taken.
-    bool storeBlock(Entry& e, std::uint64_t offset, const ::ed3k::Bytes& data);
+    bool storeBlock(Entry& e, std::uint64_t offset, std::span<const std::byte> data);
 
     // -- HTTP sources (Ed3kDownloadsWeb.cpp) ----------------------------------
     /// URLs new to @p list: kept; true when one was added.
     static bool mergeWebUrls(QStringList& list, const QStringList& urls);
     /// Running download with URLs: its source at the engine.
     void webAttach(Entry& e);
+    /// http-source.md §3.2: HTTP sources of the anonymous key only through the anonymous
+    /// proxy (Ed3kHideSettings anonHttp + reportProxy); false: not used.
+    [[nodiscard]] bool anonWebAllowed() const;
     /// Stops the fetch and forgets the source.
     void webDetach(Entry& e);
     /// A fetch for every download whose source idles (tick, after a fetch).
@@ -365,6 +372,7 @@ private:
     std::function<QString(int)> m_categoryDir;
     QTimer m_tick;
     bool m_changed = false;
+    bool m_anonWebAllowed = false;   ///< last webDrive: anonymous HTTP sources allowed
 };
 
 } // namespace eMule::ed3k

@@ -3,7 +3,8 @@
 /// @file Ed3kHidingGroup.h
 /// @brief The "Hiding" group of Options → ed3k → General (hops.md §1, §5, §6): the global
 /// switch, one hop count for every use (0 to 3; 0 only while forwarding), forwarding for others and its
-/// share, the proxy of anonymous share reports (subscription.md §5.3), "New anonymous key…",
+/// share, the proxy of anonymous share reports (subscription.md §5.3) and of anonymous
+/// downloads' HTTP sources, "New anonymous key…",
 /// and what hiding does and does not give (§6).
 
 #include <QCborMap>
@@ -29,7 +30,7 @@ class Ed3kHidingGroup : public QGroupBox {
 public:
     Ed3kHidingGroup(IpcClient* ipc, QWidget* parent = nullptr);
 
-    /// ed3kHide, ed3kHops, ed3kHopShare, ed3kReportProxy* of a preferences map.
+    /// ed3kHide, ed3kHops, ed3kHopShare, ed3kReportProxy*, ed3kAnonHttp of a preferences map.
     void load(const QCborMap& prefs);
     /// The same keys into a SetPreferences request.
     void appendTo(Ipc::IpcMessage& req) const;
@@ -63,6 +64,7 @@ private:
     QSpinBox* m_reportProxyPort = nullptr;
     QLineEdit* m_reportProxyUser = nullptr;
     QLineEdit* m_reportProxyPass = nullptr;
+    QCheckBox* m_anonHttpCheck = nullptr;     ///< ed3kAnonHttp: ws= of anonymous downloads via the proxy
     QPushButton* m_newKeyBtn = nullptr;
     QLabel* m_statusLabel = nullptr;
     bool m_loading = false;

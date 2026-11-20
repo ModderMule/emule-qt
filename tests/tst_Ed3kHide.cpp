@@ -135,6 +135,8 @@ private slots:
     void anAnonymousShareIsNotToldOnEd2kWhileEd2kIsOff();
     void aJoinsAnonSwitchTakesItsFilesAndSetAlong();
     void downloadsFollowTheSwitch();
+    void aDownloadBeforeTheAnonymousNodeRunsFollowsThePref();
+    void anonymousHttpSourcesNeedTheProxy();
     void anonymousCreditKeyAfterEachStart();
     void newAnonymousKeyRestartsTheNode();
     void statusOverIpc();
@@ -622,6 +624,88 @@ void tst_Ed3kHide::downloadsFollowTheSwitch()
     QVERIFY(!d.moveKey(node.root, ::ed3k::KeyKind::Anon));
     QVERIFY(d.moveKey(anon.root, ::ed3k::KeyKind::Node));
     QCOMPARE(*s.engine()->fileKey(anon.root), std::optional(::ed3k::KeyKind::Node));
+    d.stop();
+    s.stop();
+}
+
+// hops.md §1: hiding on, its node not yet running (no connect, a link at start-up): a new
+// download still goes under the anonymous key, never the node key for good
+void tst_Ed3kHide::aDownloadBeforeTheAnonymousNodeRunsFollowsThePref()
+{
+    QTemporaryDir dir;
+    Ed3kSession s;
+    s.setHideSettings(hidden());
+    QVERIFY(!s.hide().hiding());
+    QVERIFY(s.hide().hidingWanted());
+    QCOMPARE(s.hide().keyForUse(), ::ed3k::KeyKind::Anon);
+    Ed3kDownloads d(s, dir.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(dir.path()).filePath(QStringLiteral("temp")), QDir(dir.path()).filePath(QStringLiteral("incoming")));
+    Ed3kDownloadSpec spec;
+    spec.root.bytes.fill(0x33);
+    spec.size = 600 * 1024;
+    spec.name = QStringLiteral("early.bin");
+    QVERIFY(d.add(spec));
+    QCOMPARE(d.keyOfRoot(spec.root), ::ed3k::KeyKind::Anon);
+    QVERIFY(s.start(loopback(dir.path())));
+    d.start();
+    QCOMPARE(d.keyOfRoot(spec.root), ::ed3k::KeyKind::Anon);   // kept once it runs
+    d.stop();
+    s.stop();
+}
+
+// hops.md §1: ws= of an anonymous download is dropped (and shown so) without the anonymous
+// proxy and its switch; a node-key download shows nothing
+void tst_Ed3kHide::anonymousHttpSourcesNeedTheProxy()
+{
+    QTemporaryDir dir;
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    Ed3kDownloads d(s, dir.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(dir.path()).filePath(QStringLiteral("temp")), QDir(dir.path()).filePath(QStringLiteral("incoming")));
+    d.start();
+    const QString url = QStringLiteral("https://ws.example/file.bin");
+    Ed3kDownloadSpec node;
+    node.root.bytes.fill(0x44);
+    node.size = 600 * 1024;
+    node.name = QStringLiteral("node.bin");
+    node.webUrls = {url + QStringLiteral("?node")};
+    QVERIFY(d.add(node));
+    QCOMPARE(d.info(node.root)->webDropped, 0);
+
+    Ed3kHideSettings hide = hidden();
+    s.setHideSettings(hide);
+    Ed3kDownloadSpec anon = node;
+    anon.root.bytes.fill(0x55);
+    anon.name = QStringLiteral("anon.bin");
+    anon.webUrls = {url};
+    Ed3kDownloadSpec plain = anon;   // no ws=: nothing to tell
+    plain.root.bytes.fill(0x66);
+    plain.webUrls.clear();
+    QVERIFY(d.add(anon));
+    QVERIFY(d.add(plain));
+    QCOMPARE(d.keyOfRoot(anon.root), ::ed3k::KeyKind::Anon);
+    QCOMPARE(d.info(anon.root)->webDropped, 1);
+    QCOMPARE(d.info(plain.root)->webDropped, 0);
+    QCOMPARE(d.info(node.root)->webDropped, 0);
+    QVERIFY(!d.webSourceOf(anon.root));
+
+    // the switch alone is not enough: no proxy
+    hide.anonHttp = true;
+    s.setHideSettings(hide);
+    QCOMPARE(d.info(anon.root)->webDropped, 1);
+    QVERIFY(!d.webSourceOf(anon.root));
+    // with the proxy: the anonymous node's fetcher takes it (its requests: via ANON_REPORT_PROXY)
+    hide.reportProxy = QNetworkProxy(QNetworkProxy::Socks5Proxy, QStringLiteral("127.0.0.1"), 9);
+    s.setHideSettings(hide);
+    QCOMPARE(d.info(anon.root)->webDropped, 0);
+    QTRY_VERIFY(d.webSourceOf(anon.root));
+    // the proxy gone: the source is dropped again, never fetched another way
+    hide.reportProxy.reset();
+    s.setHideSettings(hide);
+    QTRY_VERIFY(!d.webSourceOf(anon.root));
+    QCOMPARE(d.info(anon.root)->webDropped, 1);
     d.stop();
     s.stop();
 }

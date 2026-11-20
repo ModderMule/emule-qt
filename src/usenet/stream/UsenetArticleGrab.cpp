@@ -119,6 +119,30 @@ QByteArray UsenetArticleGrab::readReceived(int file) const
     return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
 }
 
+bool UsenetArticleGrab::covers(int file, qint64 offset, qint64 length) const
+{
+    const auto ranges = m_ranges.value(file);
+    qint64 pos = offset;
+    const qint64 end = offset + length;
+    // ranges are keyed by start: walk those that reach pos, extend
+    for (auto it = ranges.cbegin(); it != ranges.cend() && pos < end; ++it) {
+        if (it.key() > pos)
+            break;
+        pos = std::max(pos, it.key() + it.value());
+    }
+    return pos >= end;
+}
+
+QByteArray UsenetArticleGrab::readRange(int file, qint64 offset, qint64 length) const
+{
+    if (length <= 0 || !covers(file, offset, length))
+        return {};
+    QFile f(targetPath(file));
+    if (!f.open(QIODevice::ReadOnly) || !f.seek(offset))
+        return {};
+    return f.read(length);
+}
+
 bool UsenetArticleGrab::stop()
 {
     if (m_done)

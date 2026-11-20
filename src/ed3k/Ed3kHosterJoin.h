@@ -347,6 +347,8 @@ protected:
     [[nodiscard]] std::vector<std::uint64_t> wantedBlocks(const Download& d) const override;
     [[nodiscard]] QString downloadName(const ffi::Root& root, const Download& d) const override;
     void onFileBlock(const Download& d, const ::ed3k::event::Block& b) override;
+    bool takeLocalBlock(const Download& d, std::uint64_t offset, std::span<const std::byte> data) override;
+    void onLocalCopyDone(const Download& d, int blocks) override;
     void onBlobFetched(const QString& owner, int member, const ::ed3k::Root& root, const QByteArray& data) override;
     [[nodiscard]] std::optional<FileRead> sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
     void onOtherEvent(const ::ed3k::Event& event) override;

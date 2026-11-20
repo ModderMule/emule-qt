@@ -772,6 +772,18 @@ enum class IpcMsgType : int {
     /// empty entries: everything. Refused once its unpack started. LookupArchiveContents of a
     /// queued download answers kept: [path] per archive and editable: bool.
     SetArchiveEntries       = 747,
+    /// [target: {usenetItem: id} | {hosterPackage: id, hosterItem: id}, archives: [{name, parts?:
+    /// [name], entries: [{root: hex, size, path}]}], folder: string, category: int] -> [ok,
+    /// {added: int, skipped: int, note?: string}] or [false, error]. #224: every entry of the
+    /// archives is on disk here (LookupArchiveContents entry local: true): the entries come by
+    /// root from those files (DownloadArchiveEntries), the archives' volumes are skipped in the
+    /// queued download (Usenet files skipped, hoster items removed).
+    TakeArchiveFromDisk     = 748,
+    /// [folders: [string]] -> [ok, {files, candidates, hashed, matched, paths: [string]}] or
+    /// [false, error]. #224 folder scan (docs/biglybt-locate-files.md): the folders (on the
+    /// core's disk) walked for files of the size of an open ed3k download of any network, those
+    /// hashed; a root that matches is copied from there. The reply when the scan ends.
+    LocateLocalCopies       = 749,
 
     // -- eNode meta search (750-754) -------------------------------------------
     //
@@ -827,7 +839,7 @@ enum class IpcMsgType : int {
 
     /// [] -> [{id, name, savePath, state, size, done, progress, rateDown, rateUp,
     ///         peers, seeds, peersTotal, seedsTotal, downloaded, uploaded,
-    ///         failedBytes, error,
+    ///         sessionUploaded, failedBytes, error,
     ///         hashV1, hashV2, paused, hasMetadata, private, addedAt, completedAt,
     ///         seedingSeconds, queuePosition, pieceMap, pieces, pieceLength,
     ///         numFiles, eta, comment, creator, createdAt, lastActivity,
@@ -1190,7 +1202,8 @@ enum class IpcMsgType : int {
     // src/daemon/Ed3kDownloadsBridge.cpp. Roots (32 B) as hex. A download: {root, name, size,
     // done, rate (B/s), sources, transferring, state (0 downloading, 1 paused, 2 verifying,
     // 3 complete, 4 failed), priority (eMule's kPr*: 0 low, 1 normal, 2 high, 3 very high,
-    // 4 very low), category, owner, path, addedOn, completedOn, error}; a local GUI opens
+    // 4 very low), category, owner, path, addedOn, completedOn, error, webDropped (HTTP
+    // sources not used under the anonymous key, absent: none)}; a local GUI opens
     // `path` itself. Failure: [false,
     // {error: string (localized)}]. (1100-1109 were taken by the hoster links: 1140-1149.)
     /// [] -> [ok, {running, downloads: [download]}]

@@ -816,6 +816,7 @@ void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
         // the Proxy page as it is now: a change needs no node restart (report 34)
         m_http->setProxy(toNetworkProxy(thePrefs.proxySettings()));
         m_http->setReportProxy(m_hide->settings().reportProxy);
+        // an anonymous download's HTTP source comes with via ANON_REPORT_PROXY (http-source.md §3.2)
         m_http->start(*h);
         return;
     } else if (const auto* c = std::get_if<e::IoCancel>(&ev)) {

@@ -304,6 +304,8 @@ private:
     void handleLookupArchiveContents(const Ipc::IpcMessage& msg);
     void handleDownloadArchiveEntries(const Ipc::IpcMessage& msg);
     void handleSetArchiveEntries(const Ipc::IpcMessage& msg);
+    void handleTakeArchiveFromDisk(const Ipc::IpcMessage& msg);
+    void handleLocateLocalCopies(const Ipc::IpcMessage& msg);
 
     // eNode meta search (750-754) — IpcClientHandlerMeta.cpp
     void handleFetchMetaFile(const Ipc::IpcMessage& msg);

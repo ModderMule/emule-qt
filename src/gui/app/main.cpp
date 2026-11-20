@@ -1529,11 +1529,13 @@ int main(int argc, char* argv[])
                                     + val(QLatin1StringView("rateUpBt"));
                 const double downRate = val(QLatin1StringView("rateDown"))
                                       + val(QLatin1StringView("rateDownUsenet"))
-                                      + val(QLatin1StringView("rateDownBt"));
+                                      + val(QLatin1StringView("rateDownBt"))
+                                      + val(QLatin1StringView("rateDownEd3k"));
                 mainWindow.updateTransferRates(
                     upRate, downRate,
                     val(QLatin1StringView("upOverheadRate")),
                     val(QLatin1StringView("downOverheadRate")));
+                mainWindow.setSessionTotals(stats.value(QStringLiteral("sessionTotals")).toMap());
 
                 // Upload SpeedSense pane; absent while the option is off
                 const QCborValue uss = stats.value(QStringLiteral("uss"));

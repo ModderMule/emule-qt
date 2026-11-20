@@ -10,6 +10,7 @@
 
 #include "Ed3kSession.h"
 #include "Ed3kUsenetJoin.h"
+#include "Ed3kLocalSharer.h"
 
 #include "decode/YencDecoder.h"
 #include "nzb/NzbFile.h"
@@ -224,6 +225,7 @@ private slots:
     void serverTagIsStableAndOpaque();
     void articlesFromTheQueueVerifyAClaimedMember();
     void blocksFromAnotherNodeFillTheHoles();
+    void aLocalCopyFillsAMember();
     void aFalseClaimDropsItsEd3kBytes();
     void aPostSetFoundIsFetchedAndKept();
     void theLinkFetchesItsPostSet();
@@ -503,6 +505,54 @@ void tst_Ed3kUsenetJoin::blocksFromAnotherNodeFillTheHoles()
     join.stop();
     QVERIFY(!queue.hold);
     a.stop();
+    b.stop();
+}
+
+// #224: the claimed root is served from disk by another join of the node (Shared Files):
+// its blocks are written before any source is asked, the articles they cover accepted
+void tst_Ed3kUsenetJoin::aLocalCopyFillsAMember()
+{
+    constexpr int kParts = 3;
+    constexpr int kPart = 200000;
+    const QByteArray data = payload(int(2 * kBlock + 70000), 4);
+    const Hashed h = hashOf(data);
+
+    QTemporaryDir db;
+    QVERIFY(db.isValid());
+    const QString copy = QDir(db.path()).filePath(QStringLiteral("shared.bin"));
+    {
+        QFile f(copy);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(data), data.size());
+    }
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    eMule::ed3k::test::LocalSharer local(b, db.path());
+    local.start();
+    QVERIFY(local.shareFile(copy, data));
+
+    FakeQueue queue;
+    queue.item = fakeItem(db.path(), data.size(), kParts);
+    Ed3kUsenetJoin join(b, queue, db.path());
+    join.setSearchEnabled(false);
+    QSignalSpy verified(&join, &Ed3kUsenetJoin::memberVerified);
+    join.start();
+    const QString id = queue.item->id;
+    // the first articles came before the claim (its search takes a while): the claim is
+    // compared against them, the copied blocks count at once
+    landArticle(join, *queue.item, data, 1, kParts, kPart);
+    landArticle(join, *queue.item, data, 2, kParts, kPart);
+    QVERIFY(join.fileClaim(id, 0, h.root, h.size));
+
+    QTRY_COMPARE_WITH_TIMEOUT(verified.count(), 1, 30000);
+    QVERIFY(!queue.accepted.isEmpty());
+    QCOMPARE(queue.refetched.size(), 0);
+    QFile f(queue.item->files.at(0).tempPath);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), data);
+
+    join.stop();
+    local.stop();
     b.stop();
 }
 

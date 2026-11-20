@@ -1258,6 +1258,8 @@ private slots:
             p1.setStatsLastReset(1700000000);
             QVERIFY(!p1.showStatusBarFreeSpace());   // #165: off by default, as qBittorrent
             p1.setShowStatusBarFreeSpace(true);
+            QVERIFY(!p1.showStatusBarSessionTotals());   // #223: off by default
+            p1.setShowStatusBarSessionTotals(true);
             p1.setIncomingDir(QStringLiteral("/tmp/incoming"));
             p1.setTempDirs({QStringLiteral("/tmp/t1"), QStringLiteral("/tmp/t2")});
             p1.setBindAddress(QStringLiteral("192.168.1.100"));
@@ -1303,6 +1305,7 @@ private slots:
         QCOMPARE(p2.statsSaveInterval(), 120u);
         QCOMPARE(p2.statsLastReset(), uint64{1700000000});
         QCOMPARE(p2.showStatusBarFreeSpace(), true);
+        QCOMPARE(p2.showStatusBarSessionTotals(), true);
         QCOMPARE(p2.incomingDir(), QStringLiteral("/tmp/incoming"));
         QCOMPARE(p2.tempDirs(), QStringList({QStringLiteral("/tmp/t1"), QStringLiteral("/tmp/t2")}));
         QCOMPARE(p2.bindAddress(), QStringLiteral("192.168.1.100"));

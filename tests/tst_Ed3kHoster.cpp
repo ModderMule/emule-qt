@@ -9,6 +9,7 @@
 #include "TestHelpers.h"
 
 #include "Ed3kHosterJoin.h"
+#include "Ed3kLocalSharer.h"
 #include "Ed3kResolver.h"
 #include "Ed3kSession.h"
 #ifdef EMULE_HAVE_HOSTER_JD
@@ -488,7 +489,7 @@ quint32 idOf(const Ed3kHosterJoin& join, const QString& url)
 /// An unfinished rooted item as a stopped node leaves it: the first @p blocks blocks of
 /// @p data in <dir>/<key>.hoster.part, its state beside it.
 bool writeHeld(const QString& dir, const QString& key, const QString& url, const QByteArray& data, int blocks,
-               bool paused = false)
+               bool paused = false, const QString& rootHex = QString(64, QLatin1Char('a')))
 {
     QDir().mkpath(dir);
     QFile part(QDir(dir).filePath(key + QStringLiteral(".hoster.part")));
@@ -504,7 +505,7 @@ bool writeHeld(const QString& dir, const QString& key, const QString& url, const
                         {QStringLiteral("host"), QStringLiteral("fake.example")},
                         {QStringLiteral("name"), QStringLiteral("held.bin")},
                         {QStringLiteral("size"), qint64(data.size())},
-                        {QStringLiteral("root"), QString(64, QLatin1Char('a'))},
+                        {QStringLiteral("root"), rootHex},
                         {QStringLiteral("state"), int(paused ? Ed3kHosterJoin::State::Paused : Ed3kHosterJoin::State::Downloading)},
                         {QStringLiteral("mirrors"), QJsonArray{QString(url + QStringLiteral("-mirror"))}},
                         {QStringLiteral("pkgName"), QStringLiteral("Pack")},
@@ -2534,6 +2535,68 @@ private slots:
         QCOMPARE(r.resolver.lastHave, std::uint64_t(6 * 256 * 1024));
         QCOMPARE(r.resolver.lastPrefill, data.left(6 * 256 * 1024));
         QVERIFY(r.join->item(id)->verified);
+    }
+
+    /// #224: the root of a rooted item served from disk here (Shared Files, another network's
+    /// file): its blocks are copied, the link never opened (no wait, puzzle, quota)
+    void localCopy_completesWithoutTheLink()
+    {
+        Rig r;
+        const QByteArray data = content(3 * 1024 * 1024 + 77);
+        const auto h = eMule::ed3k::test::localHashOf(data);
+        const QString rootHex = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(h.root.bytes.data()), 32).toHex());
+        const QString url = QStringLiteral("https://fake.example/f/lc1");
+        QVERIFY(writeHeld(r.tmp.filePath(QStringLiteral("temp")), QStringLiteral("00000000000000d1"), url, data, 2, false, rootHex));
+        const QString copy = r.tmp.filePath(QStringLiteral("shared/held.bin"));
+        QVERIFY(QDir().mkpath(QFileInfo(copy).path()));
+        {
+            QFile f(copy);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            QCOMPARE(f.write(data), data.size());
+        }
+        QVERIFY(r.session.start(loopback(r.tmp.filePath(QStringLiteral("cfg")))));
+        eMule::ed3k::test::LocalSharer local(r.session, r.tmp.filePath(QStringLiteral("cfg")));
+        local.start();
+        QVERIFY(local.shareFile(copy, data));
+        r.join = std::make_unique<Ed3kHosterJoin>(r.session, r.tmp.filePath(QStringLiteral("cfg")));
+        r.join->setResolver(&r.resolver);
+        r.prefs.enabled = true;
+        r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
+        r.join->start();
+        const quint32 id = idOf(*r.join, url);
+        QVERIFY(id != 0);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(id), Ed3kHosterJoin::State::Complete, 20000);
+        QCOMPARE(r.resolver.opens, 0);
+        QFile done(r.join->item(id)->file);
+        QVERIFY2(done.open(QIODevice::ReadOnly), qPrintable(done.fileName()));
+        QCOMPARE(done.readAll(), data);
+        r.join->stop();
+    }
+
+    /// #224: a local copy whose bytes the sharer will not serve (not verified there): nothing
+    /// copied, the link opened as without it
+    void localCopy_unservableOpensTheLink()
+    {
+        Rig r;
+        const QByteArray data = content(2 * 1024 * 1024 + 5);
+        const auto h = eMule::ed3k::test::localHashOf(data);
+        const QString rootHex = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(h.root.bytes.data()), 32).toHex());
+        const QString url = QStringLiteral("https://fake.example/f/lc2");
+        QVERIFY(writeHeld(r.tmp.filePath(QStringLiteral("temp")), QStringLiteral("00000000000000d2"), url, data, 1, false, rootHex));
+        QVERIFY(r.session.start(loopback(r.tmp.filePath(QStringLiteral("cfg")))));
+        eMule::ed3k::test::LocalSharer local(r.session, r.tmp.filePath(QStringLiteral("cfg")));
+        local.start();
+        QVERIFY(local.shareFile(r.tmp.filePath(QStringLiteral("nothing.bin")), data, false));
+        r.join = std::make_unique<Ed3kHosterJoin>(r.session, r.tmp.filePath(QStringLiteral("cfg")));
+        r.join->setResolver(&r.resolver);
+        r.prefs.enabled = true;
+        r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
+        r.join->start();
+        const quint32 id = idOf(*r.join, url);
+        QVERIFY(id != 0);
+        QTRY_COMPARE_WITH_TIMEOUT(r.resolver.opens, 1, 20000);
+        QCOMPARE(r.join->item(id)->done, std::uint64_t(256 * 1024));
+        r.join->stop();
     }
 
     /// an unfinished item is its part file and .met in Temp: copied to another node's temp dir

@@ -20,6 +20,8 @@
 ///   records of the infohashes (btih/btmh, relation SET) name sets; at most 3 are tried.
 /// - Member downloads: ed3k blocks are written into the member files; each piece they
 ///   complete goes to libtorrent (add_piece), which hashes it as from a peer.
+/// - Local copies (#224): a member's root served here already by another join (Shared
+///   Files, a finished download, another torrent) is read from that file first.
 /// - The join is saved in Config/ed3k/torrent/<id>.join (debounced, and at stop). The
 ///   manifests and info dictionary fetched or made, and the verified members, are kept
 ///   under Config/ed3k/torrent/<id>/ and shared again after a restart.
@@ -58,6 +60,7 @@ public:
     static constexpr int kFlushWaitMs = 30 * 1000;
     /// members found gone from disk are summed up this long, then one log line
     static constexpr int kMissingLogMs = 5 * 1000;
+    // was: kCopyBatch (#224, 16 blocks per read); now the base's
 
     /// @p configDir: the joins go to <configDir>/ed3k/torrent. Both sessions must outlive this.
     Ed3kTorrentJoin(Ed3kSession& session, bt::BtSession& bt, const QString& configDir, QObject* parent = nullptr);
@@ -132,6 +135,7 @@ protected:
     [[nodiscard]] std::vector<std::uint64_t> wantedBlocks(const Download& d) const override;
     [[nodiscard]] QString downloadName(const ffi::Root& root, const Download& d) const override;
     void onFileBlock(const Download& d, const ::ed3k::event::Block& b) override;
+    bool takeLocalBlock(const Download& d, std::uint64_t offset, std::span<const std::byte> data) override;
     void onBlobFetched(const QString& owner, int member, const ::ed3k::Root& root, const QByteArray& data) override;
     void onDownloadHashes(const Download& d, const ::ed3k::Bytes& blob) override;
     [[nodiscard]] std::optional<FileRead> sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
@@ -186,8 +190,14 @@ private:
     void onHaveChanged(const QString& id, int member);
     void onClaimFalse(const QString& id, const ::ed3k::tev::ClaimFalse& ev);
     void onTorrentComplete(const QString& id);
-    /// Member downloads of every member with a root that is still open.
+    /// Member downloads of every member with a root that is still open; a local copy of a
+    /// member's root (#224) is read first.
     void startDownloads(const QString& id);
+    // was: copyLocal(id, index, from) and endCopy(id, index) (#224); now the base's copyLocal,
+    // the blocks through takeLocalBlock
+    /// A block of member @p index written into its file and handed on (ed3kBlock → pieces for
+    /// BitTorrent). false: not written.
+    bool takeBlock(const QString& id, int index, std::uint64_t offset, std::span<const std::byte> data);
     /// §4.2: ALIAS searches of the infohashes.
     void startSetSearch(const QString& id);
     /// adoptCreated: every piece passed under the torrent

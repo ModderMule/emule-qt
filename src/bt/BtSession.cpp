@@ -11,6 +11,7 @@
 #include "stats/Statistics.h"
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
+#include "utils/ShareRatio.h"
 
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/announce_entry.hpp>
@@ -347,6 +348,9 @@ struct BtSession::Impl {
     QTimer* timer = nullptr;
     std::map<QString, lt::torrent_handle> handles;
     std::map<QString, BtTorrentRow> rows;
+    /// all_time_upload when first seen this core run: session upload = now - base.
+    /// Kept over a BT stop/start, dropped on remove.
+    std::map<QString, qint64> sessionUpBase;
     /// stopped by a seed limit, and resumed by the user since: the limit stays off
     QSet<QString> limitOverride;
     /// seed limits that differ from the global ones
@@ -693,8 +697,8 @@ struct BtSession::Impl {
             meta[id] = {QString::fromStdString(p.comment), QString::fromStdString(p.created_by),
                         static_cast<qint64>(p.creation_date)};
     }
-    /// BtTorrentView::row() plus what torrent_info no longer has
-    [[nodiscard]] BtTorrentRow row(const lt::torrent_status& st) const
+    /// BtTorrentView::row() plus what torrent_info no longer has, and the session upload
+    [[nodiscard]] BtTorrentRow row(const lt::torrent_status& st)
     {
         BtTorrentRow r = BtTorrentView::row(st);
         if (auto it = meta.find(r.id); it != meta.end()) {
@@ -702,6 +706,8 @@ struct BtSession::Impl {
             r.creator = it->second.creator;
             r.createdAt = it->second.createdAt;
         }
+        const qint64 base = sessionUpBase.try_emplace(r.id, r.uploaded).first->second;
+        r.sessionUploaded = std::max<qint64>(0, r.uploaded - base);
         return r;
     }
     /// unset or unlimited per-torrent connections → the configured default; IP filter on
@@ -1131,6 +1137,7 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
         pending->second.removed = flags;   // removed when libtorrent has added it
     d->handles.erase(id);
     d->rows.erase(id);
+    d->sessionUpBase.erase(id);
     d->limitOverride.remove(id);
     d->metaStopped.remove(id);
     d->finishFlush.remove(id);
@@ -1809,6 +1816,7 @@ void BtSession::drainAlerts()
                 // the row add() put up goes again
                 if (!pending.empty() && !pending.mapped().removed && !d->handles.contains(id)) {
                     d->rows.erase(id);
+                    d->sessionUpBase.erase(id);
                     d->details.erase(id);
                     if (d->links.erase(id) > 0)
                         d->saveLinks();
@@ -2416,8 +2424,10 @@ void BtSession::Impl::enforceSeedLimits(const lt::torrent_status& st, const BtTo
         if (it->second.seedTimeMode != BtLimitMode::Global)
             seedMinutes = it->second.seedTimeMode == BtLimitMode::Custom ? it->second.seedTimeMinutes : 0;
     }
-    const qint64 base = std::max<qint64>({st.all_time_download, st.total_done, 1});
-    const bool ratioReached = ratioPercent > 0 && st.all_time_upload * 100 >= base * ratioPercent;
+    // same ratio as the Torrents list shows (#218)
+    const double ratio = shareRatio(st.all_time_upload, st.all_time_download, st.total_done);
+    const bool ratioReached = ratioPercent > 0 && ratio != kShareRatioNone
+                              && (ratio == kShareRatioInfinite || ratio * 100.0 >= ratioPercent);
     const bool timeReached = seedMinutes > 0 && st.seeding_duration.count() >= qint64(seedMinutes) * 60;
     if (!ratioReached && !timeReached)
         return;

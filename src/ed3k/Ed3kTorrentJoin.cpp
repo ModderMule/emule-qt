@@ -105,6 +105,8 @@ struct Ed3kTorrentJoin::Join {
         quint64 generation = 0;
         int rehashTries = 0;
         std::set<std::uint64_t> received;   ///< ed3k blocks written (offsets)
+        // was: copying, copied (#224); now the base's Download
+        std::set<std::uint64_t> local;      ///< #224: blocks of received taken from a local copy
     };
     std::vector<Member> members;
     /// pieces libtorrent has (havePieces, then its verdicts): ed3k skips their blocks
@@ -334,8 +336,22 @@ void Ed3kTorrentJoin::onPieceResult(const QString& id, int piece, bool passed)
         return;
     if (piece >= 0 && piece < j->have.size())
         j->have.setBit(piece, passed);
-    if (!passed)
+    if (!passed) {
         logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" failed in BitTorrent").arg(piece).arg(name(id)); });
+        // #224: blocks of a local copy in it are asked for on ed3k (the engine verified the
+        // network's; it would not send those again)
+        if (const auto extents = j->torrent.extents(std::uint64_t(piece)))
+            for (const auto& x : *extents) {
+                if (x.member >= j->members.size())
+                    continue;
+                auto& mem = j->members[std::size_t(x.member)];
+                const auto first = mem.local.lower_bound(x.offset - x.offset % kBlock);
+                const auto last = mem.local.lower_bound(x.offset + x.len);
+                for (auto it = first; it != last; ++it)
+                    mem.received.erase(*it);
+                mem.local.erase(first, last);
+            }
+    }
     if (auto ok = j->torrent.pieceResult(std::uint64_t(piece), passed); !ok && ok.error() != ffi::Error::NotFound)
         logDebug([&]() -> QString { return QStringLiteral("verdict on piece %1 of %2 not taken (error %3)").arg(piece).arg(id, errorName(ok.error())); });
     drainEvents(id);
@@ -406,6 +422,7 @@ std::vector<std::uint64_t> Ed3kTorrentJoin::wantedBlocks(const Download& d) cons
     if (!m || m->status != ffi::MemberStatus::Open)
         return {};
     // was: ToDo: skip the blocks libtorrent has already (done: Join::have, piecesHad)
+    // was: #224 nothing while copying (members[].copying); now the base holds its requests
     const auto& received = j->members[std::size_t(d.member)].received;
     std::vector<std::uint64_t> wanted;
     for (std::uint64_t off = 0; off < d.size; off += kBlock)
@@ -416,28 +433,24 @@ std::vector<std::uint64_t> Ed3kTorrentJoin::wantedBlocks(const Download& d) cons
 
 void Ed3kTorrentJoin::onFileBlock(const Download& d, const ffi::event::Block& b)
 {
+    // was: the write, ed3kBlock and feedPieces here; now takeBlock (a local copy's blocks too)
+    if (!takeBlock(d.owner, d.member, b.offset, std::span<const std::byte>{b.data}))
+        return;
+    drainEvents(d.owner);
+}
+
+bool Ed3kTorrentJoin::takeLocalBlock(const Download& d, std::uint64_t offset, std::span<const std::byte> data)
+{
+    // #224: like a network block; remembered, a failed piece asks ed3k for it again. Copies:
+    // the handlers may stop the download (d gone)
     const QString id = d.owner;
-    Join* j = findJoin(id);
-    if (!j || d.member < 0 || std::size_t(d.member) >= j->members.size())
-        return;
-    const QString path = memberPath(*j, d.member);
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QFile f(path);
-    if (!f.open(QIODevice::ReadWrite) || !f.seek(qint64(b.offset))
-        || f.write(reinterpret_cast<const char*>(b.data.data()), qint64(b.data.size())) != qint64(b.data.size())) {
-        logWarning(QStringLiteral("cannot write a block into %1").arg(path));
-        return;
-    }
-    f.close();
-    j->members[std::size_t(d.member)].received.insert(b.offset);
-    auto pieces = j->torrent.ed3kBlock(std::uint64_t(d.member), b.offset, std::uint32_t(b.data.size()));
-    if (!pieces) {
-        logDebug([&]() -> QString { return QStringLiteral("block %1 of member %2 not taken (error %3)").arg(b.offset).arg(d.member).arg(errorName(pieces.error())); });
-    } else {
-        logDebug([&]() -> QString { return QStringLiteral("ed3k block %1 of member %2: %3 piece(s) for BitTorrent").arg(b.offset).arg(d.member).arg(pieces->size()); });
-        feedPieces(id, *pieces);
-    }
+    const int member = d.member;
+    if (!takeBlock(id, member, offset, data))
+        return false;
+    if (Join* j = findJoin(id); j && member >= 0 && std::size_t(member) < j->members.size())
+        j->members[std::size_t(member)].local.insert(offset);
     drainEvents(id);
+    return true;
 }
 
 void Ed3kTorrentJoin::onBlobFetched(const QString& owner, int member, const ffi::Root& root, const QByteArray& data)
@@ -1165,9 +1178,14 @@ void Ed3kTorrentJoin::startDownloads(const QString& id)
     for (std::size_t i = 0; i < j->members.size(); ++i) {
         const auto m = j->torrent.member(i);
         // all of it in libtorrent: BitTorrent finishes it, MEMBER_COMPLETE hashes it
-        if (m && m->root && m->size > 0 && m->status == ffi::MemberStatus::Open && !downloading(*m->root)
-            && !piecesHad(*j, m->start, m->start + m->size))
+        // was: ... && !downloading(*m->root) && !piecesHad(...)) (void)openDownload(...);
+        if (!m || !m->root || m->size == 0 || m->status != ffi::MemberStatus::Open || piecesHad(*j, m->start, m->start + m->size))
+            continue;
+        if (!downloading(*m->root))
             (void)openDownload(*m->root, m->size, id, int(i));
+        // #224: the same root here already (Shared Files, a finished download, another
+        // torrent): its blocks first, the network gets the rest
+        (void)copyLocal(*m->root);
     }
 }
 
@@ -1229,6 +1247,31 @@ void Ed3kTorrentJoin::feedPieces(const QString& id, const std::vector<std::uint6
                 (void)m_bt.addPiece(id, int(piece), data);
         });
     }
+}
+
+bool Ed3kTorrentJoin::takeBlock(const QString& id, int index, std::uint64_t offset, std::span<const std::byte> data)
+{
+    Join* j = findJoin(id);
+    if (!j || index < 0 || std::size_t(index) >= j->members.size())
+        return false;
+    const QString path = memberPath(*j, index);
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile f(path);
+    if (!f.open(QIODevice::ReadWrite) || !f.seek(qint64(offset))
+        || f.write(reinterpret_cast<const char*>(data.data()), qint64(data.size())) != qint64(data.size())) {
+        logWarning(QStringLiteral("cannot write a block into %1").arg(path));
+        return false;
+    }
+    f.close();
+    j->members[std::size_t(index)].received.insert(offset);
+    auto pieces = j->torrent.ed3kBlock(std::uint64_t(index), offset, std::uint32_t(data.size()));
+    if (!pieces) {
+        logDebug([&]() -> QString { return QStringLiteral("block %1 of member %2 not taken (error %3)").arg(offset).arg(index).arg(errorName(pieces.error())); });
+    } else {
+        logDebug([&]() -> QString { return QStringLiteral("ed3k block %1 of member %2: %3 piece(s) for BitTorrent").arg(offset).arg(index).arg(pieces->size()); });
+        feedPieces(id, *pieces);
+    }
+    return true;
 }
 
 void Ed3kTorrentJoin::reportProblem(const QString& id, int index, const QString& message)

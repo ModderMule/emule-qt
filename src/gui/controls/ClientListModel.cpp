@@ -129,7 +129,13 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
             return c.anonymous ? tr("anonymous (ed3k)") : tr("%1 (ed3k)").arg(clientNameText(c.userName));
         if (m_mode == ClientListMode::OnQueue && index.column() == 4)
             return c.remoteQueueRank > 0 ? tr("place %1").arg(c.remoteQueueRank) : QString();
+        // was: sourceFrom -1 → "?"; the network instead, as BT/Usenet/Hoster rows
+        if (m_mode == ClientListMode::Downloading && index.column() == 7)
+            return c.isUrl ? QStringLiteral("HTTP") : QStringLiteral("ed3k");
     }
+    if (c.network == ClientNetwork::Ed3k && role == Qt::UserRole && m_mode == ClientListMode::Downloading
+        && index.column() == 7)
+        return 100;   // after eD2K's source types, before the other networks (100 + Ed3kJoin)
 
     // BitTorrent peers, news servers, hosters of a job joined with ed3k: their network's icon,
     // its name as the source type

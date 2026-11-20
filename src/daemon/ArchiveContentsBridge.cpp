@@ -10,11 +10,15 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QSet>
+
+#include <memory>
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kArchiveContents.h"
 #include "Ed3kDownloads.h"
 #include "Ed3kHosterJoin.h"
+#include "Ed3kLocalScan.h"
 #include "Ed3kSetManifest.h"
 #endif
 #ifdef EMULE_HAVE_BITTORRENT
@@ -34,6 +38,8 @@ QString tr(const char* text)
 ed3k::Ed3kArchiveContents* s_contents = nullptr;
 ed3k::Ed3kDownloads* s_downloads = nullptr;
 ed3k::Ed3kHosterJoin* s_hoster = nullptr;
+/// #224 folder scan of s_contents' node; made on the first LocateLocalCopies
+std::unique_ptr<ed3k::Ed3kLocalScan> s_scan;
 #endif
 #ifdef EMULE_HAVE_BITTORRENT
 bt::BtSession* s_bt = nullptr;
@@ -58,10 +64,16 @@ QString hexOf(const ::ed3k::Root& r)
 QCborMap toCbor(const ed3k::Ed3kArchiveContents::Found& f)
 {
     QCborArray entries;
-    for (const auto& e : f.entries)
-        entries.append(QCborMap{{QStringLiteral("path"), e.path},
-                                {QStringLiteral("size"), qint64(e.size)},
-                                {QStringLiteral("root"), hexOf(e.root)}});
+    for (std::size_t i = 0; i < f.entries.size(); ++i) {
+        const auto& e = f.entries[i];
+        QCborMap m{{QStringLiteral("path"), e.path},
+                   {QStringLiteral("size"), qint64(e.size)},
+                   {QStringLiteral("root"), hexOf(e.root)}};
+        // #224: a whole file of it here (Shared Files, a download, a folder scan)
+        if (i < f.localPaths.size() && !f.localPaths[i].isEmpty())
+            m.insert(QStringLiteral("local"), true);
+        entries.append(m);
+    }
     QCborMap m{{QStringLiteral("name"), f.name},
                {QStringLiteral("state"), ed3k::Ed3kArchiveContents::stateName(f.state)},
                {QStringLiteral("sites"), qint64(f.sites)},
@@ -71,6 +83,8 @@ QCborMap toCbor(const ed3k::Ed3kArchiveContents::Found& f)
         m.insert(QStringLiteral("first"), hexOf(*f.first));
     if (f.state == ed3k::Ed3kArchiveContents::State::Found)
         m.insert(QStringLiteral("manifest"), hexOf(f.manifest));
+    if (f.allLocal())
+        m.insert(QStringLiteral("allLocal"), true);
     return m;
 }
 
@@ -235,6 +249,8 @@ void setTargets(ed3k::Ed3kArchiveContents* contents, ed3k::Ed3kDownloads* downlo
                 bt::BtSession* bt)
 {
 #ifdef EMULE_HAVE_ED3K
+    if (contents != s_contents)
+        s_scan.reset();   // its node goes with the old target
     s_contents = contents;
     s_downloads = downloads;
     s_hoster = hoster;
@@ -386,6 +402,114 @@ void downloadEntries(const QCborArray& entries, const QString& folder, int categ
     reply(true, QCborMap{{QStringLiteral("added"), added}});
 #else
     Q_UNUSED(entries) Q_UNUSED(folder) Q_UNUSED(category)
+    reply(false, tr("ed3k is not built in."));
+#endif
+}
+
+void takeFromDisk(const QCborMap& target, const QCborArray& archives, const QString& folder, int category, Reply reply)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_contents || !s_downloads) {
+        reply(false, tr("ed3k is off."));
+        return;
+    }
+    QCborArray entries;
+    QSet<QString> volumes;   // lower-case file names of the archives' parts
+    for (const QCborValue& av : archives) {
+        const QCborMap a = av.toMap();
+        volumes.insert(a.value(QStringLiteral("name")).toString().section(u'/', -1).toLower());
+        for (const QCborValue& p : a.value(QStringLiteral("parts")).toArray())
+            volumes.insert(p.toString().section(u'/', -1).toLower());
+        for (const QCborValue& ev : a.value(QStringLiteral("entries")).toArray()) {
+            const QCborMap e = ev.toMap();
+            const auto root = rootOfHex(e.value(QStringLiteral("root")).toString());
+            const auto size = std::uint64_t(e.value(QStringLiteral("size")).toInteger());
+            // all of it or nothing: a missing entry needs the archive after all
+            if (!root || s_contents->localPathOf(*root, size).isEmpty()) {
+                reply(false, tr("\"%1\" is not on disk here; the archive is still needed.").arg(e.value(QStringLiteral("path")).toString()));
+                return;
+            }
+            entries.append(e);
+        }
+    }
+    if (entries.isEmpty()) {
+        reply(false, tr("Nothing to take."));
+        return;
+    }
+    downloadEntries(entries, folder, category, [target, volumes, reply](bool ok, const QCborValue& value) {
+        if (!ok) {
+            reply(false, value);
+            return;
+        }
+        QCborMap out = value.toMap();
+        int skipped = 0;
+        QString note;
+        if (const QString id = target.value(QStringLiteral("usenetItem")).toString(); !id.isEmpty()) {
+            auto* queue = usenet::theUsenetSession ? usenet::theUsenetSession->queue() : nullptr;
+            const auto* item = queue ? queue->findItem(id) : nullptr;
+            QList<int> files;
+            for (qsizetype i = 0; item && i < item->nzb.files.size(); ++i)
+                if (volumes.contains(item->nzb.files.at(i).fileName.section(u'/', -1).toLower())
+                    || volumes.contains(item->bestFileName(int(i)).section(u'/', -1).toLower()))
+                    files << int(i);
+            if (!files.isEmpty()) {
+                note = queue->setFilesSkipped(id, files, true);
+                if (note.isEmpty())
+                    skipped = int(files.size());
+            }
+        } else if (s_hoster) {
+            const auto pkg = quint32(target.value(QStringLiteral("hosterPackage")).toInteger());
+            const auto one = quint32(target.value(QStringLiteral("hosterItem")).toInteger());
+            std::vector<quint32> ids;
+            for (const auto& it : s_hoster->items())
+                if (((pkg != 0 && it.packageId == pkg) || (one != 0 && it.id == one))
+                    && it.state != ed3k::Ed3kHosterJoin::State::Complete && volumes.contains(it.name.section(u'/', -1).toLower()))
+                    ids.push_back(it.id);
+            for (const quint32 id : ids)
+                s_hoster->remove(id, true);
+            skipped = int(ids.size());
+        }
+        out.insert(QStringLiteral("skipped"), skipped);
+        if (!note.isEmpty())
+            out.insert(QStringLiteral("note"), note);
+        reply(true, out);
+    });
+#else
+    Q_UNUSED(target) Q_UNUSED(archives) Q_UNUSED(folder) Q_UNUSED(category)
+    reply(false, tr("ed3k is not built in."));
+#endif
+}
+
+void locateLocalCopies(const QStringList& folders, Reply reply)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_contents) {
+        reply(false, tr("ed3k is off."));
+        return;
+    }
+    if (folders.isEmpty()) {
+        reply(false, tr("No folder given."));
+        return;
+    }
+    if (!s_scan)
+        s_scan = std::make_unique<ed3k::Ed3kLocalScan>(s_contents->session());
+    if (s_scan->running()) {
+        reply(false, tr("A folder scan is running already."));
+        return;
+    }
+    auto conn = std::make_shared<QMetaObject::Connection>();
+    *conn = QObject::connect(s_scan.get(), &ed3k::Ed3kLocalScan::finished, s_scan.get(),
+                             [reply, conn](const ed3k::Ed3kLocalScan::Result& r) {
+        QObject::disconnect(*conn);
+        reply(true, QCborMap{{QStringLiteral("files"), r.files},
+                             {QStringLiteral("candidates"), r.candidates},
+                             {QStringLiteral("hashed"), r.hashed},
+                             {QStringLiteral("matched"), r.matched},
+                             {QStringLiteral("paths"), QCborArray::fromStringList(r.paths)}});
+    });
+    (void)s_scan->start(folders);   // false: finished() came already (nothing to look for)
+#else
+    Q_UNUSED(folders)
     reply(false, tr("ed3k is not built in."));
 #endif
 }

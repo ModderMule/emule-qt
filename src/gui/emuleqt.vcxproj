@@ -387,6 +387,7 @@
     <ClCompile Include="utils\IpcFeedback.cpp" />
     <ClCompile Include="utils\MassRenameAction.cpp" />
     <ClCompile Include="utils\MoveDownloadsAction.cpp" />
+    <ClCompile Include="utils\LocateFilesAction.cpp" />
     <ClCompile Include="utils\Ed3kLinkMenu.cpp" />
     <ClCompile Include="utils\FolderLister.cpp" />
     <ClCompile Include="utils\ListActivation.cpp" />
@@ -466,6 +467,7 @@
     <ClInclude Include="app\Ed3kLinkActions.h" />
     <ClInclude Include="utils\MassRenameAction.h" />
     <ClInclude Include="utils\MoveDownloadsAction.h" />
+    <ClInclude Include="utils\LocateFilesAction.h" />
     <ClInclude Include="utils\Ed3kLinkMenu.h" />
     <ClInclude Include="utils\FolderLister.h" />
     <ClInclude Include="utils\AsyncMessageBox.h" />

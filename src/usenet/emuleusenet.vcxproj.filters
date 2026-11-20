@@ -54,6 +54,9 @@
     <ClCompile Include="post\Par2Verifier.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="post\Par2LocalFill.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="post\UsenetDirectUnpack.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -117,6 +120,9 @@
     <ClCompile Include="stream\UsenetEncryptedPreview.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="stream\Mp4Index.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="stream\UsenetImagePreview.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -161,6 +167,9 @@
     <ClInclude Include="post\Par2Verifier.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="post\Par2LocalFill.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="post\UsenetReleaseChecks.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -201,6 +210,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="queue\UsenetUsage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stream\Mp4Index.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="stream\RarReader.h">

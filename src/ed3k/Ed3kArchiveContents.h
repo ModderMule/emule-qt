@@ -22,6 +22,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -169,12 +170,27 @@ public:
         std::uint32_t sites = 0;
         QString password;
         std::vector<ArchiveEntry> entries;
+        /// #224: per entry, a whole file of its root on disk here (localPathOf); empty: none
+        std::vector<QString> localPaths;
+        /// every entry is on disk here: the archive need not be downloaded
+        [[nodiscard]] bool allLocal() const
+        {
+            return !entries.empty() && std::ranges::none_of(localPaths, [](const QString& p) { return p.isEmpty(); })
+                   && localPaths.size() == entries.size();
+        }
     };
     using Done = std::function<void(const std::vector<Found>&)>;
     /// Starts a lookup; @p done once on this thread when every volume ended or after
     /// @p timeoutMs. nullopt: the node is not running or has no contacts.
     std::optional<quint32> lookup(Request request, Done done, int timeoutMs = 120 * 1000);
     void cancelLookup(quint32 id);
+    /// #224: a whole file of @p root (@p size bytes) here: shared by any join of the node or
+    /// found by a folder scan; empty: none.
+    [[nodiscard]] QString localPathOf(const ffi::Root& root, std::uint64_t size) const;
+    /// The node (a folder scan runs on it).
+    [[nodiscard]] Ed3kSession& session() const { return m_session; }
+    /// Fills Found::localPaths of @p found (done by lookup before its callback).
+    void markLocal(std::vector<Found>& found) const;
     [[nodiscard]] static QString stateName(State s);
 
 protected:

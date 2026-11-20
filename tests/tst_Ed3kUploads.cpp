@@ -273,6 +273,7 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     bool sawSource = false;
     bool sawHello = false;
     bool sawDownloading = false;   // the Downloading list: a holding, our pieces counted
+    bool sawComplete = false;      // a's FileStatus.have: every piece (was: empty bitmap read as not told)
     const std::size_t pieces = (std::size_t(data.size()) + 4 * 1024 * 1024 - 1) / (4 * 1024 * 1024);
     QTimer sourcePoll;
     connect(&sourcePoll, &QTimer::timeout, this, [&] {
@@ -284,8 +285,13 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
             if (const auto h = e->peerHello(sourceOf(a).id); h && h->agent.starts_with("eMuleQt") && h->remote)
                 sawHello = true;
         for (const auto& s : Ed3kJoinBase::downloadingAt(b))
-            if (s.node == sourceOf(a).id && s.holding && s.ownPieces.size() == pieces)
+            if (s.node == sourceOf(a).id && s.holding && s.ownPieces.size() == pieces) {
                 sawDownloading = true;
+                bool all = s.haveKnown;
+                for (std::size_t p = 0; all && p < pieces; ++p)
+                    all = p / 8 >= s.have.size() || ((s.have[p / 8] >> (p % 8)) & 1u) != 0;
+                sawComplete = sawComplete || all;
+            }
     });
     sourcePoll.start(1);
     QVERIFY(fb.fetch(root, std::uint64_t(data.size()), sourceOf(a)));
@@ -297,6 +303,7 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     QVERIFY(sawSource);
     QVERIFY(sawHello);
     QVERIFY(sawDownloading);
+    QVERIFY(sawComplete);
     QVERIFY(mostHolding >= 1);
     QVERIFY(mostHolding <= 2);   // the two slots
     QVERIFY(sawWaiting);         // three nodes, two slots: one waited

@@ -2659,8 +2659,20 @@ fixed-width font, unwrapped. A MediaInfo NFO (one article) takes about 2 s.
 - **posted images** — `.jpg/.png/.gif/.webp/.bmp` files of the NZB, up to 12,
   8 MB each, fetched whole (e.g. `preview.jpg` contact sheets). Checked by magic,
   since the daemon may ship no image plugins.
-- **video frames** — the biggest video file, else the opening volume of the
-  biggest RAR set. Only the first `kHeadBytes` (24 MB encoded) are fetched. Of a
+- **video frames, spread** — a plain `.mp4/.m4v/.mov` (not in a RAR): the first
+  article tells the part size and where the top-level boxes go; the box headers
+  are followed (`findMp4Moov`, at most 8 more articles) to `moov`, which is
+  fetched whole (≤ 32 MB) and read for the video track's sync samples
+  (`mp4VideoKeyframes`: stts/stss/stsc/stsz/stco|co64; the track with the most
+  samples, so a cover track loses). 8 keyframes spread over the runtime
+  (`spreadKeyframes`, never 0 s) are fetched with what follows them (≥ 256 KB, 3× the seek margin at the file's bitrate) and
+  grabbed at `keyframe + 120 ms` (`FrameGrabRequest::positionsMs`), so the seek
+  never lands before the keyframe, in a hole. Needs a sparse temp file
+  (`canLeaveGap`). Fragmented mp4 (`moof`), an unreadable index or < 2 keyframes
+  fall back to the head below. tomb/narcos (40 min 1080p): 10–14 MB, ~7 s.
+- **video frames, head** — any other video file, else the opening volume of the
+  biggest RAR set. Only the first `kHeadBytes` (24 MB encoded) are fetched; at
+  ~2.7 Mbit/s that is the first ~70 s, so mostly intro. Of a
   RAR set the first article is read alone first: when its entry is no video
   (an ISO, a .vdi) the grab stops there with a note. A RAR
   head is decompressed with `readArchiveHead()` (libarchive, stored or

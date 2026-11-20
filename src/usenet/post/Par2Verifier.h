@@ -175,6 +175,16 @@ struct Par2FileList {
     [[nodiscard]] bool ok() const { return outcome == Par2Outcome::Listed; }
 };
 
+/// One block of a recovery set's file that par2 found inside another file (#224: an extra file
+/// handed to locate(), at any offset). Its bytes are the file's at @p offset.
+struct Par2FoundBlock {
+    QString fileName;        ///< as the set names it — untrusted, see Par2SetFile
+    qint64 offset = 0;       ///< in that file
+    qint64 length = 0;
+    QString source;          ///< the extra file that holds it
+    qint64 sourceOffset = 0;
+};
+
 class Par2Verifier {
 public:
     /// Whether this build can verify at all. False makes every call below return
@@ -215,6 +225,13 @@ public:
     /// Check and rewrite damaged files from the recovery blocks.
     Par2Result repair(const QString& par2Path, const QString& basePath);
 
+    /// #224 stored archives: which blocks of the set's files lie inside @p extraFiles, at any
+    /// offset (par2's rolling scan; e.g. the files a stored RAR holds, on disk here). A verify
+    /// with them as extra files: nothing is written. @p basePath is not scanned (the set's
+    /// files need not exist). @p check: its counters.
+    [[nodiscard]] QList<Par2FoundBlock> locate(const QString& par2Path, const QString& basePath,
+                                               const QStringList& extraFiles, Par2Result* check = nullptr);
+
     /// The names the recovery set expects, from PreProcess() alone.
     ///
     /// No data is scanned and no source file has to exist: PreProcess() ends in
@@ -233,8 +250,11 @@ public:
     [[nodiscard]] static QString chooseIndexFile(const QStringList& par2Paths);
 
 private:
+    /// @p extraFiles: scanned too (beside the siblings); @p found: the blocks found in them.
     Par2Result run(const QString& par2Path, const QString& basePath,
-                   bool doRepair, bool renameOnly);
+                   bool doRepair, bool renameOnly,
+                   const QStringList& extraFiles = {}, QList<Par2FoundBlock>* found = nullptr,
+                   bool siblings = true);
 
     ProgressFn m_progress;
     CancelFn   m_cancel;
