@@ -2989,9 +2989,30 @@ void Ed3kJoinBase::skipRoot(const ffi::Root& root, Skipped s)
     const auto [it, added] = m_skipped.insert_or_assign(root, std::move(s));
     if (!added)
         return;
-    logInfo(QStringLiteral("%1 of %2 not joined on ed3k: its file is under the anonymous key and this network is not "
-                           "anonymous (hops.md §1)").arg(it->second.member >= 0 ? QStringLiteral("member %1").arg(it->second.member)
-                                                                                : QStringLiteral("a file")).arg(it->second.owner));
+    // was: "%1 of %2 not joined on ed3k: its file is under the anonymous key and this network is not anonymous (hops.md §1)"
+    // hops.md §1: no error, the user's hiding wins; the switch to keep it joined is named (#232)
+    const QString what = it->second.member >= 0 ? QStringLiteral("file %1 of %2").arg(it->second.member).arg(it->second.owner)
+                                                : QStringLiteral("a file of %1").arg(it->second.owner);
+    const QString sw = anonSwitchName();
+    logInfo(sw.isEmpty()
+                ? QStringLiteral("%1 left out of this join: hiding shares it under the anonymous key").arg(what)
+                : QStringLiteral("%1 left out of this join: hiding shares it under the anonymous key, %2 stay under the "
+                                 "node key. To keep them joined, check \"%2 under the anonymous key\" in Options › ed3k › "
+                                 "Extended › Kad publishing.").arg(what, sw));
+}
+
+QString Ed3kJoinBase::anonSwitchName() const
+{
+    // the per-network switches of Options › ed3k › Extended › Kad publishing
+    if (m_tag == QLatin1String("torrent"))
+        return QStringLiteral("Torrents");
+    if (m_tag == QLatin1String("usenet"))
+        return QStringLiteral("Usenet downloads");
+    if (m_tag == QLatin1String("hoster"))
+        return QStringLiteral("Hoster downloads");
+    if (m_tag == QLatin1String("ed2k"))
+        return QStringLiteral("eD2K downloads");
+    return {};
 }
 
 void Ed3kJoinBase::takeFromNodeJoins(const ffi::Root& root)
@@ -3075,7 +3096,9 @@ void Ed3kJoinBase::withdrawSet(const QString& owner)
         return;
     if (const Kept kept = readKept(owner); kept.set)
         if (auto ok = e->setUnpublish(m_session.now(), kept.set->root); ok)
-            logInfo(QStringLiteral("set of %1 withdrawn: a member went to the anonymous key (hops.md §1)").arg(owner));
+            // was: logInfo(... "set of %1 withdrawn: a member went to the anonymous key (hops.md §1)")
+            // skipRoot told the user already
+            logDebug([&]() -> QString { return QStringLiteral("set of %1 withdrawn: a file of it went to the anonymous key").arg(owner); });
 }
 
 } // namespace eMule::ed3k

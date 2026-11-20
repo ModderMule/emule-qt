@@ -181,6 +181,7 @@ private slots:
     void addKadSources_firewalledKeepsBuddylessIPv6Source();
     void addKadSources_type7NeedsAUsableRoute();
     void addKadSources_type7PointerResolvesOncePerSource();
+    void addKadSources_type7PointerMissIsHeldAndRetried();
     void addKadSources_type7FailedIPv6IsNotRedialled();
     void addKadSources_type3BpvReroutesAfterFailedCallback();
     void addKadSources_buddyIpIsNetworkOrder();
@@ -2062,6 +2063,90 @@ void tst_DownloadQueue::addKadSources_type7PointerResolvesOncePerSource()
     QVERIFY(missLeft > 0 && missLeft <= kad::PointerRoute::kMissCacheSecs);
     dq.addKadSourceResult(recMiss);
     QCOMPARE(lookups, 2);                          // cached miss: no new lookup
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addKadSources_type7PointerMissIsHeldAndRetried()
+{
+    // ipv6-spec §5.6: on type 7 + bpv a miss is normal (no buddy yet). The record is held
+    // and the lookup retried when the miss expires, not left to the next Kad file search.
+    eMule::testing::KadFixture fx{eMule::testing::KadMode::Open};
+    makeReachable(fx);
+
+    DownloadQueue dq;
+    uint8 hashA[16] = {67, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+    uint8 hashB[16] = {68, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+    auto* pfA = createTestPartFile(hashA, QStringLiteral("kad_bpv_held_a.bin"));
+    auto* pfB = createTestPartFile(hashB, QStringLiteral("kad_bpv_held_b.bin"));
+    dq.addDownload(pfA);
+    dq.addDownload(pfB);
+
+    kad::PointerRoute::clear();
+    int lookups = 0;
+    kad::Search::PointerDone pendingDone;
+    kad::PointerRoute::setLookupStarter([&](const kad::UInt128&, const kad::UInt128&,
+                                            uint32, kad::Search::PointerDone done) {
+        ++lookups;
+        pendingDone = std::move(done);
+        return true;
+    });
+    kad::Kademlia::setKadSourceResultCallback(
+        [&dq](const kad::Kademlia::KadSourceResult& r) { dq.addKadSourceResult(r); });
+    const auto restore = qScopeGuard([] {
+        kad::PointerRoute::setLookupStarter(nullptr);
+        kad::PointerRoute::clear();
+        kad::Kademlia::setKadSourceResultCallback(nullptr);
+    });
+
+    uint8 clientHash[16];
+    std::memset(clientHash, 0x5D, sizeof(clientHash));
+    const kad::UInt128 sourceID(clientHash);
+    const uint32 sourceIP = Address::fromString(QStringLiteral("77.66.55.42")).toUint32();
+    auto recA = makeKadResult(hashA, 7, clientHash, sourceIP, 4662, 4672, 0x01);
+    recA.pointerVersion = KAD_POINTER_VERSION;
+    auto recB = recA;
+    recB.fileHash = hashB;
+
+    dq.addKadSourceResult(recA);
+    QCOMPARE(lookups, 1);
+    pendingDone(std::nullopt);                     // miss: held, not dropped
+    QCOMPARE(kad::PointerRoute::heldFor(sourceID), std::size_t{1});
+
+    // Same source, another file, inside the miss: held too, no lookup
+    dq.addKadSourceResult(recB);
+    dq.addKadSourceResult(recA);                   // seen again: still one per file
+    QCOMPARE(lookups, 1);
+    QCOMPARE(kad::PointerRoute::heldFor(sourceID), std::size_t{2});
+
+    kad::PointerRoute::process();                  // miss not expired yet
+    QCOMPARE(lookups, 1);
+
+    // Miss expired: one retry for both records
+    kad::PointerRoute::expireNow(sourceID);
+    kad::PointerRoute::process();
+    QCOMPARE(lookups, 2);
+    QCOMPARE(kad::PointerRoute::heldFor(sourceID), std::size_t{0});
+
+    const Address buddy = Address::fromString(QStringLiteral("11.22.33.46"));
+    kad::Search::PointerHit hit;
+    hit.buddyIP = buddy.toNetworkUint32();
+    hit.buddyPort = 4674;
+    hit.buddyHash.fill(0x6E);
+    pendingDone(hit);
+    QCOMPARE(pfA->sourceCount() + pfA->a4afSourceCount(), 1);
+    QCOMPARE(pfB->sourceCount() + pfB->a4afSourceCount(), 1);
+
+    // Another miss on the retry holds again
+    kad::PointerRoute::clear();
+    dq.addKadSourceResult(recA);
+    QCOMPARE(lookups, 3);
+    pendingDone(std::nullopt);
+    kad::PointerRoute::expireNow(sourceID);
+    kad::PointerRoute::process();
+    QCOMPARE(lookups, 4);
+    pendingDone(std::nullopt);
+    QCOMPARE(kad::PointerRoute::heldFor(sourceID), std::size_t{1});
 
     dq.deleteAll();
 }

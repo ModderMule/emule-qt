@@ -186,7 +186,7 @@ inline void insertFakeVerdict(QCborMap& m, const FakeFileVerdict& verdict)
 
 [[nodiscard]] inline QCborMap toCbor(const PartFile& f)
 {
-    const ContainerCheck& cc = f.containerCheck();
+    const ContainerCheck& cc = f.requestContainerCheck();
     QCborMap m{
         {QStringLiteral("hash"),                 md4str(f.fileHash())},
         {QStringLiteral("fileName"),             f.fileName()},

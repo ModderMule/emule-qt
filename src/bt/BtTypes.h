@@ -237,12 +237,13 @@ enum class BtLimitMode : quint8 {
 /// Peers a torrent takes. Values are IPC: append only.
 enum class BtI2pMode : quint8 {
     Direct = 0,    ///< no I2P trackers, I2P peers dropped
-    I2pOnly = 1,   ///< i2p_torrent flag: I2P peers only (session mixed mode off)
+    I2pOnly = 1,   ///< I2P peers only; while the session mixes: no clearnet trackers, web seeds, DHT, PEX, LSD
     Mixed = 2,     ///< I2P trackers on a normal torrent: both kinds
 };
 
 /// Per-torrent options. Speeds and peers live in libtorrent's resume data, the seed
-/// limits in BT/torrent-options.json, the I2P mode in the flag and trackers.
+/// limits in BT/torrent-options.json, the I2P mode in the flag and trackers (strict I2P
+/// only: BT/i2p-only.json).
 struct BtTorrentOptions {
     /// KiB/s, 0 = no own limit
     int downloadLimitKb = 0;

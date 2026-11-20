@@ -126,6 +126,8 @@ protected:
     void onError(int errorCode) override;
     void onEncryptionHandshakeComplete() override;
     void onSendProgress() override { resetTimeOutTimer(); }
+    /// A big packet (shared files list) arriving slowly keeps the link alive.
+    void onReceiveProgress() override { resetTimeOutTimer(); }
 
     /// Process ED2K standard protocol packet.
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode);

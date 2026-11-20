@@ -59,7 +59,8 @@ void setSession(ed3k::Ed3kSession* session, std::function<void(const Ipc::IpcMes
 /// An Ed3kDownloadsBridge row of job @p owner of network @p tag.
 [[nodiscard]] QCborMap transferRow(const QString& tag, const QString& owner, const Job& job);
 
-/// The rows of every network in the mode: its jobs joined with ed3k.
+/// The rows of every network in the mode: its jobs joined with ed3k, and its unjoined
+/// torrents done (they seed, the mode does not pause them).
 void appendRows(QCborArray& downloads);
 
 /// Ed3kDownloadControl @p action (0 pause, 1 resume, 2 cancel, 3 priority, 4 category,

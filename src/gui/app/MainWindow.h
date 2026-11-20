@@ -547,6 +547,7 @@ private:
     bool m_waylandMinimizeHooked = false;
     QSoundEffect* m_notifySound = nullptr;
     QStringList m_lastNotification;   ///< title, text, sound — what was last asked for
+    bool m_popupDropLogged = false;   ///< logged once that a pop-up had no tray icon
     std::function<void()> m_notificationClick;   ///< click on the last pop-up; empty = restore
     QElapsedTimer m_lastLogNotify;    ///< when notifyLogEntry() last showed one
     QPointer<QMessageBox> m_coreProblemBox;

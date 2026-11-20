@@ -29,4 +29,17 @@ struct FolderEntry {
 /// @p root and every visible folder below it, symlinks followed once; at most @p cap
 [[nodiscard]] QStringList folderTree(const QString& root, int cap = 50000);
 
+/// "//server/share" of a UNC path (either separator), "" for any other path. No
+/// drive is listed for these: the trees add them as roots (MFC m_aUNCshares).
+[[nodiscard]] QString uncShareRoot(const QString& path);
+
+/// Distinct UNC share roots of @p dirs, sorted, case folded on compare
+[[nodiscard]] QStringList uncShareRoots(const QStringList& dirs);
+
+/// "\\server\share": a UNC root as Windows writes it
+[[nodiscard]] QString uncLabel(const QString& root);
+
+/// A drive root ("C:/"): the core runs on Windows
+[[nodiscard]] bool isDriveRoot(const QString& path);
+
 } // namespace eMule

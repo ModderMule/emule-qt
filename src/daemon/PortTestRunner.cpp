@@ -11,6 +11,7 @@
 #include "net/HttpDefaults.h"
 #include "net/PortTestApi.h"
 #include "prefs/Preferences.h"
+#include "server/ServerConnect.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
@@ -22,6 +23,7 @@
 #include <QTimer>
 
 #include <memory>
+#include <utility>
 
 namespace eMule::PortTestRunner {
 
@@ -44,12 +46,43 @@ QNetworkAccessManager* nam()
     return s_nam;
 }
 
+/// The ed3k node's public endpoint per family and whether its NAT check found it open.
+std::pair<PortTestApi::PeerView, PortTestApi::PeerView> ed3kViews()
+{
+    const QCborMap st = Ed3kBridge::statusToCbor();
+    const auto view = [&st](const QString& endpoint, const QString& cls) {
+        return PortTestApi::PeerView{st.value(endpoint).toString(), st.value(cls).toInteger() == 1};
+    };
+    return {view(QStringLiteral("endpoint4"), QStringLiteral("class4")),
+            view(QStringLiteral("endpoint6"), QStringLiteral("class6"))};
+}
+
+/// What peers see of this node per family; BitTorrent: nothing known.
+std::pair<PortTestApi::PeerView, PortTestApi::PeerView> peerViews(PortTestApi::Network network)
+{
+    if (network == PortTestApi::Network::Ed3k)
+        return ed3kViews();
+    if (network != PortTestApi::Network::Ed2k)
+        return {};
+    PortTestApi::PeerView v4;
+    if (theApp.publicIP() != 0) {
+        v4.address = ipstr(theApp.publicIP());
+        // High ID: a server reached our TCP port at that address
+        v4.open = theApp.serverConnect && theApp.serverConnect->isConnected() && !theApp.serverConnect->isLowID();
+    }
+    PortTestApi::PeerView v6;
+    if (!theApp.publicIPv6().isNull())
+        v6.address = theApp.publicIPv6().toString();
+    return {v4, v6};
+}
+
 QCborMap resultMap(const PortTestApi::Request& req, const QCborArray& targets)
 {
+    const auto [v4, v6] = peerViews(req.network);
     QCborMap m{
         {QStringLiteral("network"), qint64(req.network)},
         {QStringLiteral("udpPort"), qint64(req.udpPort)},
-        {QStringLiteral("targets"), targets},
+        {QStringLiteral("targets"), PortTestApi::applyPeerView(targets, v4, v6)},
     };
     if (req.network != PortTestApi::Network::Ed3k)
         m.insert(QStringLiteral("tcpPort"), qint64(req.tcpPort));
@@ -96,6 +129,14 @@ void send(PortTestApi::Request req, quint64 nonce, const Done& done)
     if (theApp.publicIP() != 0)
         req.ip4 = ipstr(theApp.publicIP());
     req.ip6 = theApp.publicIPv6().toString();
+    // ed3k: the node's own endpoints when eD2K learned none (#216: IPv6 went untested)
+    if (req.network == PortTestApi::Network::Ed3k) {
+        const auto [v4, v6] = ed3kViews();
+        if (req.ip4.isEmpty())
+            req.ip4 = PortTestApi::hostOf(v4.address);
+        if (req.ip6.isEmpty())
+            req.ip6 = PortTestApi::hostOf(v6.address);
+    }
 
     QNetworkRequest httpReq = Http::makeRequest(PortTestApi::url(req));
     httpReq.setTransferTimeout(kTransferTimeoutMs);
@@ -179,7 +220,8 @@ void run(int network, Done done)
         return;
     }
 
-    if (theApp.publicIP() != 0) {
+    if (theApp.publicIP() != 0
+        || (req.network == PortTestApi::Network::Ed3k && !ed3kViews().first.address.isEmpty())) {
         send(std::move(req), nonce, std::move(done));
         return;
     }

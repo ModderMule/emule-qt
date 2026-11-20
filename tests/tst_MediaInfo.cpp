@@ -1,4 +1,5 @@
 #include <QTest>
+#include <QCborMap>
 #include <QTemporaryFile>
 #include <QDir>
 #include <QFileInfo>
@@ -653,6 +654,29 @@ private slots:
         QVERIFY(qAbs(info.lengthSec - 30.0) < 0.001);
         QCOMPARE(info.video.bitRate, static_cast<uint32>(data.size() * 8 / 30));
         QCOMPARE(info.title, QStringLiteral("Film"));
+    }
+
+    // #235: an unfinished download's .part, head on disk and the rest a zero gap
+    void mp4_partFileHeadOnly()
+    {
+        const QByteArray data = buildMP4() + QByteArray(256 * 1024, '\0');
+        const QString path = writeTempFile(data, u".part"_s);
+        MediaInfo info;
+        QVERIFY(extractMediaInfo(path, info));
+        QCOMPARE(info.video.width, uint32{1280});
+
+        QCborMap fields;
+        fields.insert(u"mediaArtist"_s, u"Tag"_s);
+        insertMediaInfoFields(fields, info);
+        QCOMPARE(fields.value(u"mediaFormat"_s).toString(), u"MPEG-4"_s);
+        QCOMPARE(fields.value(u"mediaCodec"_s).toString(), u"h264"_s);
+        QCOMPARE(fields.value(u"mediaWidth"_s).toInteger(), 1280);
+        QCOMPARE(fields.value(u"mediaHeight"_s).toInteger(), 720);
+        QCOMPARE(fields.value(u"mediaLength"_s).toInteger(), 30);
+        QCOMPARE(fields.value(u"mediaTitle"_s).toString(), u"Film"_s);
+        QVERIFY(fields.value(u"mediaBitrate"_s).toInteger() > 0);
+        QCOMPARE(fields.value(u"mediaArtist"_s).toString(), u"Tag"_s);   // unknown: tag kept
+        QVERIFY(!fields.contains(u"mediaAudioCodec"_s));
     }
 
     void matroska_infoAndTrack()

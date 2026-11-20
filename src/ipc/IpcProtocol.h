@@ -44,6 +44,8 @@ enum class IpcMsgType : int {
     /// Fields 2-4 optional: a GUI names itself so the auto-updater can restart it.
     Handshake            = 100,
     Ping                 = 101,  ///< [] — keepalive probe; daemon responds with Result(true)
+    /// [slim?: bool] — slim: only name, size, progress, rate, sources, state, priority and
+    /// category fields (no part maps, sources or gaps: phones over a slow link)
     GetDownloads         = 110,
     GetDownload          = 111,  ///< [hash: string]
     PauseDownload        = 112,  ///< [hash: string]
@@ -106,7 +108,7 @@ enum class IpcMsgType : int {
     AddFriend            = 171,  ///< [hash, name, ip, port, addr: string] — addr wins if set
     RemoveFriend         = 172,  ///< [hash, addr: string, port] — addr+port when hash empty
     SendChatMessage      = 173,  ///< [hash: string, message: string]
-    SetFriendSlot        = 174,  ///< [hash: string, enabled: bool]
+    SetFriendSlot        = 174,  ///< [hash: string, enabled: bool, addr: string, port] — addr+port when hash empty
     EndChatSession       = 175,  ///< [hash: string] — the chat window closed, so the
                                 ///<   peer goes back to ChatState::None and a dial we
                                 ///<   started for it is cancelled. MFC does this from
@@ -939,7 +941,7 @@ enum class IpcMsgType : int {
     // ed3k friends and chat (1001-1009, src/daemon/Ed3kFriendsBridge.cpp). Keys (32 B) and
     // nodes (16 B) as hex; a chat is keyed by node. Failure: [false, {error: ed3k::Error}].
     /// [] -> [ok, {running, friends: [{key, node, name, mutual, asking, heldLink, addr,
-    ///   lastSeen}], requests: [{key, node, text, issued}]}]
+    ///   lastSeen, friendSlot}], requests: [{key, node, text, issued}]}]
     GetEd3kFriends          = 1001,
     /// [link: string, text: string] -> [ok, {key}]; text goes with a request (`r`), <= 96 B
     AddEd3kFriend           = 1002,
@@ -953,6 +955,8 @@ enum class IpcMsgType : int {
     SendEd3kChat            = 1006,
     /// [node] -> [ok] — the chat window closed
     EndEd3kChat             = 1007,
+    /// [key, enabled: bool] -> [ok] — the friend slot (one for both networks: clears the eD2K one)
+    SetEd3kFriendSlot       = 1008,
 
     // ed3k readable names and websites (1010-1019, src/daemon/Ed3kNamesBridge.cpp, name.md).
     // Zones/keys as hex. Failure: [false, {error: ed3k::Error}] (0: no node).

@@ -425,8 +425,11 @@ bool Ed3kShared::tellExposed(const ffi::Root& root, const QString& name, const Q
 {
     if (!m_exposedTold.insert(root).second)
         return false;
-    logWarning(QStringLiteral("\"%1\" is under the anonymous key and on %2 too: sources there show this "
-                              "address (hops.md §1). Remove it there or move it to the node key.").arg(name, networks));
+    // was: "... is under the anonymous key and on %2 too: sources there show this address (hops.md §1). Remove it
+    // there or move it to the node key."
+    logWarning(QStringLiteral("\"%1\" is shared on ed3k under the anonymous key but also on %2, where peers see "
+                              "this computer's address next to it. Stop it there, or move it to the node key in "
+                              "Shared Files.").arg(name, networks));
     emit anonExposed(name, networks);
     return true;
 }
@@ -1036,7 +1039,8 @@ void Ed3kShared::publishFile(File& f, const ffi::Root& root, std::uint64_t size)
     // (done for BitTorrent: DaemonApp, Ed3kTorrentJoin::memberVerified of a root held here
     // under the anonymous key, and setAnonAddedHook asks Ed3kTorrentJoin::holdsRoot)
     // ToDo: a plain HTTP download (not a hoster item) of such a file is still not checked
-    if (anon)
+    // eD2K off (Options › Extended, setEd2kHashing): nothing serves it there, nothing to tell (#232)
+    if (anon && m_ed2kHashing)
         (void)tellExposed(root, f.entry.name, QStringLiteral("eD2K/Kad"));
     // alias.md §3: the root is shared here and both names come from these bytes; never for a
     // file of the anonymous key (ffi.md: eD2K is never anonymous)

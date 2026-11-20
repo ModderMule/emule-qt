@@ -24,6 +24,7 @@ private slots:
     void parseGarbage();
     void parseOldServer();
     void ed3kSeenMerge();
+    void peerView();
     void urlEd2k();
     void parseEd2kObfuscated();
     void ed2kTcpVerdict();
@@ -131,6 +132,29 @@ void tst_PortTestApi::ed3kSeenMerge()
     QCOMPARE(udp(1).value(QStringLiteral("reason")).toString(), QStringLiteral("filtered"));
     // not sent: left as the server said
     QCOMPARE(udp(2).value(QStringLiteral("reason")).toString(), QStringLiteral("server_egress_blocked"));
+}
+
+void tst_PortTestApi::peerView()
+{
+    QCOMPARE(hostOf(QStringLiteral("198.51.100.7:11719")), QStringLiteral("198.51.100.7"));
+    QCOMPARE(hostOf(QStringLiteral("[2001:db8::5]:11719")), QStringLiteral("2001:db8::5"));
+    QCOMPARE(hostOf(QStringLiteral("2001:db8::5")), QStringLiteral("2001:db8::5"));
+    QCOMPARE(hostOf(QStringLiteral("198.51.100.7")), QStringLiteral("198.51.100.7"));
+
+    const auto target = [](int family, const QString& ip) {
+        return QCborMap{{QStringLiteral("family"), family}, {QStringLiteral("ip"), ip}};
+    };
+    // #216: the website saw a VPN exit, peers see the node elsewhere
+    const QCborArray targets{target(4, QStringLiteral("203.0.113.9")), target(6, QStringLiteral("2001:db8::5")),
+                             target(4, QStringLiteral("198.51.100.7"))};
+    const QCborArray out = applyPeerView(targets, {QStringLiteral("198.51.100.7:11719"), true}, {});
+    const auto at = [&](int i) { return out.at(i).toMap(); };
+    QCOMPARE(at(0).value(QStringLiteral("peerAddress")).toString(), QStringLiteral("198.51.100.7:11719"));
+    QCOMPARE(at(0).value(QStringLiteral("peerSame")).toBool(), false);
+    QCOMPARE(at(0).value(QStringLiteral("peerOpen")).toBool(), true);
+    // no IPv6 view: untouched
+    QVERIFY(!at(1).contains(QStringLiteral("peerAddress")));
+    QCOMPARE(at(2).value(QStringLiteral("peerSame")).toBool(), true);
 }
 
 void tst_PortTestApi::urlEd2k()

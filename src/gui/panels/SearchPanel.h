@@ -312,6 +312,13 @@ private:
     [[nodiscard]] static QIcon tabIcon(const SearchTab& tab);
     void setupAutoComplete();
     void addToSearchHistory(const QString& expression);
+    /// Store @p history in UiState and the completer model.
+    void setSearchHistory(const QStringList& history);
+    /// Pick up UiState changes made elsewhere (Options > Reset) + the pref switch.
+    void syncSearchHistory();
+    /// MFC: Del drops the highlighted suggestion, Ctrl/Alt+Del clears all.
+    bool handleHistoryPopupKey(const QKeyEvent* key);
+    void showNameEditContextMenu(const QPoint& pos);
     void sendPreview(const QString& hash);
     /// The file name of the first result row of @p hash (any tab, any case); empty: none.
     [[nodiscard]] QString resultFileName(const QString& hash) const;

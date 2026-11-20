@@ -75,9 +75,27 @@ Fitted contentSize(QWidget* dialog, QSize floor, Fit fit, QSize budget)
 
     if (fit != Fit::Layout)
         preferred = std::max(preferred, neededHeight(layout, width));
+    const QSize opens(width, preferred);
 
-    const int minimum = fit != Fit::Scroll && preferred <= budget.height() ? preferred : minHeight;
-    return {QSize(width, minimum).boundedTo(budget), QSize(width, preferred).boundedTo(budget)};
+    // Content that scrolls or gives way may be dragged down to the layout's own minimum:
+    // the hand-picked floor is the opening size only, never a lock (issues #17, #234)
+    if (fit != Fit::Content)
+        return {layoutMin.boundedTo(budget), opens.boundedTo(budget)};
+
+    const int minimum = preferred <= budget.height() ? preferred : minHeight;
+    return {QSize(width, minimum).boundedTo(budget), opens.boundedTo(budget)};
+}
+
+/// True when all of @p dialog's content sits in one ContentScrollArea (DetailDialog with
+/// ContentScroll::On): nothing clips at any size, so Fit::Content needn't lock the height.
+bool scrollsWhole(const QWidget* dialog)
+{
+    const QLayout* layout = dialog->layout();
+    for (int i = 0; layout && i < layout->count(); ++i) {
+        if (qobject_cast<const ContentScrollArea*>(layout->itemAt(i)->widget()))
+            return true;
+    }
+    return false;
 }
 
 /// Widest tab row a dialog was sized for so far.
@@ -212,6 +230,9 @@ void applySize(QWidget* dialog, QSize designedMin, QSize designedDefault, Fit fi
 {
     if (!dialog)
         return;
+
+    if (fit == Fit::Content && scrollsWhole(dialog))
+        fit = Fit::Scroll;
 
     const QSize budget = screenBudget(dialog);
     const QSize floor  = scaledFloor(designedMin, budget);

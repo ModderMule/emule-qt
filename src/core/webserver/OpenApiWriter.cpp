@@ -172,6 +172,12 @@ QJsonObject componentSchemas()
                                        "\"ed3k\": an ed3k file. Empty for an eD2K file."))},
         {s("ed3kRoot"), schemaString(s("ed3k file: its 64-hex root (GET /ed3k/downloads/{root} once added); else empty."))},
         {s("magnet"), schemaString(s("Magnet link of a torrent result, when the server sent one; else empty."))},
+        {s("metaSeeders"), schemaInteger(s("Torrent result only: seeders the server's catalogue last counted. "
+                                          "Omitted when unknown; the catalogue sends no zero, so absent "
+                                          "also covers a count of 0. May be capped by the catalogue."))},
+        {s("metaPeers"), schemaInteger(s("Torrent result only: leechers the catalogue last counted, seeders "
+                                        "not included. Omitted like metaSeeders. sourceCount and "
+                                        "completeSourceCount stay as before."))},
         {s("spamRating"), schemaInteger(s("Spam filter score; 60 and above counts as spam."))},
         {s("seenBefore"), schemaBoolean(s("This file turned up in an earlier search."))},
         {s("seenNames"), schemaInteger(s("Different names seen for this hash."))},

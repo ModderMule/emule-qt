@@ -205,6 +205,21 @@ seed ratio and seed time override the global ones from `<config>/BT/torrent-opti
 does not rate-limit peers on the local network. Trackers: 811 add (last tier, no duplicates),
 812 remove.
 
+## Per-torrent I2P mode (#231)
+
+Torrent options › I2P: Direct only / I2P only / I2P and direct.
+
+- libtorrent has one torrent flag (`i2p_torrent`) and one session switch (`allow_i2p_mixed`, Options › BitTorrent › I2P mixed mode). With mixed on, a flagged torrent also takes direct peers, clearnet trackers, DHT, PEX, LSD.
+- So "I2P only" is strict, mixed mode or not (`BtSession::Impl::I2pOnly`):
+  - flag set, I2P trackers added (not on private torrents)
+  - clearnet trackers + web seeds set aside, `disable_dht|disable_pex|disable_lsd` set (only the ones not already on are remembered), peer list cleared
+  - `BtPeerGate::setStrict`: direct peers refused at handshake and dropped each tick. An incoming direct peer still reaches the shared listen port and sends the info hash first
+  - clearnet trackers added while strict also go aside
+  - kept in `BT/i2p-only.json`; flags + trackers in the resume data
+- Switching to Direct or I2P-and-direct puts it all back: trackers (by tier), web seeds, only the disable flags strict switched on, DHT re-announce.
+- Add dialog "I2P only" (or the I2P-only-for-new default) = strict from the start: stripped in the add params, web seeds of the loaded torrent swept at `add_torrent_alert`. A torrent flagged only because of an `.i2p` tracker stays non-strict.
+- Older flagged torrents without a strict record: I2P only while mixed mode is off, shown as "I2P and direct" while it is on, as before.
+
 ## Logging
 
 `BtSession::drainAlerts()` forwards libtorrent's own alert lines (`what: message`) to `emule.torrent`

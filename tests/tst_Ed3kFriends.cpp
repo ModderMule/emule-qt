@@ -84,6 +84,7 @@ private slots:
     void cleanup();
     void withoutNodeEveryRequestFails();
     void friendsByLinkAndChatBothWays();
+    void friendSlotOverIpcKeptAcrossRestart();
 };
 
 void tst_Ed3kFriends::cleanup()
@@ -252,6 +253,78 @@ void tst_Ed3kFriends::friendsByLinkAndChatBothWays()
     IpcMessage end(IpcMsgType::EndEd3kChat, 10);
     end.append(QString::fromLatin1(nodeBytes(b).toHex()));
     QVERIFY(ask(end).fieldBool(0));
+}
+
+
+// the friend slot (eMule's, friend.md §4 local policy): set over IPC, shown in the list, kept
+// across a restart, refused for a stranger, gone with the friend
+void tst_Ed3kFriends::friendSlotOverIpcKeptAcrossRestart()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kFriends fb(b);
+    const auto link = fb.myLink(false, QStringLiteral("Bob"));
+    QVERIFY(link.has_value());
+    b.stop();
+
+    auto fa = std::make_unique<Ed3kFriends>(a);
+    Ed3kFriendsBridge::setFriends(fa.get());
+    const auto key = fa->add(*link, QString());
+    QVERIFY(key.has_value());
+    const QString keyHex = QString::fromLatin1(Ed3kFriends::toBytes(*key).toHex());
+
+    const auto slotOf = [] {
+        const QCborArray list = ask(IpcMessage(IpcMsgType::GetEd3kFriends, 1)).fieldMap(1).value(QStringLiteral("friends")).toArray();
+        return list.size() == 1 && list.at(0).toMap().value(QStringLiteral("friendSlot")).toBool();
+    };
+    QVERIFY(!slotOf());
+    IpcMessage set(IpcMsgType::SetEd3kFriendSlot, 2);
+    set.append(keyHex);
+    set.append(true);
+    QVERIFY(ask(set).fieldBool(0));
+    QVERIFY(slotOf());
+    QCOMPARE(fa->friendSlot(), std::optional(*key));
+
+    // a stranger: NotFound, the slot stays
+    IpcMessage stranger(IpcMsgType::SetEd3kFriendSlot, 3);
+    stranger.append(QString(64, QLatin1Char('a')));
+    stranger.append(true);
+    const IpcMessage refused = ask(stranger);
+    QVERIFY(!refused.fieldBool(0));
+    QCOMPARE(refused.fieldMap(1).value(QStringLiteral("error")).toInteger(), qint64(::ed3k::Error::NotFound));
+    QVERIFY(slotOf());
+
+    // a restart: set again from friend-slot.dat
+    Ed3kFriendsBridge::setFriends(nullptr);
+    fa.reset();
+    const std::uint16_t port = a.udpPort();
+    a.stop();
+    QVERIFY(a.start(loopback(da.path(), port)));
+    fa = std::make_unique<Ed3kFriends>(a);
+    Ed3kFriendsBridge::setFriends(fa.get());
+    QVERIFY(slotOf());
+    std::optional<::ed3k::Key32> inEngine;
+    a.post([&](::ed3k::Engine& e, ::ed3k::Now) {
+        if (auto k = e.friendSlot())
+            inEngine = *k;
+    });
+    QCOMPARE(inEngine, std::optional(*key));
+
+    // off again, then on and the friend removed: gone with it
+    IpcMessage off(IpcMsgType::SetEd3kFriendSlot, 4);
+    off.append(keyHex);
+    off.append(false);
+    QVERIFY(ask(off).fieldBool(0));
+    QVERIFY(!slotOf());
+    QVERIFY(ask(set).fieldBool(0));
+    IpcMessage remove(IpcMsgType::RemoveEd3kFriend, 5);
+    remove.append(keyHex);
+    QVERIFY(ask(remove).fieldBool(0));
+    QVERIFY(!fa->friendSlot());
+    Ed3kFriendsBridge::setFriends(nullptr);
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kFriends)

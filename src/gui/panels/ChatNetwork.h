@@ -30,6 +30,8 @@ public:
     virtual void endSession(const QString& key) = 0;
     /// Drops the friend @p row.
     virtual void removeFriend(const FriendRow& row, std::function<void()> done) = 0;
+    /// The friend slot to @p row, or off; one for both networks. @p done after the reply.
+    virtual void setFriendSlot(const FriendRow& row, bool on, std::function<void()> done) = 0;
     /// Asks for this network's friends: @p done(rows, extra) with the GetFriends rows, or
     /// the ed3k "friends" with the whole map as extra. Not called on a failed reply.
     virtual void requestFriends(QObject* owner, std::function<void(const QCborArray&, const QCborMap&)> done) = 0;
@@ -45,7 +47,7 @@ protected:
     IpcClient* m_ipc = nullptr;
 };
 
-/// eD2K: SendChatMessage, EndChatSession, RemoveFriend, GetFriends.
+/// eD2K: SendChatMessage, EndChatSession, RemoveFriend, SetFriendSlot, GetFriends.
 class Ed2kChatNetwork final : public ChatNetwork {
 public:
     using ChatNetwork::ChatNetwork;
@@ -53,11 +55,12 @@ public:
     void send(const QString& key, const QString& text, std::function<void(bool)> done) override;
     void endSession(const QString& key) override;
     void removeFriend(const FriendRow& row, std::function<void()> done) override;
+    void setFriendSlot(const FriendRow& row, bool on, std::function<void()> done) override;
     void requestFriends(QObject* owner, std::function<void(const QCborArray&, const QCborMap&)> done) override;
     [[nodiscard]] bool hasClientDetails() const override { return true; }
 };
 
-/// ed3k: SendEd3kChat, EndEd3kChat, RemoveEd3kFriend, GetEd3kFriends.
+/// ed3k: SendEd3kChat, EndEd3kChat, RemoveEd3kFriend, SetEd3kFriendSlot, GetEd3kFriends.
 class Ed3kChatNetwork final : public ChatNetwork {
 public:
     using ChatNetwork::ChatNetwork;
@@ -65,6 +68,7 @@ public:
     void send(const QString& key, const QString& text, std::function<void(bool)> done) override;
     void endSession(const QString& key) override;
     void removeFriend(const FriendRow& row, std::function<void()> done) override;
+    void setFriendSlot(const FriendRow& row, bool on, std::function<void()> done) override;
     void requestFriends(QObject* owner, std::function<void(const QCborArray&, const QCborMap&)> done) override;
     [[nodiscard]] bool hasClientDetails() const override { return false; }
 };

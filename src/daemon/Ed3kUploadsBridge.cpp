@@ -18,6 +18,7 @@
 #include "app/AppContext.h"
 #include "files/PartFile.h"
 #include "geo/IP2Country.h"
+#include "prefs/Preferences.h"
 #include "transfer/DownloadQueue.h"
 
 #ifdef EMULE_HAVE_ED3K
@@ -476,6 +477,20 @@ void appendNetworkDownloading([[maybe_unused]] QCborArray& out)
         else if (job.tag == QLatin1String("hoster"))
             Ed3kHosterBridge::appendDownloading(out, job.owner);
     }
+#endif
+}
+
+void appendNetworkUploading([[maybe_unused]] QCborArray& uploading)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_uploads)
+        return;
+    QStringList ids = thePrefs.btSingleTransferOn() ? BtBridge::jobIds(false) : QStringList();
+    for (const auto& job : ed3k::Ed3kJoinBase::networkJobsAt(s_uploads->session()))
+        if (job.tag == QLatin1String("torrent") && !ids.contains(job.owner))
+            ids << job.owner;
+    for (const QString& id : std::as_const(ids))
+        BtBridge::appendUploading(uploading, id);
 #endif
 }
 

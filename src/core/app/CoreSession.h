@@ -152,8 +152,8 @@ public:
     /// Our effective public IPv6 changed: queue an OP_CHANGE_CLIENT_IP for every
     /// connected peer that can use it. Marks only — the packet goes out when the
     /// upload queue or a source list next walks the client, so an address rotation
-    /// never fans a write out to every socket at once. Installed as
-    /// AppContext::onPublicIPv6Changed.
+    /// never fans a write out to every socket at once. Also tells the server
+    /// (OP_IPV6_UPDATE) when it takes that. Installed as AppContext::onPublicIPv6Changed.
     static void markPeersForIPChange(const Address& effective);
 
     /// mkpath Incoming + Temp dirs. The core's job, never the GUI's (#104). False if one failed.

@@ -39,14 +39,38 @@ void CheckComboBox::addCheckItem(const QString& text, const QString& value, cons
     item->setData(value.isEmpty() ? text : value, Qt::UserRole);
     if (!toolTip.isEmpty())
         item->setToolTip(toolTip);
-    m_model->appendRow(item);
+    m_model->insertRow(itemCount(), item);   // before the action row
     update();
+}
+
+void CheckComboBox::setActionItem(const QString& text)
+{
+    if (m_hasAction) {
+        m_model->item(itemCount())->setText(text);
+        return;
+    }
+    auto* item = new QStandardItem(text);
+    item->setFlags(Qt::ItemIsEnabled);
+    QFont f = item->font();
+    f.setItalic(true);
+    item->setFont(f);
+    m_model->appendRow(item);
+    m_hasAction = true;
+}
+
+void CheckComboBox::clearCheckItems()
+{
+    const bool hadChecked = !checkedValues().isEmpty();
+    m_model->removeRows(0, itemCount());
+    update();
+    if (hadChecked)
+        emit checkedChanged();
 }
 
 QStringList CheckComboBox::checkedValues() const
 {
     QStringList out;
-    for (int r = 0; r < m_model->rowCount(); ++r)
+    for (int r = 0; r < itemCount(); ++r)
         if (const QStandardItem* it = m_model->item(r); it->checkState() == Qt::Checked)
             out.append(it->data(Qt::UserRole).toString());
     return out;
@@ -55,7 +79,7 @@ QStringList CheckComboBox::checkedValues() const
 void CheckComboBox::setCheckedValues(const QStringList& values)
 {
     bool changed = false;
-    for (int r = 0; r < m_model->rowCount(); ++r) {
+    for (int r = 0; r < itemCount(); ++r) {
         QStandardItem* it = m_model->item(r);
         const Qt::CheckState want = values.contains(it->data(Qt::UserRole).toString()) ? Qt::Checked : Qt::Unchecked;
         if (it->checkState() != want) {
@@ -72,6 +96,14 @@ void CheckComboBox::setEmptyText(const QString& text)
 {
     m_emptyText = text;
     update();
+}
+
+QStringList CheckComboBox::values() const
+{
+    QStringList out;
+    for (int r = 0; r < itemCount(); ++r)
+        out.append(m_model->item(r)->data(Qt::UserRole).toString());
+    return out;
 }
 
 void CheckComboBox::showPopup()
@@ -96,6 +128,11 @@ bool CheckComboBox::eventFilter(QObject* watched, QEvent* event)
                 toggleRow(idx.row());
             return true;
         }
+        if (m_removable && (key == Qt::Key_Delete || key == Qt::Key_Backspace)) {
+            if (const QModelIndex idx = view()->currentIndex(); idx.isValid() && !isActionRow(idx.row()))
+                removeRow(idx.row());
+            return true;
+        }
     }
     return QComboBox::eventFilter(watched, event);
 }
@@ -117,6 +154,10 @@ void CheckComboBox::paintEvent(QPaintEvent* /*event*/)
 
 void CheckComboBox::toggleRow(int row)
 {
+    if (isActionRow(row)) {
+        emit actionTriggered();
+        return;
+    }
     QStandardItem* it = m_model->item(row);
     if (!it)
         return;
@@ -125,12 +166,37 @@ void CheckComboBox::toggleRow(int row)
     emit checkedChanged();
 }
 
+void CheckComboBox::removeRow(int row)
+{
+    QStandardItem* it = m_model->item(row);
+    if (!it)
+        return;
+    const QString value = it->data(Qt::UserRole).toString();
+    const bool wasChecked = it->checkState() == Qt::Checked;
+    m_model->removeRow(row);
+    if (itemCount() > 0)
+        view()->setCurrentIndex(m_model->index(std::min(row, itemCount() - 1), 0));
+    else if (m_hasAction)
+        view()->setCurrentIndex(m_model->index(0, 0));
+    else
+        hidePopup();
+    update();
+    emit itemRemoved(value);
+    if (wasChecked)
+        emit checkedChanged();
+}
+
 QString CheckComboBox::summary() const
 {
     const qsizetype n = checkedValues().size();
     if (n == 0)
         return m_emptyText;
-    return tr("%1 of %2 selected").arg(n).arg(m_model->rowCount());
+    return tr("%1 of %2 selected").arg(n).arg(itemCount());
+}
+
+int CheckComboBox::itemCount() const
+{
+    return m_model->rowCount() - (m_hasAction ? 1 : 0);
 }
 
 } // namespace eMule

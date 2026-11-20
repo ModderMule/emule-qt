@@ -58,6 +58,9 @@ private:
     void saveTorrent(const QByteArray& data, const QString& name);
     [[nodiscard]] QCborMap params() const;
     [[nodiscard]] QString trackerText() const;
+    void rememberCustomTrackers();
+    void resetTrackerList();
+    void storeTrackerList() const;
 
     IpcClient* m_ipc;
     QStringList m_onlyFiles;

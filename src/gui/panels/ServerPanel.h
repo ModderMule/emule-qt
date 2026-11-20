@@ -11,9 +11,11 @@
 
 #include <QStringList>
 #include <QCborMap>
+#include <QCborValue>
 #include <QWidget>
 
 #include <functional>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -22,6 +24,7 @@ class QLineEdit;
 class QMenu;
 class QPushButton;
 class QSplitter;
+class QTextBrowser;
 class QTimer;
 class QTreeView;
 
@@ -33,6 +36,7 @@ class MetaResultActions;
 class PanelPoller;
 class LogWidget;
 class ServerListModel;
+namespace Ipc { enum class IpcMsgType : int; }
 
 /// Full Server tab page matching the MFC eMule Server window.
 ///
@@ -78,9 +82,11 @@ private:
     void refreshMyInfo();
     void requestServerList();
 
-    /// Apply the manual-order display mode (#24): when useUserSortedServerList is
-    /// enabled, show servers in the daemon's list order with column sorting off.
+    /// Apply the manual-order display mode (#24): when useUserSortedServerList turns
+    /// on, show the daemon's list order (unsorted); headers still sort on click (#239).
     void applyServerSortMode();
+    /// Back to the daemon's list order: no sort column, no arrow.
+    void showDaemonOrder();
     [[nodiscard]] QStringList saveSelection() const;
     void restoreSelection(const QStringList& keys);
 
@@ -110,6 +116,9 @@ private:
 
     // MFC CServerListCtrl::OnCommand, shared by the context menu and the list keys.
     void removeSelectedServers();     ///< MP_REMOVE / MPG_DELETE (Del, ⌫)
+    /// Send @p type (ip, port, @p value, addr) for every selected server, one refresh
+    /// after the last reply — MFC loops the selection for priority/static (#240).
+    void sendToSelectedServers(Ipc::IpcMsgType type, const QCborValue& value);
     void copySelectedServerLinks();   ///< MP_COPYSELECTED (Ctrl+C)
     void cutSelectedServers();        ///< MP_CUT (Ctrl+X)
     void pasteServerLinks();          ///< MP_PASTE (Ctrl+V)
@@ -131,6 +140,8 @@ private:
 
     /// Typed/pasted servers awaiting the refresh that brings their rows.
     std::vector<ServerAddr> m_selectAfterRefresh;
+    /// Manual-order mode last applied; a refresh re-applies only on change
+    std::optional<bool> m_manualOrderApplied;
 
     // Context menu
     QMenu* m_serverMenu = nullptr;
@@ -149,7 +160,8 @@ private:
     QPushButton* m_updateBtn = nullptr;
 
     // My Info section
-    QLabel* m_infoLabel = nullptr;
+    QTextBrowser* m_infoView = nullptr;   ///< wraps at its own width; a label in a scroll area clipped
+    QString m_infoHtml;                   ///< last text set, skips identical refreshes
 
     // Log widget (bottom area with Server Info / Log / Verbose tabs)
     LogWidget* m_logWidget = nullptr;

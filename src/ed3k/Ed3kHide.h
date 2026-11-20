@@ -8,8 +8,9 @@
 ///   anonymous key; files held before keep their key (keys.json, Config/ed3k). A file is
 ///   never under both keys (packmule refuses it) and moves only after the user was asked (§1).
 /// - One hop count for every use (lookups, downloads, shares, publish, rooms, paid), 0 to 3;
-///   gates at the core default; nodeKeyUses 0. 0 = deniable, not hidden (§2.6): only while
-///   hopping, else 1 is taken. packmule takes per-use counts too (HideCfg), not offered here.
+///   gates at the core default; nodeKeyUses 0. 0 = deniable, not hidden (§2.6). packmule takes
+///   per-use counts too (HideCfg), not offered here.
+/// - Forwarding for others (§5) is always on while hiding: no switch here (packmule keeps one).
 /// - Key per use (§1): keyForUse() = anonymous while hiding runs, else node key; a file keeps
 ///   keyFor(root). Hiding off: nothing under the anonymous key, nothing falls back.
 /// - The seed is Config/ed3k/anon.key (owner-only, a secret, never logged).
@@ -42,11 +43,10 @@ namespace eMule::ed3k {
 
 class Ed3kSession;
 
-/// The prefs of hiding (ed3kHide, ed3kHops, ed3kHopping, ed3kHopShare, ed3kReportProxy*).
+/// The prefs of hiding (ed3kHide, ed3kHops, ed3kHopShare, ed3kReportProxy*).
 struct Ed3kHideSettings {
     bool on = false;
-    int hops = 1;             ///< 0 to 3, every use; 0 only with hopping (§2.6), else 1
-    bool hopping = true;      ///< forward for others while hiding (§1 "Recommended", §5)
+    int hops = 1;             ///< 0 to 3, every use; 0 = deniable (§2.6)
     int sharePercent = 25;    ///< of the upload limit for others' paths (§5)
     /// share reports under the anonymous key (subscription.md §5.3) go through this proxy
     /// alone; nullopt: none are sent (anonReports off)
@@ -124,7 +124,7 @@ public:
 
     /// "Node" / "Anonymous" for the GUI (not localized: an IPC value).
     [[nodiscard]] static QString keyName(::ed3k::KeyKind key);
-    /// @p s as applied: hops 0 to 3, 0 only with hopping (§2.6: else 1), share 1 to 100.
+    /// @p s as applied: hops 0 to 3, share 1 to 100.
     [[nodiscard]] static Ed3kHideSettings normalized(Ed3kHideSettings s);
     /// The HideCfg of @p hops: every use at that count, nothing under the node key.
     [[nodiscard]] static ::ed3k::HideCfg hideCfg(int hops);

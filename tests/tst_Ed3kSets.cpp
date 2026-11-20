@@ -609,7 +609,7 @@ void tst_Ed3kSets::aSetFollowedWhileHidingKeepsTheAnonymousKey()
     std::uint32_t id = 0;
     {
         Ed3kSession s;
-        s.setHideSettings(Ed3kHideSettings{true, 1, true, 25});
+        s.setHideSettings(Ed3kHideSettings{true, 1, 25});
         QVERIFY(s.start(loopback(d.path())));
         QVERIFY(s.hide().hiding());
         Ed3kDownloads dl(s, d.path());
@@ -619,7 +619,7 @@ void tst_Ed3kSets::aSetFollowedWhileHidingKeepsTheAnonymousKey()
         id = *r;
         QCOMPARE(sets.info(id)->key, ::ed3k::KeyKind::Anon);
         // a set followed before hiding: node key
-        s.setHideSettings(Ed3kHideSettings{false, 1, true, 25});
+        s.setHideSettings(Ed3kHideSettings{false, 1, 25});
         const auto node = sets.follow(Ed3kSets::setLink(m_author.key(), "other"), Ed3kSets::Policy::Browse);
         QVERIFY(node);
         QCOMPARE(sets.info(*node)->key, ::ed3k::KeyKind::Node);

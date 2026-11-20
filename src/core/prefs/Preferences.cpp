@@ -564,6 +564,7 @@ struct Preferences::Data {
     bool ipcListenTemporaryIpv6 = false;   // name listen value: also bind privacy addresses
     QStringList ipcTokens;
     bool ipcTunnel = true;                 // paired phones over the ed3k tunnel
+    bool ipcUPnP = false;                  // map the IPC port (opt-in: it opens the core to the Internet)
     QStringList ipcTunnelPeers;            // "<node id hex> <name>"
 
     // Web Server
@@ -842,6 +843,7 @@ struct Preferences::Data {
     int btMaxConnections = Preferences::kDefaultBtMaxConnections;
     int btMaxConnectionsPerTorrent = Preferences::kDefaultBtMaxConnectionsPerTorrent;
     bool btPortMapping = true;
+    QStringList btPublicTrackers = Preferences::defaultBtPublicTrackers();   // Torrent Creator drop-down
     int btI2pMode = Preferences::kBtI2pOff;
     QString btI2pHost = QStringLiteral("127.0.0.1");
     uint16 btI2pPort = Preferences::kDefaultBtI2pSamPort;
@@ -891,8 +893,7 @@ struct Preferences::Data {
     bool ed3kAutoIndexNode = false;    // dial eD2K servers' ST_ED3K index nodes
     bool ed3kForceOpen = false;        // operator: node reachable, no NAT tests (§9.2 first nodes)
     bool ed3kHide = false;             // hiding (hops.md §1): new searches, downloads, shares anonymous
-    int ed3kHops = 1;                  // 0 to 3, every use (0: only while hopping, hops.md §2.6)
-    bool ed3kHopping = true;           // forward for others while hiding (§1 "Recommended")
+    int ed3kHops = 1;                  // 0 to 3, every use (0: deniable, hops.md §2.6)
     int ed3kHopShare = 25;             // % of the upload limit for others' paths (§5)
     // share reports under the anonymous key (subscription.md §5.3): only through this proxy
     int ed3kReportProxyType = 0;       // 0 off, PROXYTYPE_SOCKS5, PROXYTYPE_HTTP11
@@ -2747,6 +2748,16 @@ void Preferences::setBtI2pTunnelLength(int val) { set(&Data::btI2pTunnelLength, 
 int Preferences::btI2pTunnelQuantity() const { return get(&Data::btI2pTunnelQuantity); }
 void Preferences::setBtI2pTunnelQuantity(int val) { set(&Data::btI2pTunnelQuantity, std::clamp(val, 1, 16)); }
 
+QStringList Preferences::btPublicTrackers() const { return get(&Data::btPublicTrackers); }
+void Preferences::setBtPublicTrackers(const QStringList& val)
+{
+    QStringList out;
+    for (const QString& u : val)
+        if (const QString t = u.trimmed(); !t.isEmpty() && !out.contains(t))
+            out << t;
+    set(&Data::btPublicTrackers, out);
+}
+
 QStringList Preferences::btI2pTrackers() const { return get(&Data::btI2pTrackers); }
 void Preferences::setBtI2pTrackers(const QStringList& val)
 {
@@ -2899,8 +2910,6 @@ bool Preferences::ed3kHide() const { return get(&Data::ed3kHide); }
 void Preferences::setEd3kHide(bool val) { set(&Data::ed3kHide, val); }
 int Preferences::ed3kHops() const { return get(&Data::ed3kHops); }
 void Preferences::setEd3kHops(int val) { set(&Data::ed3kHops, std::clamp(val, 0, 3)); }
-bool Preferences::ed3kHopping() const { return get(&Data::ed3kHopping); }
-void Preferences::setEd3kHopping(bool val) { set(&Data::ed3kHopping, val); }
 int Preferences::ed3kHopShare() const { return get(&Data::ed3kHopShare); }
 void Preferences::setEd3kHopShare(int val) { set(&Data::ed3kHopShare, std::clamp(val, 1, 100)); }
 int Preferences::ed3kReportProxyType() const { return get(&Data::ed3kReportProxyType); }
@@ -3554,6 +3563,8 @@ QStringList Preferences::ipcTokens() const { return get(&Data::ipcTokens); }
 void Preferences::setIpcTokens(const QStringList& val) { set(&Data::ipcTokens, val); }
 
 bool Preferences::ipcTunnel() const { return get(&Data::ipcTunnel); }
+bool Preferences::ipcUPnP() const { return get(&Data::ipcUPnP); }
+void Preferences::setIpcUPnP(bool val) { set(&Data::ipcUPnP, val); }
 void Preferences::setIpcTunnel(bool val) { set(&Data::ipcTunnel, val); }
 
 QStringList Preferences::ipcTunnelPeers() const { return get(&Data::ipcTunnelPeers); }
@@ -4314,6 +4325,9 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("altSpeed"), altSpeed());
     prefs.insert(QStringLiteral("altSpeedUp"), static_cast<qint64>(altSpeedUp()));
     prefs.insert(QStringLiteral("altSpeedDown"), static_cast<qint64>(altSpeedDown()));
+    // read-only: the pair in force (turtle, schedule and ratio rule applied)
+    prefs.insert(QStringLiteral("inForceUpload"), static_cast<qint64>(maxUpload()));
+    prefs.insert(QStringLiteral("inForceDownload"), static_cast<qint64>(maxDownload()));
     prefs.insert(QStringLiteral("maxGraphDownloadRate"), static_cast<qint64>(maxGraphDownloadRate()));
     prefs.insert(QStringLiteral("maxGraphUploadRate"), static_cast<qint64>(maxGraphUploadRate()));
     prefs.insert(QStringLiteral("maxConnections"), static_cast<qint64>(configuredMaxConnections()));
@@ -4517,6 +4531,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btI2pTunnelLength"), static_cast<qint64>(btI2pTunnelLength()));
     prefs.insert(QStringLiteral("btI2pTunnelQuantity"), static_cast<qint64>(btI2pTunnelQuantity()));
     prefs.insert(QStringLiteral("btI2pTrackers"), btI2pTrackers().join(QLatin1Char(' ')));
+    prefs.insert(QStringLiteral("btPublicTrackers"), btPublicTrackers().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("btI2pRouterPort"), static_cast<qint64>(btI2pRouterPort()));
     prefs.insert(QStringLiteral("btI2pShare"), static_cast<qint64>(btI2pShare()));
     prefs.insert(QStringLiteral("btI2pBrowserProxy"), btI2pBrowserProxy());
@@ -4551,7 +4566,6 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kAutoIndexNode"), ed3kAutoIndexNode());
     prefs.insert(QStringLiteral("ed3kHide"), ed3kHide());
     prefs.insert(QStringLiteral("ed3kHops"), static_cast<qint64>(ed3kHops()));
-    prefs.insert(QStringLiteral("ed3kHopping"), ed3kHopping());
     prefs.insert(QStringLiteral("ed3kHopShare"), static_cast<qint64>(ed3kHopShare()));
     prefs.insert(QStringLiteral("ed3kReportProxyType"), static_cast<qint64>(ed3kReportProxyType()));
     prefs.insert(QStringLiteral("ed3kReportProxyHost"), ed3kReportProxyHost());
@@ -4708,6 +4722,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("webServerMcpReadOnly"), webServerMcpReadOnly());
     prefs.insert(QStringLiteral("webServerGzipEnabled"), webServerGzipEnabled());
     prefs.insert(QStringLiteral("webServerUPnP"), webServerUPnP());
+    prefs.insert(QStringLiteral("ipcUPnP"), ipcUPnP());
+    prefs.insert(QStringLiteral("ipcListenAddress"), ipcListenAddress());   // read-only here
     prefs.insert(QStringLiteral("webServerTemplatePath"), webServerTemplatePath());
     prefs.insert(QStringLiteral("webServerSessionTimeout"), static_cast<qint64>(webServerSessionTimeout()));
     prefs.insert(QStringLiteral("webServerHttpsEnabled"), webServerHttpsEnabled());
@@ -4935,6 +4951,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
         m_data->btI2pTunnelQuantity = int(num("btI2pTunnelQuantity", 3, 1, 16));
         if (p.contains(QStringLiteral("btI2pTrackers")))
             m_data->btI2pTrackers = rpcUrlList(p.value(QStringLiteral("btI2pTrackers")));
+        if (p.contains(QStringLiteral("btPublicTrackers")))
+            m_data->btPublicTrackers = rpcUrlList(p.value(QStringLiteral("btPublicTrackers")));
         m_data->btI2pRouterPort = static_cast<uint16>(num("btI2pRouterPort", 0, 0, 65535));
         m_data->btI2pShare = int(num("btI2pShare", 50, 0, 100));
         m_data->btI2pBrowserProxy = p.value(QStringLiteral("btI2pBrowserProxy")).toBool(false);
@@ -4977,7 +4995,6 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kAutoIndexNode = p.value(QStringLiteral("ed3kAutoIndexNode")).toBool(false);
     m_data->ed3kHide = p.value(QStringLiteral("ed3kHide")).toBool(false);
     m_data->ed3kHops = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHops")).toInteger(1), 0, 3));
-    m_data->ed3kHopping = p.value(QStringLiteral("ed3kHopping")).toBool(true);
     m_data->ed3kHopShare = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHopShare")).toInteger(25), 1, 100));
     m_data->ed3kReportProxyType = reportProxyType(static_cast<int>(p.value(QStringLiteral("ed3kReportProxyType")).toInteger(0)));
     m_data->ed3kReportProxyHost = p.value(QStringLiteral("ed3kReportProxyHost")).toString().trimmed();
@@ -5109,6 +5126,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->webServerMcpReadOnly = p.value(QStringLiteral("webServerMcpReadOnly")).toBool();
     m_data->webServerGzipEnabled          = p.value(QStringLiteral("webServerGzipEnabled")).toBool();
     m_data->webServerUPnP                 = p.value(QStringLiteral("webServerUPnP")).toBool();
+    m_data->ipcUPnP                       = p.value(QStringLiteral("ipcUPnP")).toBool();
     m_data->webServerTemplatePath         = p.value(QStringLiteral("webServerTemplatePath")).toString();
     m_data->webServerSessionTimeout       = static_cast<int>(p.value(QStringLiteral("webServerSessionTimeout")).toInteger());
     m_data->webServerHttpsEnabled         = p.value(QStringLiteral("webServerHttpsEnabled")).toBool();
@@ -5906,6 +5924,7 @@ bool Preferences::load(const QString& filePath)
                     m_data->ipcTokens.append(QString::fromStdString(tok[i].as<std::string>()));
             }
             m_data->ipcTunnel = ipc["tunnel"].as<bool>(m_data->ipcTunnel);
+            m_data->ipcUPnP = ipc["upnp"].as<bool>(m_data->ipcUPnP);
             if (auto peers = ipc["tunnelPeers"]) {
                 m_data->ipcTunnelPeers.clear();
                 for (std::size_t i = 0; i < peers.size(); ++i)
@@ -6350,6 +6369,13 @@ bool Preferences::load(const QString& filePath)
                 bt["maxConnectionsPerTorrent"].as<int>(m_data->btMaxConnectionsPerTorrent),
                 2, kMaxBtConnections);
             m_data->btPortMapping = bt["portMapping"].as<bool>(m_data->btPortMapping);
+            if (auto list = bt["publicTrackers"]; list && list.IsSequence()) {
+                QStringList urls;
+                for (const auto& item : list)
+                    if (const QString u = QString::fromStdString(item.as<std::string>("")).trimmed(); !u.isEmpty())
+                        urls << u;
+                m_data->btPublicTrackers = urls;
+            }
             if (auto i2p = bt["i2p"]) {
                 m_data->btI2pMode = std::clamp(i2p["mode"].as<int>(m_data->btI2pMode), kBtI2pOff, kBtI2pExternal);
                 if (const QString host = QString::fromStdString(i2p["host"].as<std::string>("")).trimmed(); !host.isEmpty())
@@ -6435,7 +6461,6 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kAutoIndexNode = e3["autoIndexNode"].as<bool>(m_data->ed3kAutoIndexNode);
             m_data->ed3kHide = e3["hide"].as<bool>(m_data->ed3kHide);
             m_data->ed3kHops = std::clamp(e3["hops"].as<int>(m_data->ed3kHops), 0, 3);
-            m_data->ed3kHopping = e3["hopping"].as<bool>(m_data->ed3kHopping);
             m_data->ed3kHopShare = std::clamp(e3["hopShare"].as<int>(m_data->ed3kHopShare), 1, 100);
             if (auto rp = e3["reportProxy"]) {
                 m_data->ed3kReportProxyType = reportProxyType(rp["type"].as<int>(m_data->ed3kReportProxyType));
@@ -7561,6 +7586,7 @@ QByteArray Preferences::encode() const
         out << t.toStdString();
     out << YAML::EndSeq;
     out << YAML::Key << "tunnel" << YAML::Value << m_data->ipcTunnel;
+    out << YAML::Key << "upnp" << YAML::Value << m_data->ipcUPnP;
     out << YAML::Key << "tunnelPeers" << YAML::Value << YAML::BeginSeq;
     for (const auto& p : m_data->ipcTunnelPeers)
         out << p.toStdString();
@@ -7902,6 +7928,10 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "maxConnections" << YAML::Value << m_data->btMaxConnections;
     out << YAML::Key << "maxConnectionsPerTorrent" << YAML::Value << m_data->btMaxConnectionsPerTorrent;
     out << YAML::Key << "portMapping" << YAML::Value << m_data->btPortMapping;
+    out << YAML::Key << "publicTrackers" << YAML::Value << YAML::BeginSeq;
+    for (const QString& u : m_data->btPublicTrackers)
+        out << u.toStdString();
+    out << YAML::EndSeq;
     out << YAML::Key << "i2p" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "mode" << YAML::Value << m_data->btI2pMode;
     out << YAML::Key << "host" << YAML::Value << m_data->btI2pHost.toStdString();
@@ -7953,7 +7983,6 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "autoIndexNode" << YAML::Value << m_data->ed3kAutoIndexNode;
     out << YAML::Key << "hide" << YAML::Value << m_data->ed3kHide;
     out << YAML::Key << "hops" << YAML::Value << m_data->ed3kHops;
-    out << YAML::Key << "hopping" << YAML::Value << m_data->ed3kHopping;
     out << YAML::Key << "hopShare" << YAML::Value << m_data->ed3kHopShare;
     out << YAML::Key << "reportProxy" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "type" << YAML::Value << m_data->ed3kReportProxyType;

@@ -49,9 +49,12 @@
 #include <QLocale>
 #include <QMenu>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QTextBrowser>
 #include <QUrl>
 #include <QSortFilterProxyModel>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QSplitter>
 #include <QPainter>
@@ -371,6 +374,26 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     // Remove/Copy act on every selected row (MFC GetFirstSelectedItemPosition loops)
     const bool anySelected = m_serverListView->selectionModel()
                              && m_serverListView->selectionModel()->hasSelection();
+    // Priority/static/enable act on the whole selection too (#240)
+    bool anyStatic = false;
+    bool anyNonStatic = false;
+    bool anyDisabled = false;
+    int commonPrio = -1;   // ServerPriority wire value; -1 when mixed
+    bool firstRow = true;
+    if (anySelected) {
+        for (const QModelIndex& idx : m_serverListView->selectionModel()->selectedRows()) {
+            const ServerRow* r = m_serverListModel->rowAt(proxy->mapToSource(idx).row());
+            if (!r)
+                continue;
+            (r->isStatic ? anyStatic : anyNonStatic) = true;
+            anyDisabled = anyDisabled || r->disabled;
+            if (firstRow)
+                commonPrio = r->preferenceValue;
+            else if (commonPrio != r->preferenceValue)
+                commonPrio = -1;
+            firstRow = false;
+        }
+    }
 
     // Build menu fresh each time
     if (!m_serverMenu)
@@ -418,7 +441,7 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     // -- Priority submenu -----------------------------------------------------
     auto* prioMenu = m_serverMenu->addMenu(tr("Priority"));
     prioMenu->setIcon(ico("Priority.ico", QStyle::SP_ArrowRight));
-    prioMenu->setEnabled(hasSelection);
+    prioMenu->setEnabled(anySelected);
     // Advanced mode only
     prioMenu->menuAction()->setVisible(thePrefs.showExtControls());
 
@@ -436,29 +459,18 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     prioGroup->addAction(prioNormal);
     prioGroup->addAction(prioHigh);
 
-    if (hasSelection) {
-        if (row->preference == QStringLiteral("Low"))
+    if (anySelected) {
+        // Wire value, not the translated name; mixed selection: no check mark
+        if (commonPrio == static_cast<int>(ServerPriority::Low))
             prioLow->setChecked(true);
-        else if (row->preference == QStringLiteral("High"))
+        else if (commonPrio == static_cast<int>(ServerPriority::High))
             prioHigh->setChecked(true);
-        else
+        else if (commonPrio == static_cast<int>(ServerPriority::Normal))
             prioNormal->setChecked(true);
 
-        const uint32_t ip = row->numericIp;
-        const QString addr = row->addr;
-        const uint16_t port = row->port;
-
-        auto setPriority = [this, ip, addr, port](ServerPriority prio) {
-            if (m_ipc && m_ipc->isConnected()) {
-                Ipc::IpcMessage req(Ipc::IpcMsgType::SetServerPriority);
-                req.append(static_cast<qint64>(ip));
-                req.append(static_cast<qint64>(port));
-                req.append(static_cast<qint64>(prio));
-                req.append(addr);
-                m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
-                    requestServerList();
-                });
-            }
+        auto setPriority = [this](ServerPriority prio) {
+            sendToSelectedServers(Ipc::IpcMsgType::SetServerPriority,
+                                  QCborValue(static_cast<qint64>(prio)));
         };
 
         connect(prioLow, &QAction::triggered, this, [setPriority]() {
@@ -498,6 +510,7 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
             }
             if (sel < 0)
                 return;
+            showDaemonOrder();   // a column sort would hide the move
             const int other = up ? sel - 1 : sel + 1;
             if (other < 0 || other >= static_cast<int>(order.size()))
                 return;
@@ -541,64 +554,24 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     // -- Add To Static List ---------------------------------------------------
     auto* addStaticAction = m_serverMenu->addAction(tr("Add To Static List"));
     addStaticAction->setIcon(ico("ListAdd.ico", QStyle::SP_FileDialogNewFolder));
-    addStaticAction->setEnabled(hasSelection && !row->isStatic);
-    if (hasSelection) {
-        const uint32_t ip = row->numericIp;
-        const QString addr = row->addr;
-        const uint16_t port = row->port;
-        connect(addStaticAction, &QAction::triggered, this, [this, ip, addr, port]() {
-            if (m_ipc && m_ipc->isConnected()) {
-                Ipc::IpcMessage req(Ipc::IpcMsgType::SetServerStatic);
-                req.append(static_cast<qint64>(ip));
-                req.append(static_cast<qint64>(port));
-                req.append(true);
-                req.append(addr);
-                m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
-                    requestServerList();
-                });
-            }
-        });
-    }
+    addStaticAction->setEnabled(anyNonStatic);
+    connect(addStaticAction, &QAction::triggered, this, [this]() {
+        sendToSelectedServers(Ipc::IpcMsgType::SetServerStatic, QCborValue(true));
+    });
 
     // -- Remove From Static List ----------------------------------------------
     auto* removeStaticAction = m_serverMenu->addAction(tr("Remove From Static List"));
     removeStaticAction->setIcon(ico("ListRemove.ico", QStyle::SP_TrashIcon));
-    removeStaticAction->setEnabled(hasSelection && row->isStatic);
-    if (hasSelection) {
-        const uint32_t ip = row->numericIp;
-        const QString addr = row->addr;
-        const uint16_t port = row->port;
-        connect(removeStaticAction, &QAction::triggered, this, [this, ip, addr, port]() {
-            if (m_ipc && m_ipc->isConnected()) {
-                Ipc::IpcMessage req(Ipc::IpcMsgType::SetServerStatic);
-                req.append(static_cast<qint64>(ip));
-                req.append(static_cast<qint64>(port));
-                req.append(false);
-                req.append(addr);
-                m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
-                    requestServerList();
-                });
-            }
-        });
-    }
+    removeStaticAction->setEnabled(anyStatic);
+    connect(removeStaticAction, &QAction::triggered, this, [this]() {
+        sendToSelectedServers(Ipc::IpcMsgType::SetServerStatic, QCborValue(false));
+    });
 
     // -- Enable (a server disabled after too many failures) --------------------
-    if (hasSelection && row->disabled) {
+    if (anyDisabled) {
         auto* enableAction = m_serverMenu->addAction(tr("Enable"));
-        const uint32_t ip = row->numericIp;
-        const QString addr = row->addr;
-        const uint16_t port = row->port;
-        connect(enableAction, &QAction::triggered, this, [this, ip, addr, port]() {
-            if (m_ipc && m_ipc->isConnected()) {
-                Ipc::IpcMessage req(Ipc::IpcMsgType::SetServerEnabled);
-                req.append(static_cast<qint64>(ip));
-                req.append(static_cast<qint64>(port));
-                req.append(true);
-                req.append(addr);
-                m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
-                    requestServerList();
-                });
-            }
+        connect(enableAction, &QAction::triggered, this, [this]() {
+            sendToSelectedServers(Ipc::IpcMsgType::SetServerEnabled, QCborValue(true));
         });
     }
 
@@ -769,7 +742,8 @@ QWidget* ServerPanel::createServerListPanel()
     bindListKeys(m_serverListView, std::move(keys));
     connect(m_serverListView, &QTreeView::customContextMenuRequested,
             this, &ServerPanel::onServerContextMenu);
-    applyServerSortMode();   // #24: initial manual-order display mode
+    // Manual-order mode (#24) is applied by the first list refresh, after the saved
+    // header state (and its sort column) is back.
 
     layout->addWidget(m_serverListView);
 
@@ -779,8 +753,9 @@ QWidget* ServerPanel::createServerListPanel()
 QWidget* ServerPanel::createControlsPanel()
 {
     auto* widget = new QWidget;
-    widget->setMinimumWidth(200);
-    widget->setMaximumWidth(300);
+    // grows with the text size, or larger fonts clip the column
+    widget->setMinimumWidth(PanelLayout::fontScaled(widget, 200));
+    widget->setMaximumWidth(PanelLayout::fontScaled(widget, 300));
     auto* layout = new QVBoxLayout(widget);
     layout->setContentsMargins(4, 2, 4, 2);
     layout->setSpacing(6);
@@ -867,25 +842,21 @@ QWidget* ServerPanel::createControlsPanel()
     layout->addWidget(new TabTitle(skinIcon(QStringLiteral(":/icons/Info.ico")), tr("My Info")),
                       0, Qt::AlignLeft);
 
-    m_infoLabel = new QLabel;
-    m_infoLabel->setWordWrap(true);
-    m_infoLabel->setTextFormat(Qt::RichText);
-    m_infoLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    m_infoLabel->setOpenExternalLinks(true);
-    m_infoLabel->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+    // A text browser, not a wrapped label in a scroll area: the label kept a wrap width
+    // wider than the viewport at large text sizes, clipping the right edge.
+    // Scrolls like MFC's My Info box and doesn't pin the window's minimum height.
+    m_infoView = new QTextBrowser;
+    m_infoView->setOpenExternalLinks(true);
+    m_infoView->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+    m_infoView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_infoView->setLineWrapMode(QTextEdit::WidgetWidth);
+    m_infoView->setFrameShape(QFrame::NoFrame);
+    m_infoView->setMinimumHeight(40);
+    m_infoView->viewport()->setAutoFillBackground(false);
+    m_infoView->document()->setDocumentMargin(0);
     refreshMyInfo();
-    // Scrolls like MFC's My Info box: a bare wrapped label pins the window's
-    // minimum height to its full text
-    auto* infoScroll = new QScrollArea;
-    infoScroll->setWidget(m_infoLabel);
-    infoScroll->setWidgetResizable(true);
-    infoScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    infoScroll->setFrameShape(QFrame::NoFrame);
-    infoScroll->setMinimumHeight(40);
-    infoScroll->viewport()->setAutoFillBackground(false);
-    m_infoLabel->setAutoFillBackground(false);
     // My Info fills the rest of the full-height column, as in MFC
-    layout->addWidget(infoScroll, 1);
+    layout->addWidget(m_infoView, 1);
 
     // The whole column scrolls too: its full height would otherwise pin the
     // main window's minimum height.
@@ -1052,7 +1023,14 @@ void ServerPanel::refreshMyInfo()
     html += sp + tr("Status:") + QStringLiteral("\t")
         + (thePrefs.webServerEnabled() ? tr("Enabled") : tr("Disabled")) + QStringLiteral("<br>");
 
-    m_infoLabel->setText(html);
+    if (html == m_infoHtml)
+        return;
+    m_infoHtml = html;
+    // setHtml() jumps to the top; keep the user's place on periodic refreshes
+    QScrollBar* bar = m_infoView->verticalScrollBar();
+    const int pos = bar->value();
+    m_infoView->setHtml(html);
+    bar->setValue(pos);
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,7 +1053,7 @@ void ServerPanel::requestServerList()
         m_serverListModel->refreshFromCborArray(servers);
         m_serversLabel->setText(
             tr("\u25B8 Servers (%1)").arg(m_serverListModel->rowCount()));
-        applyServerSortMode();   // #24: honor manual-order display mode
+        applyServerSortMode();   // #24: manual order on a pref change only
         restoreSelection(keys);
         m_serverListView->verticalScrollBar()->setValue(srvScroll);
         // Replies come in request order, so this refresh already holds the rows.
@@ -1094,14 +1072,25 @@ void ServerPanel::applyServerSortMode()
     auto* proxy = qobject_cast<QSortFilterProxyModel*>(m_serverListView->model());
     if (!proxy)
         return;
-    if (thePrefs.useUserSortedServerList()) {
-        // Manual order: display the daemon's list order directly (no column sort),
-        // so Move Up/Down is visible and meaningful (#24).
-        m_serverListView->setSortingEnabled(false);
-        proxy->sort(-1);
-    } else {
-        m_serverListView->setSortingEnabled(true);
-    }
+    // Headers always sort (#239). Manual order starts in the daemon's list order so
+    // Move Up/Down is visible (#24); a header click sorts like any other list.
+    const bool manual = thePrefs.useUserSortedServerList();
+    if (m_manualOrderApplied == manual)
+        return;
+    m_manualOrderApplied = manual;
+    m_serverListView->setSortingEnabled(true);
+    if (manual)
+        showDaemonOrder();
+}
+
+void ServerPanel::showDaemonOrder()
+{
+    auto* proxy = qobject_cast<QSortFilterProxyModel*>(m_serverListView->model());
+    if (!proxy || proxy->sortColumn() < 0)
+        return;
+    // Indicator -1 hides the arrow; the view's slot then calls proxy->sort(-1)
+    m_serverListView->header()->setSortIndicator(-1, Qt::AscendingOrder);
+    proxy->sort(-1);
 }
 
 QStringList ServerPanel::saveSelection() const
@@ -1593,6 +1582,26 @@ void ServerPanel::removeSelectedServers()
         Ipc::IpcMessage req(Ipc::IpcMsgType::RemoveServer);
         req.append(static_cast<qint64>(key.ip));
         req.append(static_cast<qint64>(key.port));
+        req.append(key.addr);
+        m_ipc->sendRequest(std::move(req), [this, pending](const Ipc::IpcMessage&) {
+            if (--*pending == 0)
+                requestServerList();
+        });
+    }
+}
+
+void ServerPanel::sendToSelectedServers(Ipc::IpcMsgType type, const QCborValue& value)
+{
+    const std::vector<ServerKey> servers = selectedServers();
+    if (servers.empty() || !m_ipc || !m_ipc->isConnected())
+        return;
+    // One refresh after the last reply, not one per server.
+    auto pending = std::make_shared<int>(static_cast<int>(servers.size()));
+    for (const ServerKey& key : servers) {
+        Ipc::IpcMessage req(type);
+        req.append(static_cast<qint64>(key.ip));
+        req.append(static_cast<qint64>(key.port));
+        req.append(value);
         req.append(key.addr);
         m_ipc->sendRequest(std::move(req), [this, pending](const Ipc::IpcMessage&) {
             if (--*pending == 0)

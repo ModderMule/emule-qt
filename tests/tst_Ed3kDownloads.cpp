@@ -859,7 +859,7 @@ void tst_Ed3kDownloads::aDownloadGoesUnderTheKeyItIsGiven()
     QCOMPARE(b.hide().recorded(spec.root), std::optional(::ed3k::KeyKind::Node));
     QVERIFY(anonAdded.empty());
     // hiding on: a root recorded under the other key is refused
-    b.setHideSettings(Ed3kHideSettings{true, 1, true, 25});
+    b.setHideSettings(Ed3kHideSettings{true, 1, 25});
     QVERIFY(b.hide().hiding());
     spec.root = rootOf(0x52);
     spec.name = QStringLiteral("b.bin");

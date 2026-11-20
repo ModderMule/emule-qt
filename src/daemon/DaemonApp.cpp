@@ -1803,10 +1803,8 @@ void DaemonApp::applyEd3kConfig()
     if (!m_ed3kSession)
         return;
     // hiding (hops.md §1): live, no restart; applied at start too
-    // §2.6: 0 hops only while forwarding for others; hopping off at 0 gives 1
-    if (thePrefs.ed3kHops() == 0 && !thePrefs.ed3kHopping())
-        thePrefs.setEd3kHops(1);
-    ed3k::Ed3kHideSettings hide{thePrefs.ed3kHide(), thePrefs.ed3kHops(), thePrefs.ed3kHopping(), thePrefs.ed3kHopShare()};
+    // forwarding for others is always on while hiding (§1, §5): no pref
+    ed3k::Ed3kHideSettings hide{thePrefs.ed3kHide(), thePrefs.ed3kHops(), thePrefs.ed3kHopShare()};
     // subscription.md §5.3: anonymous share reports only through the report proxy (off: none)
     if (const ProxySettings rp = thePrefs.ed3kReportProxy(); rp.useProxy)
         if (const QNetworkProxy p = toNetworkProxy(rp); p.type() != QNetworkProxy::NoProxy)

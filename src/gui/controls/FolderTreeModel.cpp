@@ -11,6 +11,9 @@
 #include <QFont>
 #include <QStyle>
 
+#include <algorithm>
+#include <utility>
+
 namespace eMule {
 
 struct FolderTreeModel::Node {
@@ -19,6 +22,7 @@ struct FolderTreeModel::Node {
     bool hasChildren = true;
     bool fetched = false;
     bool fetching = false;
+    bool added = false;   // addRoot(): not in the drive list
     Node* parent = nullptr;
     std::vector<std::unique_ptr<Node>> children;
 };
@@ -89,8 +93,9 @@ QVariant FolderTreeModel::data(const QModelIndex& index, int role) const
     case PathRole:
         return n->path;
     case Qt::DecorationRole:
-        return QApplication::style()->standardIcon(n->parent == m_root.get() ? QStyle::SP_DriveHDIcon
-                                                                               : QStyle::SP_DirIcon);
+        if (n->parent != m_root.get())
+            return QApplication::style()->standardIcon(QStyle::SP_DirIcon);
+        return QApplication::style()->standardIcon(n->added ? QStyle::SP_DriveNetIcon : QStyle::SP_DriveHDIcon);
     case Qt::CheckStateRole:
         if (m_checkable)
             return m_checked.contains(n->path) ? Qt::Checked : Qt::Unchecked;
@@ -178,6 +183,38 @@ void FolderTreeModel::reveal(const QString& path)
     stepReveal();
 }
 
+void FolderTreeModel::addRoot(const QString& path, const QString& label)
+{
+    if (!m_root->fetched) {
+        m_pendingRoots.append({path, label});
+        return;
+    }
+    insertRoot(path, label);
+}
+
+void FolderTreeModel::removeRoot(const QString& path)
+{
+    const QString key = SharedDirState::dirKey(path);
+    m_pendingRoots.removeIf([&key](const auto& r) { return SharedDirState::dirKey(r.first) == key; });
+    auto& roots = m_root->children;
+    const auto it = std::ranges::find_if(roots, [&key](const auto& n) {
+        return n->added && SharedDirState::dirKey(n->path) == key;
+    });
+    if (it == roots.end())
+        return;
+    const int row = int(it - roots.begin());
+    beginRemoveRows({}, row, row);
+    roots.erase(it);
+    endRemoveRows();
+    setCheckedPaths(SharedDirState::withoutDir(checkedPaths(), path, true));
+    emit checksChanged();
+}
+
+bool FolderTreeModel::isAddedRoot(const QModelIndex& index) const
+{
+    return index.isValid() && nodeOf(index)->added && nodeOf(index)->parent == m_root.get();
+}
+
 // ---------------------------------------------------------------------------
 
 FolderTreeModel::Node* FolderTreeModel::nodeOf(const QModelIndex& index) const
@@ -224,6 +261,12 @@ void FolderTreeModel::load(Node* node)
             const QModelIndex idx = indexOf(node);
             emit dataChanged(idx, idx);   // the arrow goes
         }
+        if (node == m_root.get()) {
+            m_windowsRoots = std::ranges::any_of(rows, [](const FolderEntry& e) { return isDriveRoot(e.path); });
+            for (const auto& [path, label] : std::exchange(m_pendingRoots, {}))
+                insertRoot(path, label);
+            emit rootsLoaded();
+        }
         stepReveal();
     });
 }
@@ -259,6 +302,30 @@ void FolderTreeModel::stepReveal()
         return;
     }
     load(best);
+}
+
+void FolderTreeModel::insertRoot(const QString& path, const QString& label)
+{
+    const QString key = SharedDirState::dirKey(path);
+    auto& roots = m_root->children;
+    if (std::ranges::any_of(roots, [&key](const auto& n) { return SharedDirState::dirKey(n->path) == key; }))
+        return;
+    // after the drives, by name among the added ones
+    auto at = roots.end();
+    for (auto it = roots.begin(); it != roots.end(); ++it)
+        if ((*it)->added && (*it)->path.compare(path, Qt::CaseInsensitive) > 0) {
+            at = it;
+            break;
+        }
+    const int row = int(at - roots.begin());
+    auto node = std::make_unique<Node>();
+    node->label = label;
+    node->path = path;
+    node->added = true;
+    node->parent = m_root.get();
+    beginInsertRows({}, row, row);
+    roots.insert(at, std::move(node));
+    endInsertRows();
 }
 
 bool FolderTreeModel::hasCheckedBelow(const QString& path) const

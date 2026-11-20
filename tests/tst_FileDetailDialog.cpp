@@ -414,29 +414,44 @@ void TestFileDetailDialog::shrinksAndKeepsItsSizeAfterARename()
 
 /// Issue #181 on a screen tall enough for all of it: Fit::Content pins the minimum to
 /// the content, Fit::Scroll opens just as tall but lets the scroll area give way.
+/// Issue #234: Content whose whole page scrolls is Scroll, floor included.
 void TestFileDetailDialog::scrollFitShrinksContentThatFits()
 {
-    const auto measure = [](DialogSizing::Fit fit) {
+    const auto measure = [](DialogSizing::Fit fit, bool scroll, QSize floor = {}) {
         QDialog dlg;
         auto* layout = new QVBoxLayout(&dlg);
         auto* page = new QWidget;
         auto* form = new QFormLayout(page);
         for (int row = 0; row < 8; ++row)
             form->addRow(QStringLiteral("Row %1:").arg(row), new QLabel(QStringLiteral("value")));
-        auto* area = new ContentScrollArea;
-        area->setWidget(page);
-        layout->addWidget(area);
-        DialogSizing::applySize(&dlg, {}, {}, fit);
-        return std::pair{dlg.minimumHeight(), dlg.height()};
+        if (scroll) {
+            auto* area = new ContentScrollArea;
+            area->setWidget(page);
+            layout->addWidget(area);
+        } else {
+            layout->addWidget(page);
+        }
+        DialogSizing::applySize(&dlg, floor, {}, fit);
+        return std::pair{dlg.minimumSize(), dlg.size()};
     };
 
-    const auto [contentMin, contentHeight] = measure(DialogSizing::Fit::Content);
-    const auto [scrollMin, scrollHeight] = measure(DialogSizing::Fit::Scroll);
-    QVERIFY2(contentHeight < kScreenHeight - 120, qPrintable(QString::number(contentHeight)));
-    QCOMPARE(contentMin, contentHeight);
-    QCOMPARE(scrollHeight, contentHeight);
-    QVERIFY2(scrollMin < scrollHeight - 50,
-             qPrintable(QStringLiteral("%1 of %2").arg(scrollMin).arg(scrollHeight)));
+    const auto [contentMin, contentSize] = measure(DialogSizing::Fit::Content, false);
+    const auto [scrollMin, scrollSize] = measure(DialogSizing::Fit::Scroll, true);
+    const auto [wholeMin, wholeSize] = measure(DialogSizing::Fit::Content, true);
+    QVERIFY2(contentSize.height() < kScreenHeight - 120, qPrintable(QString::number(contentSize.height())));
+    QCOMPARE(contentMin.height(), contentSize.height());
+    QCOMPARE(scrollSize.height(), contentSize.height());
+    QVERIFY2(scrollMin.height() < scrollSize.height() - 50,
+             qPrintable(QStringLiteral("%1 of %2").arg(scrollMin.height()).arg(scrollSize.height())));
+    QCOMPARE(wholeMin, scrollMin);
+    QCOMPARE(wholeSize, scrollSize);
+
+    // the hand-picked floor (scaled to the 800x600 screen) opens it, no longer locks it
+    const QSize floor(500, 400);
+    const auto [floorMin, floorSize] = measure(DialogSizing::Fit::Content, true, floor);
+    QVERIFY2(floorSize.width() >= floorMin.width() + 150 && floorSize.height() >= floorMin.height() + 100,
+             qPrintable(QStringLiteral("min %1x%2, size %3x%4").arg(floorMin.width()).arg(floorMin.height())
+                            .arg(floorSize.width()).arg(floorSize.height())));
 }
 
 int main(int argc, char* argv[])

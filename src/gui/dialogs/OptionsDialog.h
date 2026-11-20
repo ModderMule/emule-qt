@@ -492,7 +492,7 @@ private:
     QLineEdit* m_tempDirEdit = nullptr;
     QTreeView* m_sharedDirsTree = nullptr;
     QAbstractItemModel* m_sharedDirsModel = nullptr;
-    FolderTreeModel* m_remoteDirsModel = nullptr;   ///< the shared tree of a core on another host
+    FolderTreeModel* m_folderTreeModel = nullptr;   ///< shared tree of a remote core, or of Windows (UNC roots)
 
     // Files page controls
     QCheckBox* m_addFilesPausedCheck = nullptr;

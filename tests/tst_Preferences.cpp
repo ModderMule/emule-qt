@@ -237,8 +237,36 @@ private slots:
         QCOMPARE(p2.altSpeedUp(), 3u);
         QCOMPARE(p2.altSpeedDown(), 30u);
         QCOMPARE(p2.toIpcMap().value(QStringLiteral("altSpeed")).toBool(), true);
+        // GUIs show the pair in force, not the stored one
+        QCOMPARE(p2.toIpcMap().value(QStringLiteral("inForceUpload")).toInteger(), 3);
+        QCOMPARE(p2.toIpcMap().value(QStringLiteral("inForceDownload")).toInteger(), 9);
+        QCOMPARE(p2.toIpcMap().value(QStringLiteral("maxUpload")).toInteger(), 100);
         p2.setAltSpeed(false);
         QCOMPARE(p2.maxUpload(), 100u);
+        QCOMPARE(p2.toIpcMap().value(QStringLiteral("inForceUpload")).toInteger(), 100);
+    }
+
+    // ipc.upnp: off by default, YAML and IPC round trip; the listen address is shown read-only
+    void ipcUPnP_defaultOffAndRoundTrip()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        Preferences p;
+        p.load(file);
+        QVERIFY(!p.ipcUPnP());
+        p.setIpcUPnP(true);
+        p.save();
+
+        Preferences p2;
+        p2.load(file);
+        QVERIFY(p2.ipcUPnP());
+        const QCborMap map = p2.toIpcMap();
+        QCOMPARE(map.value(QStringLiteral("ipcUPnP")).toBool(), true);
+        QCOMPARE(map.value(QStringLiteral("ipcListenAddress")).toString(), p2.ipcListenAddress());
+
+        Preferences mirror;
+        mirror.updateFromCbor(map);
+        QVERIFY(mirror.ipcUPnP());
     }
 
     // Tray icon + close-to-tray: defaults (icon on, close quits as MFC) and round trip
@@ -709,6 +737,7 @@ private slots:
             prefs.setBtI2pEd3kJoin(false);
             prefs.setBtI2pTunnelLength(2);
             prefs.setBtI2pTunnelQuantity(5);
+            prefs.setBtPublicTrackers({QStringLiteral("udp://t.example:1337/announce"), QStringLiteral(" udp://t.example:1337/announce ")});
             prefs.setBtI2pTrackers({QStringLiteral("http://a.i2p/a"), QStringLiteral(" http://b.i2p/a "),
                                     QStringLiteral("http://a.i2p/a")});
             prefs.setBtI2pRouterPort(23456);
@@ -754,6 +783,7 @@ private slots:
             QCOMPARE(p.btI2pTunnelQuantity(), 5);
             // trimmed, duplicates dropped
             QCOMPARE(p.btI2pTrackers(), (QStringList{QStringLiteral("http://a.i2p/a"), QStringLiteral("http://b.i2p/a")}));
+            QCOMPARE(p.btPublicTrackers(), QStringList{QStringLiteral("udp://t.example:1337/announce")});
             QCOMPARE(p.btI2pRouterPort(), uint16{23456});
             QCOMPARE(p.btI2pShare(), 10);
             QCOMPARE(p.btI2pBrowserProxy(), true);
@@ -789,6 +819,7 @@ private slots:
         QCOMPARE(gui.btI2pMode(), Preferences::kBtI2pOff);
         QCOMPARE(gui.btI2pEd3kJoin(), true);
         QCOMPARE(gui.btI2pTrackers(), Preferences::defaultBtI2pTrackers());
+        QCOMPARE(gui.btPublicTrackers(), Preferences::defaultBtPublicTrackers());
     }
 
     // single transfer mode (ed3k only): per network, through YAML and IPC; in effect only with ed3k

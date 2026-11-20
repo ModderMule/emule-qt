@@ -495,20 +495,17 @@ void MessagesPanel::setupUi()
     auto* friendSlotAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/FriendSlot.ico")), tr("Establish Friend Slot"));
     friendSlotAction->setCheckable(true);
     connect(friendSlotAction, &QAction::triggered, this, [this, friendSlotAction]() {
-        if (!m_ipc || !m_ipc->isConnected())
-            return;
         const auto sel = m_friendListView->currentIndex();
         if (!sel.isValid())
             return;
         const auto* row = m_friendModel->rowAt(sel.row());
         if (!row)
             return;
-
-        IpcMessage msg(IpcMsgType::SetFriendSlot);
-        msg.append(row->hash);
-        msg.append(friendSlotAction->isChecked());
-        m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
-            requestFriendList();
+        // one friend slot for both networks (the daemon clears the other's)
+        auto& net = row->network == FriendNetwork::Ed3k ? *m_ed3kNet : *m_ed2kNet;
+        net.setFriendSlot(*row, friendSlotAction->isChecked(), [self = QPointer<MessagesPanel>(this)] {
+            if (self)
+                self->requestFriendList();
         });
     });
 
@@ -532,7 +529,9 @@ void MessagesPanel::setupUi()
         sendMsgAction->setEnabled(hasSel);
         // not for a linked client that refuses it (FriendListCtrl.cpp:160); no client for ed3k
         viewSharedAction->setEnabled(hasSel && !m_infoNoViewShared && !ed3kRow);
-        friendSlotAction->setEnabled(hasSel && !ed3kRow);
+        // was: eD2K only; ed3k has its own friend slot now (friend.md §4: local policy)
+        // friendSlotAction->setEnabled(hasSel && !ed3kRow);
+        friendSlotAction->setEnabled(hasSel);
         findAction->setEnabled(m_friendModel->rowCount() > 0);
         copyEd3kLinkAction->setVisible(m_ed3kRunning);
 

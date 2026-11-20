@@ -44,6 +44,7 @@ QString portMapPurposeName(PortMapPurpose purpose)
     case PortMapPurpose::Ed3kUdp:       return QStringLiteral("ed3k UDP");
     case PortMapPurpose::I2pTcp:        return QStringLiteral("I2P router TCP");
     case PortMapPurpose::I2pUdp:        return QStringLiteral("I2P router UDP");
+    case PortMapPurpose::Ipc:           return QStringLiteral("GUI/phone (IPC)");
     }
     return {};
 }

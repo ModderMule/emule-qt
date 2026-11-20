@@ -447,15 +447,8 @@ std::optional<QCborMap> detailsOf([[maybe_unused]] const QString& hexRoot, [[may
     // Media Info: read from the file once its head is here (eD2K reads it at completion)
     if (info->state == State::Complete || info->previewPossible) {
         MediaInfo mi;
-        if (extractMediaInfo(info->path, mi)) {
-            m.insert(QStringLiteral("mediaTitle"), mi.title);
-            m.insert(QStringLiteral("mediaArtist"), mi.author);
-            m.insert(QStringLiteral("mediaAlbum"), mi.album);
-            m.insert(QStringLiteral("mediaLength"), qint64(mi.lengthSec));
-            const qint64 kbps = (qint64(mi.video.bitRate) + qint64(mi.audio.avgBytesPerSec) * 8) / 1000;
-            m.insert(QStringLiteral("mediaBitrate"), kbps);
-            m.insert(QStringLiteral("mediaCodec"), mi.videoStreamCount > 0 ? mi.video.codecName : mi.audio.codecName);
-        }
+        if (extractMediaInfo(info->path, mi))
+            insertMediaInfoFields(m, mi);
     }
     // ed3k Link tab
     ffi::FileLink link;

@@ -203,6 +203,7 @@ class TestSmallScreenDialogs : public QObject {
 
 private slots:
     void everyDialogFits();
+    void clientDetailsShrink();
     void vpnPromoLinks();
 };
 
@@ -256,6 +257,33 @@ void TestSmallScreenDialogs::everyDialogFits()
         if (needAtMin <= budget.height())
             cap = std::max(cap, needAtMin);
         QVERIFY2(dlg->minimumHeight() <= cap, qPrintable(where));
+    }
+}
+
+/// Issue #234: Client Details opened at its full height and could not be dragged
+/// smaller, also where that height was just short of the screen. Its content scrolls,
+/// so the window must shrink well below both the content and the designed width.
+void TestSmallScreenDialogs::clientDetailsShrink()
+{
+    for (const Case& c : cases()) {
+        if (!QByteArrayView(c.name).startsWith("ClientDetailDialog"))
+            continue;
+        auto dlg = c.make();
+        dlg->show();
+        QVERIFY(QTest::qWaitForWindowExposed(dlg.get()));
+        QTest::qWait(10);   // the deferred re-fit
+
+        const QString where = QStringLiteral("%1: min %2x%3, size %4x%5")
+                                  .arg(QLatin1StringView(c.name))
+                                  .arg(dlg->minimumWidth()).arg(dlg->minimumHeight())
+                                  .arg(dlg->width()).arg(dlg->height());
+        QVERIFY2(dlg->minimumHeight() <= dlg->height() / 2, qPrintable(where));
+        QVERIFY2(dlg->minimumWidth() <= dlg->width() / 2, qPrintable(where));
+
+        // dragged to the minimum: the content scrolls, nothing snaps back
+        dlg->resize(dlg->minimumSize());
+        QTest::qWait(10);
+        QCOMPARE(dlg->size(), dlg->minimumSize());
     }
 }
 

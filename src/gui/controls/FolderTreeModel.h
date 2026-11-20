@@ -11,6 +11,7 @@
 #include <QStringList>
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace eMule {
@@ -49,12 +50,23 @@ public:
     /// Load the folders down to @p path; revealed() names it once it is in the tree
     void reveal(const QString& path);
 
+    /// A root the drive list lacks: a UNC share (MFC m_aUNCshares). Kept until the
+    /// drives are in; no-op when there already.
+    void addRoot(const QString& path, const QString& label);
+    /// Drops an added root and every check at or below it (MFC MP_REMOVESHARE)
+    void removeRoot(const QString& path);
+    [[nodiscard]] bool isAddedRoot(const QModelIndex& index) const;
+    /// Drive letters among the roots: the core runs on Windows
+    [[nodiscard]] bool windowsRoots() const { return m_windowsRoots; }
+
 signals:
     void revealed(const QModelIndex& index);
     /// The drives are in; @p home is the core's home folder
     void homeKnown(const QString& home);
     /// Checks changed without a dataChanged (setSubtreeChecked's answer)
     void checksChanged();
+    /// The drives are in
+    void rootsLoaded();
 
 private:
     struct Node;
@@ -63,6 +75,7 @@ private:
     [[nodiscard]] QModelIndex indexOf(const Node* node) const;
     void load(Node* node);
     void stepReveal();
+    void insertRoot(const QString& path, const QString& label);
     [[nodiscard]] bool hasCheckedBelow(const QString& path) const;
 
     IpcClient* m_ipc;
@@ -71,6 +84,8 @@ private:
     QSet<QString> m_checked;
     QString m_home;
     QString m_revealKey;
+    QList<std::pair<QString, QString>> m_pendingRoots;   // path, label
+    bool m_windowsRoots = false;
 };
 
 } // namespace eMule

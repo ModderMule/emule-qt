@@ -147,6 +147,13 @@ inline void insertFakeVerdict(QJsonObject& o, const FakeFileVerdict& verdict, bo
                                          : f.meta().isContainer() ? QStringLiteral("container")
                                                                   : QStringLiteral("torrent"));
     o.insert(QStringLiteral("magnet"), f.meta().magnet);
+    // torrent catalogue counts; 0 is never sent on the wire, so absent = unknown
+    if (f.isMetaResult() && f.meta().isTorrent()) {
+        if (f.meta().seeders != 0)
+            o.insert(QStringLiteral("metaSeeders"), static_cast<qint64>(f.meta().seeders));
+        if (f.meta().peers != 0)
+            o.insert(QStringLiteral("metaPeers"), static_cast<qint64>(f.meta().peers));
+    }
     // an ed3k file: its root names it, the hash is the root's first half; else empty
     if (f.isEd3kResult())
         o.insert(QStringLiteral("metaKind"), QStringLiteral("ed3k"));

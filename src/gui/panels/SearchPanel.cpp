@@ -50,6 +50,8 @@
 #include <QComboBox>
 #include <QDateTime>
 #include <QCompleter>
+#include <QAbstractItemView>
+#include <QKeyEvent>
 #include <QFile>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -471,6 +473,9 @@ QWidget* SearchPanel::createSearchBar()
     m_nameEdit = new QLineEdit(container);
     m_nameEdit->setPlaceholderText(tr("Enter search keywords..."));
     connect(m_nameEdit, &QLineEdit::returnPressed, this, &SearchPanel::onStartSearch);
+    m_nameEdit->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_nameEdit, &QLineEdit::customContextMenuRequested, this, &SearchPanel::showNameEditContextMenu);
+    m_nameEdit->installEventFilter(this);   // focus-in re-reads the history
     nameRow->addWidget(m_nameEdit, 1);
     grid->addLayout(nameRow, 0, 0);
 
@@ -1467,6 +1472,13 @@ bool SearchPanel::eventFilter(QObject* watched, QEvent* event)
         } else if (event->type() == QEvent::ShowToParent || event->type() == QEvent::HideToParent) {
             m_filterEdit->setVisible(event->type() == QEvent::ShowToParent);
         }
+    } else if (watched == m_nameEdit) {
+        if (event->type() == QEvent::FocusIn)
+            syncSearchHistory();
+    } else if (m_completer && watched == m_completer->popup()) {
+        // Runs before QCompleter's own popup filter (installed earlier)
+        if (event->type() == QEvent::KeyPress && handleHistoryPopupKey(static_cast<QKeyEvent*>(event)))
+            return true;
     }
     return QWidget::eventFilter(watched, event);
 }
@@ -2617,9 +2629,11 @@ void SearchPanel::setupAutoComplete()
     m_completer = new QCompleter(m_historyModel, this);
     m_completer->setCaseSensitivity(Qt::CaseInsensitive);
     m_completer->setFilterMode(Qt::MatchContains);
+    m_completer->popup()->installEventFilter(this);
 
     if (thePrefs.useAutoCompletion())
         m_nameEdit->setCompleter(m_completer);
+    m_nameEdit->setToolTip(tr("Del removes the highlighted history entry, Ctrl+Del clears the history"));
 }
 
 void SearchPanel::addToSearchHistory(const QString& expression)
@@ -2634,8 +2648,80 @@ void SearchPanel::addToSearchHistory(const QString& expression)
     if (list.size() > 50)
         list = list.mid(0, 50);
 
-    m_historyModel->setStringList(list);
-    theUiState.setSearchHistory(list);
+    setSearchHistory(list);
+}
+
+void SearchPanel::setSearchHistory(const QStringList& history)
+{
+    m_historyModel->setStringList(history);
+    theUiState.setSearchHistory(history);
+}
+
+void SearchPanel::syncSearchHistory()
+{
+    if (!m_historyModel)
+        return;
+    if (m_historyModel->stringList() != theUiState.searchHistory())
+        m_historyModel->setStringList(theUiState.searchHistory());
+
+    // Options can switch auto completion on/off while the panel lives
+    const bool wanted = thePrefs.useAutoCompletion();
+    if (wanted != (m_nameEdit->completer() == m_completer))
+        m_nameEdit->setCompleter(wanted ? m_completer : nullptr);
+}
+
+bool SearchPanel::handleHistoryPopupKey(const QKeyEvent* key)
+{
+    if (key->key() != Qt::Key_Delete)
+        return false;
+
+    // Ctrl (Cmd on macOS), Control on macOS (Meta) or Alt: whole history, like MFC
+    if (key->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) {
+        m_completer->popup()->hide();
+        setSearchHistory({});
+        return true;
+    }
+
+    // Plain Del with no highlighted row edits the text as usual
+    const QModelIndex current = m_completer->popup()->currentIndex();
+    if (!current.isValid())
+        return false;
+
+    // Highlighting wrote the entry into the box: go back to what was typed
+    const QString prefix = m_completer->completionPrefix();
+    QStringList list = theUiState.searchHistory();
+    list.removeAll(current.data(Qt::DisplayRole).toString());
+    setSearchHistory(list);
+    m_nameEdit->setText(prefix);
+
+    // Re-open on what is left for the typed prefix
+    m_completer->setCompletionPrefix(prefix);
+    if (m_completer->completionCount() > 0)
+        m_completer->complete();
+    else
+        m_completer->popup()->hide();
+    return true;
+}
+
+void SearchPanel::showNameEditContextMenu(const QPoint& pos)
+{
+    syncSearchHistory();
+    std::unique_ptr<QMenu> menu(m_nameEdit->createStandardContextMenu());
+    menu->addSeparator();
+
+    const QString text = m_nameEdit->text().trimmed();
+    const QStringList& history = theUiState.searchHistory();
+    if (!text.isEmpty() && history.contains(text)) {
+        menu->addAction(tr("Remove \"%1\" from Search History").arg(menu->fontMetrics().elidedText(text, Qt::ElideMiddle, 200)),
+                        this, [this, text] {
+                            QStringList list = theUiState.searchHistory();
+                            list.removeAll(text);
+                            setSearchHistory(list);
+                        });
+    }
+    QAction* clear = menu->addAction(tr("Clear Search History"), this, [this] { setSearchHistory({}); });
+    clear->setEnabled(!history.isEmpty());
+    menu->exec(m_nameEdit->mapToGlobal(pos));
 }
 
 // ---------------------------------------------------------------------------

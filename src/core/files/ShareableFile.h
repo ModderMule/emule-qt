@@ -68,10 +68,24 @@ public:
     /// first look and while the bytes are still unreadable.
     [[nodiscard]] bool containerCheckResolved() const { return m_containerCheck.has_value(); }
 
+    /// The split of containerCheck() for a read off the main thread (a NAS open
+    /// stalled the core): settle by name, find the bytes, read anywhere, apply.
+    struct ContainerHeadSource {
+        QString path;
+        qint64 bytes = 0;
+    };
+    /// Settles without a read when the name promises nothing. True once resolved.
+    bool settleContainerCheckByName() const;
+    /// Up to kContainerProbeBytes (at least kContainerHeadBytes) to judge the name against.
+    /// nullopt when they are not available yet, which is not a verdict -- ask again later.
+    /// No disk access.
+    [[nodiscard]] virtual std::optional<ContainerHeadSource> containerHeadSource() const;
+    /// Thread-safe. nullopt when the file does not open.
+    [[nodiscard]] static std::optional<QByteArray> readContainerHead(const ContainerHeadSource& src);
+    /// Memoises the verdict for bytes read elsewhere.
+    void applyContainerHead(const QByteArray& head) const;
+
 protected:
-    /// Up to kContainerProbeBytes (at least kContainerHeadBytes) to judge the name against. False when they
-    /// are not available yet, which is not a verdict -- ask again later.
-    [[nodiscard]] virtual bool readContainerHead(QByteArray& head) const;
 
     QString m_directory;
     QString m_filePath;

@@ -75,6 +75,8 @@
 #include "portmap/PortMapper.h"
 #include "utils/Log.h"
 
+#include <QHostAddress>
+
 #include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
@@ -2232,6 +2234,14 @@ std::vector<PortMapRequest> CoreSession::buildPortMapRequests() const
             QStringLiteral("eMule ed3k UDP"));
 #endif
 
+    // the GUI/phone port, opt-in (ipc.upnp): only when it listens beyond this computer
+    if (thePrefs.ipcUPnP()) {
+        const QString listen = thePrefs.ipcListenAddress().trimmed();
+        const QHostAddress at(listen);
+        if (!listen.isEmpty() && !at.isLoopback())   // "*", a LAN address or a name
+            add(PortMapPurpose::Ipc, PortMapProtocol::Tcp, thePrefs.ipcPort(), QStringLiteral("eMule GUI/phone"));
+    }
+
     return requests;
 }
 
@@ -2251,6 +2261,10 @@ void CoreSession::initLocalIPv6()
                                   "loopback, ULA, link-local and documentation addresses"));
 
     theApp.onPublicIPv6Changed = &CoreSession::markPeersForIPChange;
+    theApp.onIPv6PinholeOpened = [] {
+        if (theApp.serverConnect)
+            theApp.serverConnect->ipv6PinholeOpened();
+    };
     if (thePrefs.ipv6AssumeReachable())
         logInfo(QStringLiteral("IPv6: ipv6AssumeReachable set — advertising our IPv6 to peers "
                                "without proof"));
@@ -2273,6 +2287,9 @@ void CoreSession::initLocalIPv6()
 
 void CoreSession::markPeersForIPChange(const Address& effective)
 {
+    // The server too, when it takes OP_IPV6_UPDATE (a no-op when it holds this address)
+    if (theApp.serverConnect)
+        theApp.serverConnect->syncServerIPv6();
     if (effective.isNull() || !theApp.clientList || !theApp.shouldAdvertisePublicIPv6())
         return;
     int marked = 0;

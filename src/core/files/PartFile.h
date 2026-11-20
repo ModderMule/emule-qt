@@ -734,6 +734,9 @@ public:
     /// searches gave the file, comments and ratings. Cached for a few seconds: the
     /// download list asks on every poll.
     [[nodiscard]] const FakeFileVerdict& fakeVerdict() const;
+    /// The head verdict without blocking: starts a pool read when the bytes are there
+    /// (a NAS open stalled the core), returns what is known now -- Unchecked until it lands.
+    const ContainerCheck& requestContainerCheck() const;
     /// Names the search result this download came from was seen under.
     void addObservedNames(const QStringList& names);
 
@@ -769,7 +772,7 @@ protected:
     /// A download is judged as soon as its first bytes land, not at completion:
     /// the sooner a fake is named the less bandwidth it costs. Reads the `.part`
     /// file, which is laid out at the same offsets as the finished one.
-    [[nodiscard]] bool readContainerHead(QByteArray& head) const override;
+    [[nodiscard]] std::optional<ContainerHeadSource> containerHeadSource() const override;
 
 private:
     void initPartFile();
@@ -929,6 +932,7 @@ private:
     mutable FakeFileVerdict m_fakeVerdict;
     mutable qint64 m_fakeVerdictAt = 0;          // unix secs; 0 = never
     mutable bool m_fakeVerdictHadHead = false;
+    mutable bool m_containerReadBusy = false;    // one requestContainerCheck() read in flight
     mutable Confidence m_fakeLoggedBand = Confidence::Caution;   // worst band logged; Caution = none
     uint64 m_lastFakeCheckTick = 0;
     uint64 m_lastNameCheckTick = 0;

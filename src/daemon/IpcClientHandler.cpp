@@ -6,6 +6,7 @@
 #include "BtBridge.h"
 #include "Ed3kBridge.h"
 #include "Ed3kDownloadsBridge.h"
+#include "Ed3kFriendsBridge.h"
 #include "Ed3kUploadsBridge.h"
 #include "Ed3kCreditBridge.h"
 #include "Ed3kHosterBridge.h"
@@ -700,10 +701,28 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
 
 void IpcClientHandler::handleGetDownloads(const IpcMessage& msg)
 {
+    // slim: the row fields a list shows, no part maps or source lists
+    static const QStringList kSlimKeys{
+        QStringLiteral("hash"), QStringLiteral("fileName"), QStringLiteral("fileSize"),
+        QStringLiteral("completedSize"), QStringLiteral("percentCompleted"), QStringLiteral("datarate"),
+        QStringLiteral("sourceCount"), QStringLiteral("transferringSrcCount"), QStringLiteral("status"),
+        QStringLiteral("isPaused"), QStringLiteral("isStopped"), QStringLiteral("downPriority"),
+        QStringLiteral("isAutoDownPriority"), QStringLiteral("category"), QStringLiteral("completionError"),
+        QStringLiteral("timeRemaining"), QStringLiteral("addedOn"), QStringLiteral("fileType")};
+    const bool slim = msg.fieldCount() > 0 && msg.fieldBool(0);
     QCborArray files;
     if (theApp.downloadQueue) {
-        for (const auto* pf : theApp.downloadQueue->files())
-            files.append(toCbor(*pf));
+        for (const auto* pf : theApp.downloadQueue->files()) {
+            QCborMap row = toCbor(*pf);
+            if (slim) {
+                QCborMap kept;
+                for (const QString& key : kSlimKeys)
+                    if (const QCborValue v = row.value(key); !v.isUndefined())
+                        kept.insert(key, v);
+                row = std::move(kept);
+            }
+            files.append(row);
+        }
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(files)));
 }
@@ -765,6 +784,8 @@ void IpcClientHandler::handleGetUploads(const IpcMessage& msg)
     }
     // the ed3k upload queue next to eD2K's (network "ed3k")
     Ed3kUploadsBridge::appendRows(uploading, waiting);
+    // BitTorrent peers of joined torrents (all torrents in single transfer mode)
+    Ed3kUploadsBridge::appendNetworkUploading(uploading);
     QCborMap result;
     result.insert(QStringLiteral("uploading"), uploading);
     result.insert(QStringLiteral("waiting"), waiting);
@@ -1980,27 +2001,12 @@ void IpcClientHandler::handleRemoveFriend(const IpcMessage& msg)
         return;
     }
 
-    const QString hashStr = msg.fieldString(0);
-    uint8 hashBuf[16]{};
-    const bool hasHash = hexToHash(hashStr, hashBuf);
     // Fields 1/2: address + port, the only key of a friend added by IP (#72)
-    const Address addr = Address::fromString(msg.fieldString(1));
-    const auto port = static_cast<uint16>(msg.fieldInt(2));
-    if (!hasHash && (addr.isNull() || port == 0)) {
+    bool bad = false;
+    Friend* target = friendOf(msg.fieldString(0), msg.fieldString(1), int(msg.fieldInt(2)), &bad);
+    if (bad) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
-    }
-
-    Friend* target = nullptr;
-    if (!hasHash) {
-        target = theApp.friendList->searchFriendByAddress(addr, port);
-    } else {
-        for (const auto& f : theApp.friendList->friends()) {
-            if (f->hasUserhash() && std::memcmp(f->userHash().data(), hashBuf, 16) == 0) {
-                target = f.get();
-                break;
-            }
-        }
     }
     if (target) {
         theApp.friendList->removeFriend(target);
@@ -2326,11 +2332,12 @@ void IpcClientHandler::handleSetFriendSlot(const IpcMessage& msg)
         return;
     }
 
-    const QString hashStr = msg.fieldString(0);
+    // [hash, enabled, addr, port]: addr + port for a friend added by IP — MFC grants the
+    // slot to any friend (srchybrid/FriendListCtrl.cpp:218-224)
     const bool enabled = msg.fieldBool(1);
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hashStr, hashBuf)) {
+    bool bad = false;
+    Friend* target = friendOf(msg.fieldString(0), msg.fieldString(2), int(msg.fieldInt(3)), &bad);
+    if (bad) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
     }
@@ -2343,15 +2350,13 @@ void IpcClientHandler::handleSetFriendSlot(const IpcMessage& msg)
     // to) left every previously-slotted client holding a slot forever.
     theApp.friendList->removeAllFriendSlots();
 
-    // Find and set the target friend's slot. Propagates to its linked client if the peer is
-    // connected; if it is not, the flag is carried across by Friend::setLinkedClient() when
-    // it next says hello.
-    for (const auto& f : theApp.friendList->friends()) {
-        if (f->hasUserhash() && std::memcmp(f->userHash().data(), hashBuf, 16) == 0) {
-            f->setFriendSlot(enabled);
-            break;
-        }
-    }
+    // Propagates to its linked client if the peer is connected; if it is not, the flag is
+    // carried across by Friend::setLinkedClient() when it next says hello.
+    if (target)
+        target->setFriendSlot(enabled);
+    // one friend slot for both networks
+    if (target && enabled)
+        Ed3kFriendsBridge::clearFriendSlot();
 
     theApp.friendList->save(thePrefs.configDir());
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
@@ -4165,7 +4170,7 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
     details.insert(QLatin1StringView("recoveredParts"),     static_cast<qint64>(pf->ichPartsSaved()));
     details.insert(QLatin1StringView("dlActiveTime"),       static_cast<qint64>(pf->dlActiveTime()));
     details.insert(QLatin1StringView("containerVerdict"),
-        static_cast<int>(pf->containerCheck().verdict));
+        static_cast<int>(pf->requestContainerCheck().verdict));
     details.insert(QLatin1StringView("isComplete"),
         pf->status() == PartFileStatus::Complete);
     Ed3kBridge::appendDownloadInfo(details, QByteArray(reinterpret_cast<const char*>(pf->fileHash()), 16));
@@ -4268,6 +4273,30 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
         tagArr.append(t);
     }
     details.insert(QLatin1StringView("tags"), tagArr);
+
+    // Media Info from the .part itself once its head is on disk (MFC FileInfoDialog.cpp:801,
+    // 16 KiB): the bytes sit at their file offsets, so the readers work on it. Off the core
+    // thread, the .part may live on a slow disk (#235).
+    if (pf->status() != PartFileStatus::Complete && pf->isCompleteBDSafe(0, 16 * 1024 - 1)) {
+        const QString dataPath = pf->filePath().isEmpty() ? pf->partDataPath() : pf->filePath();
+        const auto size = static_cast<uint64>(pf->fileSize());
+        offCoreThread(this,
+            [dataPath, size] {
+                std::optional<MediaInfo> mi(std::in_place);
+                if (!extractMediaInfo(dataPath, *mi))
+                    mi.reset();
+                else
+                    mi->fileSize = size;   // the .part on disk may be shorter
+                return mi;
+            },
+            [seqId = msg.seqId(), details](IpcClientHandler& self, const std::optional<MediaInfo>& mi) {
+                QCborMap reply = details;
+                if (mi)
+                    insertMediaInfoFields(reply, *mi);
+                self.sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(reply)));
+            });
+        return;
+    }
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
 }
@@ -5232,6 +5261,8 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setWebServerGzipEnabled(val.toBool());
     else if (key == QStringLiteral("webServerUPnP"))
         thePrefs.setWebServerUPnP(val.toBool());
+    else if (key == QStringLiteral("ipcUPnP"))
+        thePrefs.setIpcUPnP(val.toBool());
     else if (key == QStringLiteral("webServerTemplatePath"))
         thePrefs.setWebServerTemplatePath(val.toString());
     else if (key == QStringLiteral("webServerSessionTimeout"))
@@ -5495,6 +5526,8 @@ bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& v
         thePrefs.setBtI2pTunnelQuantity(int(val.toInteger()));
     else if (key == QStringLiteral("btI2pTrackers"))
         thePrefs.setBtI2pTrackers(Preferences::rpcUrlList(val));
+    else if (key == QStringLiteral("btPublicTrackers"))
+        thePrefs.setBtPublicTrackers(Preferences::rpcUrlList(val));
     else if (key == QStringLiteral("btI2pRouterPort"))
         thePrefs.setBtI2pRouterPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else if (key == QStringLiteral("btI2pShare"))
@@ -5570,8 +5603,6 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kHide(val.toBool());
     else if (key == QStringLiteral("ed3kHops"))
         thePrefs.setEd3kHops(static_cast<int>(std::clamp<qint64>(val.toInteger(), 0, 3)));
-    else if (key == QStringLiteral("ed3kHopping"))
-        thePrefs.setEd3kHopping(val.toBool());
     else if (key == QStringLiteral("ed3kHopShare"))
         thePrefs.setEd3kHopShare(static_cast<int>(std::clamp<qint64>(val.toInteger(), 1, 100)));
     else if (key == QStringLiteral("ed3kReportProxyType"))
@@ -7622,6 +7653,26 @@ bool IpcClientHandler::rejectIfKadUnavailable(const IpcMessage& msg, bool requir
         : tr("Kad is not running.\n\nConnect to the Kad network first.");
     sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(text)));
     return true;
+}
+
+Friend* IpcClientHandler::friendOf(const QString& hash, const QString& addr, int port, bool* bad)
+{
+    *bad = false;
+    if (!theApp.friendList)
+        return nullptr;
+    uint8 hashBuf[16]{};
+    if (hexToHash(hash, hashBuf)) {
+        for (const auto& f : theApp.friendList->friends())
+            if (f->hasUserhash() && std::memcmp(f->userHash().data(), hashBuf, 16) == 0)
+                return f.get();
+        return nullptr;
+    }
+    const Address a = Address::fromString(addr);
+    if (a.isNull() || port <= 0 || port > 0xFFFF) {
+        *bad = true;
+        return nullptr;
+    }
+    return theApp.friendList->searchFriendByAddress(a, static_cast<uint16>(port));
 }
 
 } // namespace eMule

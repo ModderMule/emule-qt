@@ -580,6 +580,9 @@ void Kademlia::process()
     if (m_indexed)
         m_indexed->clean();
 
+    // Held type 7 + bpv records: retry the pointer lookup once a miss expired (not MFC)
+    PointerRoute::process();
+
     // 1. Bootstrap — while not yet connected, probe the shipped bootstrap list one
     //    contact at a time: one per 15 s, or every 2 s while the routing table is
     //    still empty. Log a failure once the list is exhausted without connecting.

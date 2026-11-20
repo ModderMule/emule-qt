@@ -13,6 +13,7 @@
 #include "controls/KadLookupGraph.h"
 #include "utils/Appearance.h"
 #include "utils/CountryFlags.h"
+#include "utils/PanelLayout.h"
 #include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
 
@@ -288,8 +289,9 @@ QString Ed3kKadPanel::lookupTitle(std::uint64_t id) const
 QWidget* Ed3kKadPanel::createControlsPanel()
 {
     auto* widget = new QWidget;
-    widget->setMinimumWidth(220);
-    widget->setMaximumWidth(340);
+    // grows with the text size, or larger fonts clip the column
+    widget->setMinimumWidth(PanelLayout::fontScaled(widget, 220));
+    widget->setMaximumWidth(PanelLayout::fontScaled(widget, 340));
     auto* layout = new QVBoxLayout(widget);
     layout->setContentsMargins(4, 2, 4, 2);
     layout->setSpacing(4);
@@ -410,12 +412,10 @@ QWidget* Ed3kKadPanel::createControlsPanel()
     layout->addWidget(separator);
 
     m_contactsGraph = new ContactsGraph;
-    m_contactsGraph->setMinimumHeight(70);
     layout->addWidget(m_contactsGraph, 2);
 
     // distance histogram of the routing table (as eD2K)
     m_networkGraph = new KadContactHistogram;
-    m_networkGraph->setMinimumHeight(50);
     layout->addWidget(m_networkGraph, 1);
     return widget;
 }

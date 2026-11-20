@@ -15,7 +15,6 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QSpinBox>
-#include <QStandardItemModel>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -130,6 +129,11 @@ TorrentOptionsForm::TorrentOptionsForm(QWidget* parent)
     m_i2pMode->addItem(tr("Direct only"), I2pDirect);
     m_i2pMode->addItem(tr("I2P only"), I2pOnly);
     m_i2pMode->addItem(tr("I2P and direct"), I2pMixed);
+    m_i2pMode->setItemData(m_i2pMode->findData(I2pOnly),
+                           tr("Peers only over I2P. Also while mixed mode is on: no DHT, PEX or local "
+                              "discovery, clearnet trackers and web seeds set aside. All back as before "
+                              "when switched to another mode."),
+                           Qt::ToolTipRole);
     m_i2pMode->setToolTip(tr("Peers this torrent uses. Peers of a kind no longer wanted are disconnected."));
     auto* i2pRow = new QHBoxLayout;
     i2pRow->addWidget(m_i2pMode);
@@ -251,13 +255,6 @@ void TorrentOptionsForm::fill(const QCborMap& options)
     if (const qint64 minutes = options.value(QStringLiteral("seedTimeMinutes")).toInteger(); minutes > 0)
         m_seedMinutes->setValue(int(minutes));
     m_i2pEnabled = options.value(QStringLiteral("i2pEnabled")).toBool(true);
-    m_i2pMixed = options.value(QStringLiteral("i2pMixed")).toBool(false);
-    // session mixed mode lets I2P torrents take direct peers: no "I2P only" then
-    if (auto* model = qobject_cast<QStandardItemModel*>(m_i2pMode->model()))
-        if (QStandardItem* item = model->item(m_i2pMode->findData(I2pOnly))) {
-            item->setEnabled(!m_i2pMixed);
-            item->setToolTip(m_i2pMixed ? tr("Not while mixed mode is on in Options > BitTorrent > I2P.") : QString());
-        }
     selectMode(m_i2pMode, int(options.value(QStringLiteral("i2pMode")).toInteger()));
     updateEnables();
     m_filling = false;
