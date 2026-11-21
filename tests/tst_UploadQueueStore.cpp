@@ -74,6 +74,10 @@ private slots:
     // -- obfuscation ---------------------------------------------------------
     void obfuscation_cryptFlagsAndKadVersionSurvive();
 
+    // -- Software version ------------------------------------------------------
+    void version_survivesRestartCycles_data();
+    void version_survivesRestartCycles();
+
     // -- connectivity gate ---------------------------------------------------
     void process_doesNotLoadOrSaveWhileOffline();
 
@@ -621,6 +625,81 @@ void tst_UploadQueueStore::obfuscation_cryptFlagsAndKadVersionSurvive()
     QVERIFY2(!noPublicIP, "without a public IP MFC sends plaintext");
     QVERIFY2(restored->hasValidHash(),
              "the user hash is the RC4 key seed for an obfuscated outgoing connect");
+}
+
+// ===========================================================================
+// Software version
+// ===========================================================================
+
+void tst_UploadQueueStore::version_survivesRestartCycles_data()
+{
+    QTest::addColumn<uint32>("clientVersion");
+    QTest::addColumn<uint8>("emuleVersion");
+    QTest::addColumn<uint8>("compatibleClient");
+    QTest::addColumn<bool>("emuleHash");
+    QTest::addColumn<QString>("expected");
+
+    // Double decode showed 0.50a as 0.48g, 0.70b as 0.68d, aMule 2.3.3 as 1.70.4
+    QTest::newRow("eMule 0.50a") << makeClientVersion(0, 50, 0) << uint8(0x99) << uint8(0) << true
+                                 << QStringLiteral("eMule v0.50a");
+    QTest::newRow("eMule 0.70b") << makeClientVersion(0, 70, 1) << uint8(0x99) << uint8(0) << true
+                                 << QStringLiteral("eMule v0.70b");
+    QTest::newRow("aMule 2.3.3") << makeClientVersion(2, 3, 3) << uint8(0x99) << uint8(3) << true
+                                 << QStringLiteral("aMule v2.3.3");
+    // 0x99 without the eMule hash marker must not fall into the eDonkey branch
+    QTest::newRow("eMule 0.60d unmarked hash") << makeClientVersion(0, 60, 3) << uint8(0x99) << uint8(0)
+                                               << false << QStringLiteral("eMule v0.60d");
+    // Old mule info: version comes from emuleVersion alone
+    QTest::newRow("eMule 0.44 mule info") << makeClientVersion(0, 44, 0) << uint8(0x44) << uint8(0)
+                                          << true << QStringLiteral("eMule v0.44");
+    QTest::newRow("eDonkey 0.60") << makeClientVersion(0, 60, 0) << uint8(0) << uint8(0) << false
+                                  << QStringLiteral("eDonkey v0.60");
+}
+
+void tst_UploadQueueStore::version_survivesRestartCycles()
+{
+    QFETCH(uint32, clientVersion);
+    QFETCH(uint8, emuleVersion);
+    QFETCH(uint8, compatibleClient);
+    QFETCH(bool, emuleHash);
+    QFETCH(QString, expected);
+
+    QueuedClientRecord rec = makeRecord(1, m_fileHash);
+    if (emuleHash) {
+        rec.userHash[5]  = 14;
+        rec.userHash[14] = 111;
+    }
+    rec.clientVersion    = clientVersion;
+    rec.emuleVersion     = emuleVersion;
+    rec.compatibleClient = compatibleClient;
+    QVERIFY(UploadQueueFile::write(storePath(), {rec},
+                                   static_cast<uint32>(QDateTime::currentSecsSinceEpoch())));
+
+    // Each round = one core restart: restore, then save what was restored
+    for (int round = 1; round <= 3; ++round) {
+        {
+            UploadQueue queue;
+            UploadQueueStore store;
+            QCOMPARE(store.loadAndInject(&queue, storePath()), 1);
+
+            UpDownClient* restored = nullptr;
+            queue.forEachWaiting([&](UpDownClient* c) { restored = c; });
+            QVERIFY(restored);
+            QCOMPARE(restored->clientSoftwareStr(), expected);
+            QCOMPARE(restored->clientVersion(), clientVersion);
+            QVERIFY2(!restored->extProtocolAvailable(), "restore must not fake a received hello");
+
+            QVERIFY(store.saveNow(&queue, storePath()));
+        }
+        // Next restart starts with an empty client list
+        m_clientList = std::make_unique<ClientList>();
+        theApp.clientList = m_clientList.get();
+
+        const auto contents = UploadQueueFile::read(storePath());
+        QCOMPARE(contents.records.size(), size_t{1});
+        QCOMPARE(contents.records.front().clientVersion, clientVersion);
+        QCOMPARE(contents.records.front().emuleVersion, emuleVersion);
+    }
 }
 
 // ===========================================================================

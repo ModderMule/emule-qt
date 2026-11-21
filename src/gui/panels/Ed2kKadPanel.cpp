@@ -13,6 +13,7 @@
 #include "utils/Appearance.h"
 #include "utils/CountryFlags.h"
 #include "utils/IpcFeedback.h"
+#include "utils/PanelLayout.h"
 #include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/UrlPrefField.h"
@@ -391,8 +392,9 @@ QWidget* Ed2kKadPanel::createContactsPanel()
 QWidget* Ed2kKadPanel::createControlsPanel()
 {
     auto* widget = new QWidget;
-    widget->setMinimumWidth(220);
-    widget->setMaximumWidth(320);
+    // grows with the text size, or larger fonts clip the column
+    widget->setMinimumWidth(PanelLayout::fontScaled(widget, 220));
+    widget->setMaximumWidth(PanelLayout::fontScaled(widget, 320));
     auto* layout = new QVBoxLayout(widget);
     layout->setContentsMargins(4, 2, 4, 2);
     layout->setSpacing(4);
@@ -479,12 +481,10 @@ QWidget* Ed2kKadPanel::createControlsPanel()
 
     // Contacts histogram graph
     m_contactsGraph = new ContactsGraph;
-    m_contactsGraph->setMinimumHeight(70);
     layout->addWidget(m_contactsGraph, 2);
 
     // Kad Network distance histogram
     m_kadNetworkGraph = new KadContactHistogram;
-    m_kadNetworkGraph->setMinimumHeight(50);
     layout->addWidget(m_kadNetworkGraph, 1);
 
     return widget;

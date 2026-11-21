@@ -1,7 +1,8 @@
 # ---------------------------------------------------------------------------
 # libemuleipc — shared IPC protocol library (no emulecore dependency)
 #
-# Links only against Qt6::Core + Qt6::Network.
+# Links only against Qt6::Core + Qt6::Network (no OpenSSL: certificate pins use
+# QCryptographicHash, so the phone app builds it without OpenSSL).
 # Both daemon and GUI link this library.
 # ---------------------------------------------------------------------------
 
@@ -24,5 +25,4 @@ target_link_libraries(emuleipc
     PUBLIC
         Qt6::Core
         Qt6::Network
-        OpenSSL::Crypto
 )

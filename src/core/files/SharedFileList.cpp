@@ -31,12 +31,15 @@
 #include "utils/PathUtils.h"
 #include "utils/Log.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QPointer>
 #include <QTextStream>
+#include <QThreadPool>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -2412,27 +2415,57 @@ int SharedFileList::rebuildMetaData()
 
 void SharedFileList::stepMetaDataRebuild()
 {
-    if (m_metaRebuildQueue.empty())
+    if (m_metaReadBusy)
         return;
+    if (m_metaRebuildQueue.empty()) {
+        finishMetaDataRebuild();
+        return;
+    }
 
-    // Each file costs a header read; keep it to a small part of the 1 s tick.
-    constexpr qint64 kBudgetMs = 50;
-    QElapsedTimer budget;
-    budget.start();
-    while (!m_metaRebuildQueue.empty() && budget.elapsed() < kBudgetMs) {
+    // was: read here under a 50 ms budget: one NAS open blocked the core for seconds (#200).
+    // A batch per job keeps the pool from a task per file of a big share
+    constexpr std::size_t kBatch = 32;
+    std::vector<std::pair<MD4Key, QString>> batch;
+    while (!m_metaRebuildQueue.empty() && batch.size() < kBatch) {
         const MD4Key key = m_metaRebuildQueue.back();
         m_metaRebuildQueue.pop_back();
         // Looked up again: the file may have left the share since it was queued.
         if (KnownFile* file = getFileByID(key.data.data()); file && !file->isPartFile())
-            file->updateMetaDataTags();
+            batch.emplace_back(key, file->filePath());
     }
+    if (batch.empty()) {
+        finishMetaDataRebuild();
+        return;
+    }
+    m_metaReadBusy = true;
+    QThreadPool::globalInstance()->start([self = QPointer<SharedFileList>(this), batch = std::move(batch)] {
+        std::vector<KnownFile::MetaDataRead> reads;
+        reads.reserve(batch.size());
+        for (const auto& [key, path] : batch)
+            reads.push_back(KnownFile::readMetaData(path));
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, batch, reads = std::move(reads)] {
+            if (!self)
+                return;
+            self->m_metaReadBusy = false;
+            for (std::size_t i = 0; i < batch.size(); ++i) {
+                // gone, or moved meanwhile: its read is of another file
+                KnownFile* file = self->getFileByID(batch[i].first.data.data());
+                if (file && !file->isPartFile() && file->filePath() == batch[i].second)
+                    file->applyMetaData(reads[i]);
+            }
+            self->stepMetaDataRebuild();
+        });
+    });
+}
 
-    if (m_metaRebuildQueue.empty()) {
-        logInfo(QStringLiteral("Meta data of %1 shared files rebuilt").arg(m_metaRebuildTotal));
-        m_metaRebuildTotal = 0;
-        if (m_knownFiles)
-            m_knownFiles->save();
-    }
+void SharedFileList::finishMetaDataRebuild()
+{
+    if (m_metaRebuildTotal == 0)
+        return;
+    logInfo(QStringLiteral("Meta data of %1 shared files rebuilt").arg(m_metaRebuildTotal));
+    m_metaRebuildTotal = 0;
+    if (m_knownFiles)
+        m_knownFiles->save();
 }
 
 // ---------------------------------------------------------------------------
@@ -2651,19 +2684,18 @@ void SharedFileList::dropSharedRecord(KnownFile* old)
 
 void SharedFileList::warmContainerChecks()
 {
-    if (m_containerSweepIdle)
+    if (m_containerSweepIdle || m_containerReadBusy)
         return;
 
-    // 15 ms of a 1 s tick. A verdict costs one open + 512-byte read, only for the ~20
-    // media extensions expectedContainer() promises anything about, and only once:
-    // known.met keeps it. A share of a few thousand settles in the first tick or two,
-    // a huge one fills in visibly on its first start.
-    constexpr qint64 kBudgetMs = 15;
+    // A verdict costs one open + 512-byte read, only for the ~20 media extensions
+    // expectedContainer() promises anything about, and only once: known.met keeps it.
+    // was: read here under a 15 ms budget: one NAS open blocked the core for seconds (#200).
     constexpr size_t kSliceFiles = 512;
+    constexpr size_t kReadBatch = 64;
 
-    // Collect under the map lock, read outside it: containerCheck() opens files and
-    // forEach() holds the lock for the whole callback. Keeping raw pointers across
-    // the release is safe because files join and leave the share on this same thread.
+    // Collect under the map lock, settle outside it: forEach() holds the lock for the
+    // whole callback. Raw pointers across the release are safe because files join and
+    // leave the share on this same thread.
     std::vector<KnownFile*> pending;
     pending.reserve(kSliceFiles);
     size_t unresolved = 0;
@@ -2686,28 +2718,34 @@ void SharedFileList::warmContainerChecks()
         return;
     }
 
-    QElapsedTimer budget;
-    budget.start();
-    size_t tried = 0;
-    size_t stillUnresolved = 0;
+    // Settle by name and find the bytes here (no disk), read on the pool.
+    ContainerReadBatch batch;
     for (auto* file : pending) {
-        (void)file->containerCheck();   // resolves and memoises, or the bytes are not there yet
-        ++tried;
-        if (!file->containerCheckResolved()) {
-            ++stillUnresolved;
+        ++batch.tried;
+        if (file->settleContainerCheckByName()) {
+            noteFileChanged(file->fileHash());
+        } else if (auto src = file->containerHeadSource()) {
+            batch.items.push_back({MD4Key(file->fileHash()), file, file->fileName(), std::move(*src), {}});
+            if (batch.items.size() >= kReadBatch)
+                break;
         } else {
-            noteFileChanged(file->fileHash());   // the row carries the verdict
-            if (file->containerCheckIfResolved().verdict != ContainerVerdict::Unchecked)
-                m_containerSweepNewVerdicts = true;
+            ++batch.stillUnresolved;   // part file, first part not there yet
         }
-        if (budget.elapsed() >= kBudgetMs)
-            break;
+    }
+    if (batch.items.empty()) {
+        finishContainerSlice(batch.tried, batch.stillUnresolved);
+        return;
     }
 
-    // Step over the ones that could not answer so the next slice reaches new files.
-    // A part file gets its turn again on the next wrap, by which time the first part
-    // may have landed.
-    m_containerSweepSkip = (tried == stillUnresolved) ? m_containerSweepSkip + tried : 0;
+    m_containerReadBusy = true;
+    QThreadPool::globalInstance()->start([self = QPointer<SharedFileList>(this), batch = std::move(batch)]() mutable {
+        for (auto& item : batch.items)
+            item.head = ShareableFile::readContainerHead(item.source);
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, batch = std::move(batch)] {
+            if (self)
+                self->applyContainerReads(batch);
+        });
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3220,6 +3258,42 @@ void SharedFileList::applyCollection(const std::array<uint8, 16>& hash, const QS
     removeKeywords(file);
     file->setCollection(std::move(coll));
     addKeywords(file);
+}
+
+// ---------------------------------------------------------------------------
+// applyContainerReads / finishContainerSlice (private) — the sweep's main-thread half
+// ---------------------------------------------------------------------------
+
+void SharedFileList::applyContainerReads(const ContainerReadBatch& batch)
+{
+    m_containerReadBusy = false;
+    size_t stillUnresolved = batch.stillUnresolved;
+    for (const auto& item : batch.items) {
+        // Gone, renamed or replaced meanwhile: its bytes judge another name.
+        KnownFile* file = getFileByID(item.key.data.data());
+        if (file != item.file || file->fileName() != item.name || file->containerCheckResolved()) {
+            if (file == item.file && file && !file->containerCheckResolved())
+                ++stillUnresolved;
+            continue;
+        }
+        if (!item.head) {
+            ++stillUnresolved;
+            continue;
+        }
+        file->applyContainerHead(*item.head);
+        noteFileChanged(file->fileHash());   // the row carries the verdict
+        if (file->containerCheckIfResolved().verdict != ContainerVerdict::Unchecked)
+            m_containerSweepNewVerdicts = true;
+    }
+    finishContainerSlice(batch.tried, stillUnresolved);
+}
+
+void SharedFileList::finishContainerSlice(size_t tried, size_t stillUnresolved)
+{
+    // Step over the ones that could not answer so the next slice reaches new files.
+    // A part file gets its turn again on the next wrap, by which time the first part
+    // may have landed.
+    m_containerSweepSkip = (tried == stillUnresolved) ? m_containerSweepSkip + tried : 0;
 }
 
 } // namespace eMule

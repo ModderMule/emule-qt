@@ -8,6 +8,7 @@
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentOptionsForm.h"
 #include "controls/TorrentPieceGrid.h"
+#include "utils/ShareRatio.h"
 #include "utils/Clipboard.h"
 #include "utils/Log.h"
 #include "utils/MenuUtils.h"
@@ -239,7 +240,7 @@ void TorrentDetailsDialog::setRow(const TorrentRow& row)
     m_uploaded->setText(formatByteSize(row.uploaded));
     m_failed->setText(formatByteSize(row.failedBytes));
     const double ratio = row.ratio();
-    m_ratio->setText(ratio == -2 ? QStringLiteral("∞") : ratio < 0 ? na() : QString::number(ratio, 'f', 2));
+    m_ratio->setText(ratio == kShareRatioInfinite ? QStringLiteral("∞") : ratio < 0 ? na() : QString::number(ratio, 'f', 2));
     if (m_error->toPlainText() != row.error)
         m_error->setPlainText(row.error);
     m_grid->setProgressMap(row.isComplete() && row.pieceMap.isEmpty() ? QByteArray(1, char(255))

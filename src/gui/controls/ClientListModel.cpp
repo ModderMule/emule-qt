@@ -103,7 +103,8 @@ std::vector<int> ClientListModel::extColumns() const
 {
     std::vector<int> cols{sharedListColumn()};
     for (int i = 0; i < extraColumnCount(); ++i)
-        cols.push_back(baseColumnCount() + i);
+        if (extraKind(i) != ExtraSoftware)   // shown always
+            cols.push_back(baseColumnCount() + i);
     return cols;
 }
 
@@ -164,7 +165,13 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
             return c.anonymous ? tr("anonymous (ed3k)") : tr("%1 (ed3k)").arg(clientNameText(c.userName));
         if (m_mode == ClientListMode::OnQueue && index.column() == 4)
             return c.remoteQueueRank > 0 ? tr("place %1").arg(c.remoteQueueRank) : QString();
+        // was: sourceFrom -1 → "?"; the network instead, as BT/Usenet/Hoster rows
+        if (m_mode == ClientListMode::Downloading && index.column() == 7)
+            return c.isUrl ? QStringLiteral("HTTP") : QStringLiteral("ed3k");
     }
+    if (c.network == ClientNetwork::Ed3k && role == Qt::UserRole && m_mode == ClientListMode::Downloading
+        && index.column() == 7)
+        return 100;   // after eD2K's source types, before the other networks (100 + Ed3kJoin)
 
     // BitTorrent peers, news servers, hosters of a job joined with ed3k: their network's icon,
     // its name as the source type
@@ -243,13 +250,16 @@ QVariant ClientListModel::headerData(int section, Qt::Orientation orientation, i
         return tr("Country");
     if (section == sharedListColumn())
         return tr("Shared List");
-    switch (section - baseColumnCount()) {
+    if (section < baseColumnCount())
+        return headerLabel(section);
+    switch (extraKind(section - baseColumnCount())) {
     case ExtraUploaded:     return tr("Uploaded");
     case ExtraDownloaded:   return tr("Downloaded");
     case ExtraRatio:        return tr("Ratio");
     case ExtraSessionRatio: return tr("Session Ratio");
     case ExtraSlot:         return tr("Slot #");
-    default:                return headerLabel(section);
+    case ExtraSoftware:     return tr("Software");
+    default:                return {};
     }
 }
 
@@ -272,15 +282,21 @@ int ClientListModel::extraColumnCount() const
 {
     switch (m_mode) {
     case ClientListMode::Uploading: return ExtraCount;
-    case ClientListMode::OnQueue:   return ExtraSlot;   // no slot while queued
+    case ClientListMode::OnQueue:   return ExtraCount - 1;   // no slot while queued
     default:                        return 0;
     }
 }
 
-QVariant ClientListModel::extraData(const ClientRow& c, int extra, int role) const
+int ClientListModel::extraKind(int extra) const
 {
+    return m_mode == ClientListMode::OnQueue && extra >= ExtraSlot ? extra + 1 : extra;
+}
+
+QVariant ClientListModel::extraData(const ClientRow& c, int extraIndex, int role) const
+{
+    const int extra = extraKind(extraIndex);
     if (role == Qt::TextAlignmentRole)
-        return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
+        return static_cast<int>((extra == ExtraSoftware ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter);
 
     // Uploaded / Downloaded: the peer's credit totals, kept across restarts in clients.met.
     // Ratio columns: the upload file's bytes sent to anyone, per file size (eMuleAI).
@@ -291,6 +307,7 @@ QVariant ClientListModel::extraData(const ClientRow& c, int extra, int role) con
         case ExtraRatio:        return formatShareRatio(c.uploadFileAllTimeTransferred, c.uploadFileSize);
         case ExtraSessionRatio: return formatShareRatio(c.uploadFileTransferred, c.uploadFileSize);
         case ExtraSlot:         return c.slotNumber > 0 ? QString::number(c.slotNumber) : QString{};
+        case ExtraSoftware:     return c.software.isEmpty() ? tr("Unknown") : c.software;
         default:                return {};
         }
     }
@@ -301,6 +318,7 @@ QVariant ClientListModel::extraData(const ClientRow& c, int extra, int role) con
         case ExtraRatio:        return shareRatio(c.uploadFileAllTimeTransferred, c.uploadFileSize);
         case ExtraSessionRatio: return shareRatio(c.uploadFileTransferred, c.uploadFileSize);
         case ExtraSlot:         return c.slotNumber;
+        case ExtraSoftware:     return c.software;
         default:                return {};
         }
     }

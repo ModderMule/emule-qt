@@ -19,6 +19,7 @@
 #include "webserver/WebServer.h"
 
 #include <QCborArray>
+#include <QDateTime>
 #include <QDir>
 #include <QHostAddress>
 #include <QUrl>
@@ -26,6 +27,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <map>
 #include <optional>
 
 
@@ -142,6 +144,7 @@ QCborMap toCbor(const bt::BtTorrentRow& r)
         {QStringLiteral("seedsTotal"), r.seedsTotal},
         {QStringLiteral("downloaded"), r.downloaded},
         {QStringLiteral("uploaded"), r.uploaded},
+        {QStringLiteral("sessionUploaded"), r.sessionUploaded},
         {QStringLiteral("failedBytes"), r.failedBytes},
         {QStringLiteral("error"), r.error},
         {QStringLiteral("hashV1"), r.hashV1},
@@ -318,6 +321,56 @@ QCborMap detailsToCbor(const QString& id)
 /// the request switch; handleRequest() guards it against exceptions
 void dispatchRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply);
 
+/// Upload Time of the uploading peers ("bt:<id>|<address>"): {started, last seen} in ms
+std::map<QString, std::pair<qint64, qint64>> s_upSince;
+/// a peer missing from the list this long: its upload ended
+constexpr qint64 kUpSinceKeepMs = 30'000;
+
+/// GetUploads "upStatus" of peer @p p: the pieces it has; empty: no bitfield, no metadata
+QCborMap peerPieceBar(const bt::BtTorrentRow& t, const bt::BtPeerRow& p, qint64 size)
+{
+    if (t.pieces <= 0 || t.pieceLength <= 0 || size <= 0)
+        return {};
+    QByteArray have = p.have;
+    if (have.isEmpty() && p.seed)   // have_all, no bitfield sent
+        have = QByteArray((t.pieces + 7) / 8, '\xff');
+    if (have.isEmpty())
+        return {};
+    return QCborMap{
+        {QStringLiteral("fileSize"), size},
+        {QStringLiteral("partSize"), t.pieceLength},
+        {QStringLiteral("parts"), have},
+    };
+}
+
+/// GetUploads/GetDownloadClients row of peer @p p of torrent @p id (network "bt")
+QCborMap peerClientRow(const QString& id, const bt::BtPeerRow& p)
+{
+    // an I2P peer has no address to show
+    const auto [host, port] = splitPeerAddress(p.address, p.i2p);
+    const QString name = p.i2p ? QString(p.address.left(16) + QStringLiteral("….i2p")) : p.address;
+    return QCborMap{
+        {QStringLiteral("network"), QStringLiteral("bt")},
+        {QStringLiteral("userName"), name},
+        // the details key of the row: one per peer and torrent
+        {QStringLiteral("userHash"), QString(QStringLiteral("bt:") + id + u'|' + p.address)},
+        {QStringLiteral("software"), p.client},
+        {QStringLiteral("softwareId"), -1},
+        {QStringLiteral("datarate"), p.rateDown},
+        {QStringLiteral("upDatarate"), p.rateUp},
+        {QStringLiteral("sessionDown"), p.downloaded},
+        {QStringLiteral("transferredDown"), p.downloaded},
+        {QStringLiteral("sessionUp"), p.uploaded},
+        {QStringLiteral("transferredUp"), p.uploaded},
+        {QStringLiteral("addr"), host},
+        {QStringLiteral("port"), port},
+        {QStringLiteral("cc"), peerCountry(host)},
+        {QStringLiteral("netSource"), p.source},
+        {QStringLiteral("isConnected"), true},
+        {QStringLiteral("noViewSharedFiles"), true},
+    };
+}
+
 #endif // EMULE_HAVE_BITTORRENT
 
 } // namespace
@@ -358,37 +411,57 @@ void appendDownloading(QCborArray& out, const QString& id)
     const auto t = s_session->torrent(id);
     if (!t || t->paused)
         return;
-    for (const auto& p : s_session->peers(id)) {
-        if (p.rateDown <= 0)
-            continue;
-        // an I2P peer has no address to show
-        const auto [host, port] = splitPeerAddress(p.address, p.i2p);
-        const QString name = p.i2p ? QString(p.address.left(16) + QStringLiteral("….i2p")) : p.address;
-        // the details key of the row: one per peer and torrent
-        const QString key = QStringLiteral("bt:") + id + u'|' + p.address;
-        out.append(QCborMap{
-            {QStringLiteral("network"), QStringLiteral("bt")},
-            {QStringLiteral("userName"), name},
-            {QStringLiteral("userHash"), key},
-            {QStringLiteral("software"), p.client},
-            {QStringLiteral("softwareId"), -1},
-            {QStringLiteral("reqFileName"), t->name},
-            {QStringLiteral("downloadState"), QStringLiteral("Downloading")},
-            {QStringLiteral("datarate"), p.rateDown},
-            {QStringLiteral("upDatarate"), p.rateUp},
-            {QStringLiteral("sessionDown"), p.downloaded},
-            {QStringLiteral("transferredDown"), p.downloaded},
-            {QStringLiteral("sessionUp"), p.uploaded},
-            {QStringLiteral("transferredUp"), p.uploaded},
-            {QStringLiteral("addr"), host},
-            {QStringLiteral("port"), port},
-            {QStringLiteral("cc"), peerCountry(host)},
-            {QStringLiteral("netSource"), p.source},
-            {QStringLiteral("isConnected"), true},
-            {QStringLiteral("noViewSharedFiles"), true},
-            {QStringLiteral("sourceFrom"), -1},
-        });
-    }
+    for (const auto& p : s_session->peers(id))
+        if (p.rateDown > 0) {
+            QCborMap m = peerClientRow(id, p);
+            m.insert(QStringLiteral("reqFileName"), t->name);
+            m.insert(QStringLiteral("downloadState"), QStringLiteral("Downloading"));
+            m.insert(QStringLiteral("sourceFrom"), -1);
+            out.append(m);
+        }
+#else
+    (void)out;
+    (void)id;
+#endif
+}
+
+void appendUploading(QCborArray& out, const QString& id)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!s_session)
+        return;
+    const auto t = s_session->torrent(id);
+    if (!t || t->paused)
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    // ended uploads: the next one of the same peer starts its Upload Time again
+    for (auto it = s_upSince.begin(); it != s_upSince.end();)
+        it = now - it->second.second > kUpSinceKeepMs ? s_upSince.erase(it) : std::next(it);
+    // the whole torrent as the file; the bar in pieces
+    const qint64 size = t->totalSize > 0 ? t->totalSize : t->size;
+    for (const auto& p : s_session->peers(id))
+        if (p.rateUp > 0) {
+            QCborMap m = peerClientRow(id, p);
+            m.insert(QStringLiteral("uploadState"), QStringLiteral("Transferring"));
+            m.insert(QStringLiteral("uploadFileName"), t->name);
+            m.insert(QStringLiteral("uploadFileSize"), size);
+            // this connection's bytes: what libtorrent counts per peer
+            m.insert(QStringLiteral("uploadedTotal"), p.uploaded);
+            m.insert(QStringLiteral("downloadedTotal"), p.downloaded);
+            // Ratio / Session Ratio: the torrent's bytes sent to anyone
+            m.insert(QStringLiteral("uploadFileAllTimeTransferred"), t->uploaded);
+            m.insert(QStringLiteral("uploadFileTransferred"), t->sessionUploaded);
+            auto& since = s_upSince[m.value(QStringLiteral("userHash")).toString()];
+            if (since.first == 0)
+                since.first = now;
+            since.second = now;
+            m.insert(QStringLiteral("uploadStartDelay"), now - since.first);
+            if (const QCborMap bar = peerPieceBar(*t, p, size); !bar.isEmpty()) {
+                m.insert(QStringLiteral("upPartCount"), t->pieces);
+                m.insert(QStringLiteral("upStatus"), bar);
+            }
+            out.append(m);
+        }
 #else
     (void)out;
     (void)id;
@@ -470,7 +543,8 @@ QStringList jobIds([[maybe_unused]] bool downloadingOnly)
     if (!s_session || !s_session->isRunning())
         return out;
     for (const bt::BtTorrentRow& t : s_session->torrents())
-        if (!downloadingOnly || (t.hasMetadata && !t.paused && t.state != bt::BtState::Paused && !isComplete(t)))
+        // checking reads progress 0: a complete torrent being checked is no download
+        if (!downloadingOnly || (t.hasMetadata && !t.paused && t.state == bt::BtState::Downloading && !isComplete(t)))
             out << t.id;
 #endif
     return out;
@@ -493,6 +567,22 @@ QString moveTo(const QString& id, const QString& dir)
     if (target.isEmpty() || QDir::isRelativePath(target))
         return QStringLiteral("not an absolute folder");
     return s_session->moveStorage(id, target) ? QString() : QStringLiteral("no such torrent or folder");
+}
+
+void fileDeleted([[maybe_unused]] const QString& path)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!s_session || !s_session->isRunning())
+        return;
+    for (const QString& id : s_session->skipDeletedFile(path)) {
+        if (!thePrefs.btRemoveEmptiedTorrent())
+            continue;
+        const auto row = s_session->torrent(id);
+        logInfo(QStringLiteral("BitTorrent: last file of \"%1\" deleted, torrent removed")
+                    .arg(row ? row->name : id));
+        s_session->remove(id, false);
+    }
+#endif
 }
 
 UsenetStreamSource streamFrom([[maybe_unused]] const QString& id, [[maybe_unused]] int fileIndex,

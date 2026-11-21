@@ -327,6 +327,7 @@ void EMSocket::readIncoming(bool peerShutdown)
 
     if (ret <= 0 || m_conState.load(std::memory_order_acquire) == EMSState::Disconnected)
         return;
+    onReceiveProgress();
 
     // Process through encryption layer
     bool wasReady = isEncryptionLayerReady();

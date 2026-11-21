@@ -40,10 +40,10 @@ Ed3kHidingGroup::Ed3kHidingGroup(IpcClient* ipc, QWidget* parent)
     auto* hopsRow = new QHBoxLayout;
     hopsRow->addWidget(new QLabel(tr("Hops:"), this));
     m_hopsSpin = new QSpinBox(this);
-    m_hopsSpin->setRange(1, 3);
+    m_hopsSpin->setRange(0, 3);
     m_hopsSpin->setToolTip(tr("Nodes between you and the others, for every connection and search. More hops "
-                              "hide better and are slower. 0 (only while forwarding for others): deniable, "
-                              "not hidden - nobody stands in between."));
+                              "hide better and are slower. 0: deniable, not hidden - nobody stands in "
+                              "between."));
     hopsRow->addWidget(m_hopsSpin);
     // hops.md §2.6: the client tells the user what 0 gives
     m_zeroHint = new QLabel(tr("0 = deniable, not hidden"), this);
@@ -51,14 +51,14 @@ Ed3kHidingGroup::Ed3kHidingGroup(IpcClient* ipc, QWidget* parent)
     hopsRow->addWidget(m_zeroHint);
     hopsRow->addStretch();
     layout->addLayout(hopsRow);
-    m_hoppingCheck = new QCheckBox(tr("Forward traffic for others"), this);
-    m_hoppingCheck->setToolTip(tr("Being a hop for other hiding nodes: their traffic covers your own."));
-    layout->addWidget(m_hoppingCheck);
     auto* shareRow = new QHBoxLayout;
     shareRow->addWidget(new QLabel(tr("Share of the upload limit:"), this));
     m_shareSpin = new QSpinBox(this);
     m_shareSpin->setRange(1, 100);
     m_shareSpin->setSuffix(QStringLiteral(" %"));
+    // hops.md §1, §5: always a hop for others while hiding
+    m_shareSpin->setToolTip(tr("While hiding you forward traffic for other hiding nodes: their traffic covers "
+                               "your own. This share of the upload limit goes to their paths."));
     shareRow->addWidget(m_shareSpin);
     shareRow->addStretch();
     layout->addLayout(shareRow);
@@ -95,6 +95,12 @@ Ed3kHidingGroup::Ed3kHidingGroup(IpcClient* ipc, QWidget* parent)
     m_reportProxyPass->setEchoMode(QLineEdit::Password);
     userRow->addWidget(m_reportProxyPass, 1);
     layout->addLayout(userRow);
+    // hops.md §1: a link's ws= GET would show this address; through the proxy above only
+    m_anonHttpCheck = new QCheckBox(tr("Use HTTP sources of anonymous downloads through this proxy"), this);
+    m_anonHttpCheck->setToolTip(tr("ed3k links can name web sources (ws=). Under the anonymous key they are not "
+                                   "used, as a direct download would show your address. On: they are fetched "
+                                   "through this proxy only, never directly. The proxy's operator sees what you fetch."));
+    layout->addWidget(m_anonHttpCheck);
 
     m_statusLabel = new QLabel(this);
     m_statusLabel->setWordWrap(true);
@@ -109,17 +115,15 @@ Ed3kHidingGroup::Ed3kHidingGroup(IpcClient* ipc, QWidget* parent)
     notes->setTextFormat(Qt::RichText);
     layout->addWidget(notes);
 
-    // hops.md §1: forwarding for others is on by default while hiding is on
-    connect(m_hideCheck, &QCheckBox::toggled, this, [this](bool on) {
-        if (on && !m_loading)
-            m_hoppingCheck->setChecked(true);
+    connect(m_hideCheck, &QCheckBox::toggled, this, [this] {
+        updateEnabled();
+        if (!m_loading)
+            emit changed();
     });
-    for (QCheckBox* box : {m_hideCheck, m_hoppingCheck})
-        connect(box, &QCheckBox::toggled, this, [this] {
-            updateEnabled();
-            if (!m_loading)
-                emit changed();
-        });
+    connect(m_anonHttpCheck, &QCheckBox::toggled, this, [this] {
+        if (!m_loading)
+            emit changed();
+    });
     for (QSpinBox* spin : {m_hopsSpin, m_shareSpin, m_reportProxyPort})
         connect(spin, &QSpinBox::valueChanged, this, [this] {
             if (!m_loading)
@@ -130,6 +134,9 @@ Ed3kHidingGroup::Ed3kHidingGroup(IpcClient* ipc, QWidget* parent)
             if (!m_loading)
                 emit changed();
         });
+    // the HTTP source switch needs a whole proxy (Preferences::ed3kReportProxy useProxy)
+    connect(m_reportProxyHost, &QLineEdit::textChanged, this, &Ed3kHidingGroup::updateEnabled);
+    connect(m_reportProxyPort, &QSpinBox::valueChanged, this, &Ed3kHidingGroup::updateEnabled);
     connect(m_reportProxyType, &QComboBox::currentIndexChanged, this, [this] {
         updateEnabled();
         if (!m_loading)
@@ -143,8 +150,6 @@ void Ed3kHidingGroup::load(const QCborMap& p)
 {
     m_loading = true;
     m_hideCheck->setChecked(p.value(QStringLiteral("ed3kHide")).toBool(false));
-    m_hoppingCheck->setChecked(p.value(QStringLiteral("ed3kHopping")).toBool(true));
-    updateEnabled();   // the hops range follows hopping (0 only with it)
     m_hopsSpin->setValue(int(p.value(QStringLiteral("ed3kHops")).toInteger(1)));
     m_shareSpin->setValue(int(p.value(QStringLiteral("ed3kHopShare")).toInteger(25)));
     const int type = Preferences::reportProxyType(int(p.value(QStringLiteral("ed3kReportProxyType")).toInteger(0)));
@@ -153,6 +158,7 @@ void Ed3kHidingGroup::load(const QCborMap& p)
     m_reportProxyPort->setValue(int(p.value(QStringLiteral("ed3kReportProxyPort")).toInteger(0)));
     m_reportProxyUser->setText(p.value(QStringLiteral("ed3kReportProxyUser")).toString());
     m_reportProxyPass->setText(p.value(QStringLiteral("ed3kReportProxyPassword")).toString());
+    m_anonHttpCheck->setChecked(p.value(QStringLiteral("ed3kAnonHttp")).toBool(false));
     updateEnabled();
     m_loading = false;
 }
@@ -163,8 +169,6 @@ void Ed3kHidingGroup::appendTo(IpcMessage& req) const
     req.append(m_hideCheck->isChecked());
     req.append(QStringLiteral("ed3kHops"));
     req.append(qint64(m_hopsSpin->value()));
-    req.append(QStringLiteral("ed3kHopping"));
-    req.append(m_hoppingCheck->isChecked());
     req.append(QStringLiteral("ed3kHopShare"));
     req.append(qint64(m_shareSpin->value()));
     req.append(QStringLiteral("ed3kReportProxyType"));
@@ -177,19 +181,21 @@ void Ed3kHidingGroup::appendTo(IpcMessage& req) const
     req.append(m_reportProxyUser->text());
     req.append(QStringLiteral("ed3kReportProxyPassword"));
     req.append(m_reportProxyPass->text());
+    req.append(QStringLiteral("ed3kAnonHttp"));
+    req.append(m_anonHttpCheck->isChecked());
 }
 
 void Ed3kHidingGroup::saveLocal() const
 {
     thePrefs.setEd3kHide(m_hideCheck->isChecked());
     thePrefs.setEd3kHops(m_hopsSpin->value());
-    thePrefs.setEd3kHopping(m_hoppingCheck->isChecked());
     thePrefs.setEd3kHopShare(m_shareSpin->value());
     thePrefs.setEd3kReportProxyType(m_reportProxyType->currentData().toInt());
     thePrefs.setEd3kReportProxyHost(m_reportProxyHost->text());
     thePrefs.setEd3kReportProxyPort(m_reportProxyPort->value());
     thePrefs.setEd3kReportProxyUser(m_reportProxyUser->text());
     thePrefs.setEd3kReportProxyPassword(m_reportProxyPass->text());
+    thePrefs.setEd3kAnonHttp(m_anonHttpCheck->isChecked());
 }
 
 void Ed3kHidingGroup::applyStatus(const QCborMap& h)
@@ -267,16 +273,13 @@ void Ed3kHidingGroup::newAnonKey()
 void Ed3kHidingGroup::updateEnabled()
 {
     const bool on = m_hideCheck->isChecked();
-    const bool hopping = m_hoppingCheck->isChecked();
     m_hopsSpin->setEnabled(on);
-    // hops.md §2.6: 0 only while forwarding for others; turning that off at 0 gives 1
-    m_hopsSpin->setMinimum(hopping ? 0 : 1);
-    m_zeroHint->setVisible(hopping);
-    m_hoppingCheck->setEnabled(on);
-    m_shareSpin->setEnabled(on && hopping);
+    m_shareSpin->setEnabled(on);
     const bool proxy = m_reportProxyType->currentData().toInt() != PROXYTYPE_NOPROXY;
     for (QWidget* w : std::initializer_list<QWidget*>{m_reportProxyHost, m_reportProxyPort, m_reportProxyUser, m_reportProxyPass})
         w->setEnabled(proxy);
+    // greyed out without a proxy (the core ignores the switch then)
+    m_anonHttpCheck->setEnabled(proxy && !m_reportProxyHost->text().trimmed().isEmpty() && m_reportProxyPort->value() != 0);
 }
 
 } // namespace eMule

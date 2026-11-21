@@ -71,6 +71,7 @@ void Ed3kHide::apply()
 {
     applyNode();
     applyReports();
+    applyHttp();
 }
 
 void Ed3kHide::attach()
@@ -80,6 +81,7 @@ void Ed3kHide::attach()
     m_appliedHopping.reset();
     m_appliedShare = -1;
     m_appliedReports.reset();
+    m_appliedHttp.reset();
     if (!m_loaded)
         load();
 }
@@ -91,6 +93,7 @@ void Ed3kHide::detach()
     m_appliedHopping.reset();
     m_appliedShare = -1;
     m_appliedReports.reset();
+    m_appliedHttp.reset();
     if (m_saveTimer.isActive()) {
         m_saveTimer.stop();
         save();
@@ -104,6 +107,12 @@ bool Ed3kHide::hiding() const
     return anonId().has_value();
 }
 
+bool Ed3kHide::hidingWanted() const
+{
+    // was: hiding() alone: a download added before the anonymous node ran took the node key for good
+    return m_settings.on || hiding();
+}
+
 std::optional<ffi::NodeId> Ed3kHide::anonId() const
 {
     auto* e = m_session.engine();
@@ -115,14 +124,14 @@ std::optional<ffi::NodeId> Ed3kHide::anonId() const
 
 ffi::KeyKind Ed3kHide::keyForUse() const
 {
-    return hiding() ? ffi::KeyKind::Anon : ffi::KeyKind::Node;
+    return hidingWanted() ? ffi::KeyKind::Anon : ffi::KeyKind::Node;
 }
 
 ffi::KeyKind Ed3kHide::keyFor(const ffi::Root& root) const
 {
     if (const auto k = recorded(root))
         return *k;
-    return hiding() ? ffi::KeyKind::Anon : ffi::KeyKind::Node;
+    return hidingWanted() ? ffi::KeyKind::Anon : ffi::KeyKind::Node;
 }
 
 std::optional<ffi::KeyKind> Ed3kHide::recorded(const ffi::Root& root) const
@@ -228,9 +237,6 @@ QString Ed3kHide::keyName(ffi::KeyKind key)
 Ed3kHideSettings Ed3kHide::normalized(Ed3kHideSettings s)
 {
     s.hops = std::clamp(s.hops, 0, 3);
-    // §2.6: 0 only while forwarding for others; else its uses would go over 1 hop anyway
-    if (s.hops == 0 && !s.hopping)
-        s.hops = 1;
     s.sharePercent = std::clamp(s.sharePercent, 1, 100);
     return s;
 }
@@ -292,8 +298,8 @@ void Ed3kHide::applyNode()
     if (!e)
         return;
     const auto t = m_session.now();
-    // §5: forwarding for others while hiding (others' traffic covers its own, §1)
-    const bool hopping = m_settings.on && m_settings.hopping;
+    // §5: forwarding for others always on while hiding (others' traffic covers its own, §1)
+    const bool hopping = m_settings.on;
     if (m_appliedHopping != hopping) {
         if (auto ok = e->hopsSetHopping(t, hopping); ok)
             m_appliedHopping = hopping;
@@ -361,6 +367,24 @@ void Ed3kHide::applyReports()
                                                                                              : QStringLiteral("off")));
     } else if (ok.error() != ffi::Error::Unsupported) {
         logEd3kWarning(QStringLiteral("ed3k: share reports under the anonymous key not turned on (error %1)").arg(int(ok.error())));
+    }
+}
+
+void Ed3kHide::applyHttp()
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    // http-source.md §3.2: HTTP sources of anonymous downloads only through that proxy
+    const bool want = m_settings.anonHttp && m_settings.reportProxy.has_value();
+    if (m_appliedHttp == want)
+        return;
+    if (auto ok = e->httpAnon(want); ok || !want) {
+        m_appliedHttp = want;
+        logEd3k(QStringLiteral("ed3k: HTTP sources of anonymous downloads %1").arg(want ? QStringLiteral("on (through the anonymous proxy)")
+                                                                                       : QStringLiteral("off")));
+    } else if (ok.error() != ffi::Error::Unsupported) {
+        logEd3kWarning(QStringLiteral("ed3k: HTTP sources of anonymous downloads not turned on (error %1)").arg(int(ok.error())));
     }
 }
 

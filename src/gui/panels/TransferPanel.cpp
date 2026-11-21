@@ -11,6 +11,7 @@
 #include "dialogs/AddSourceDialog.h"
 #include "utils/MassRenameAction.h"
 #include "utils/MoveDownloadsAction.h"
+#include "utils/LocateFilesAction.h"
 #include "utils/Clipboard.h"
 #include "utils/Opcodes.h"
 #include "controls/AbstractListView.h"
@@ -163,8 +164,11 @@ ClientRow parseClient(const QCborMap& m, bool downloadSide = false)
         row.ed3kJoin = m.value(QStringLiteral("join")).toString();
         if (row.anonymous)
             row.addr.clear();
-        // GetClientDetails key (Ed3kUploadsBridge): a node ID is 32 hex like an eD2K user hash
-        row.userHash = (row.anonymous ? QStringLiteral("ed3k:anon:") : QStringLiteral("ed3k:")) + row.userHash;
+        // GetClientDetails key (Ed3kUploadsBridge): a node ID is 32 hex like an eD2K user hash.
+        // was: prefixed always; the Downloading list's rows carry the key already
+        // ("ed3k:ed3k:..." found no client, Details showed nothing)
+        if (!row.userHash.startsWith(QLatin1String("ed3k:")))
+            row.userHash = (row.anonymous ? QStringLiteral("ed3k:anon:") : QStringLiteral("ed3k:")) + row.userHash;
     }
 
     // New fields for TODO columns
@@ -195,6 +199,7 @@ ClientRow parseClient(const QCborMap& m, bool downloadSide = false)
     row.addNextConnect     = m.value(QStringLiteral("addNextConnect")).toBool();
     if (const QCborMap bar = m.value(QStringLiteral("upStatus")).toMap(); !bar.isEmpty()) {
         row.upStatus.fileSize = bar.value(QStringLiteral("fileSize")).toInteger();
+        row.upStatus.partSize = bar.value(QStringLiteral("partSize")).toInteger();
         // Bit-packed on the wire, one bit per part
         const QByteArray packed = bar.value(QStringLiteral("parts")).toByteArray();
         row.upStatus.parts = QByteArray(row.upPartCount, '\0');
@@ -628,6 +633,14 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         moveAct->setEnabled(anyUnfinished && std::ranges::any_of(selectedDls, [](const DownloadRow* d) {
             return d->status != QLatin1String("completing") && d->fileOp == 0;
         }));
+        // #224: a folder with files of the ed3k downloads (any network's): copied from there
+        m_downloadMenu->addAction(menuIcon("Folders.ico"), LocateFilesAction::menuText(), this, [this]() {
+            QPointer<TransferPanel> self(this);
+            LocateFilesAction::run(this, m_ipc, QString(), [self] {
+                if (self)
+                    self->requestDownloads();
+            });
+        });
     }
 
     m_downloadMenu->addSeparator();
@@ -791,7 +804,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                                         tr("Open File"), tr("Preview"), tr("Preview with"), tr("Clear Completed"),
                                         tr("Assign To Category"),
                                         pasteLinksText(), tr("Find..."), tr("Show Toolbar"),
-                                        MoveDownloadsAction::menuText(), Ed3kLinkMenu::copyText(),
+                                        MoveDownloadsAction::menuText(), LocateFilesAction::menuText(), Ed3kLinkMenu::copyText(),
                                         Ed3kLinkMenu::showText(), tr("Mass Rename..."),
                                         tr("Source Handling"), tr("Search Related Files"), tr("Web Services")};
         for (QAction* act : m_downloadMenu->actions())
@@ -1201,8 +1214,8 @@ QWidget* TransferPanel::createBottomPane()
     clientSlot(Uploading).view = createClientView(
         clientSlot(Uploading).model, QStringLiteral("clientsUploading3"),
         // User Name, File, Speed, Transferred, Waited, Upload Time, Status, Obtained Parts, Country,
-        // Shared List, Uploaded, Downloaded, Ratio, Session Ratio
-        {150, 220, 70, 90, 80, 80, 90, 120, 100, 80, 90, 90, 50, 80},
+        // Shared List, Uploaded, Downloaded, Ratio, Session Ratio, Slot #, Software
+        {150, 220, 70, 90, 80, 80, 90, 120, 100, 80, 90, 90, 50, 80, 50, 120},
         {2, 3, 4, 7, 10, 11, 12, 13});       // first click descending, MFC UploadListCtrl.cpp:286-292
     clientSlot(Downloading).view = createClientView(
         clientSlot(Downloading).model, QStringLiteral("clientsDownloading3"),
@@ -1214,8 +1227,8 @@ QWidget* TransferPanel::createBottomPane()
         clientSlot(OnQueue).model, QStringLiteral("clientsOnQueue3"),
         // User Name, File, File Priority, Rating, Score, Asked, Last Seen,
         // Entered Queue, Banned, Obtained Parts, Country, Shared List, Uploaded, Downloaded,
-        // Ratio, Session Ratio
-        {150, 220, 80, 70, 60, 60, 100, 110, 60, 120, 100, 80, 90, 90, 50, 80},
+        // Ratio, Session Ratio, Software
+        {150, 220, 80, 70, 60, 60, 100, 110, 60, 120, 100, 80, 90, 90, 50, 80, 120},
         {2, 3, 4, 5, 8, 9, 12, 13, 14, 15}); // QueueListCtrl.cpp:292-300, + the 4 new ones
     // Obtained Parts is MFC's upload status bar (UploadListCtrl.cpp:165, QueueListCtrl.cpp:168)
     clientSlot(Uploading).view->setItemDelegateForColumn(

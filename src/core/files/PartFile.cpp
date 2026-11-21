@@ -49,6 +49,7 @@
 #include <QCoreApplication>
 #include <QPointer>
 #include <QScopeGuard>
+#include <QThreadPool>
 #include <QTimer>
 #include <QtEndian>
 #include <QDir>
@@ -2447,7 +2448,9 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
 
     const QString metPath = m_fullName;
     // Preloaded bytes for a preload of this very file; the disk otherwise
-    if (preload && (!preload->met || preload->metPath != metPath))
+    // compare separator-agnostic: m_fullName uses '\' on Windows, the preload '/'
+    if (preload && (!preload->met
+                    || QDir::cleanPath(preload->metPath) != QDir::cleanPath(metPath)))
         preload = nullptr;
     std::optional<SafeFile> diskMet;
     std::optional<SafeMemFile> memMet;
@@ -3444,7 +3447,7 @@ const FakeFileVerdict& PartFile::fakeVerdict() const
     constexpr qint64 kRefreshSecs = 20;
     const qint64 now = QDateTime::currentSecsSinceEpoch();
     // The head check is the strongest signal: do not sit on a verdict made without it.
-    const ContainerCheck& container = containerCheck();
+    const ContainerCheck& container = requestContainerCheck();
     const bool hasHead = containerCheckResolved();
     if (m_fakeVerdictAt != 0 && now - m_fakeVerdictAt < kRefreshSecs && hasHead == m_fakeVerdictHadHead)
         return m_fakeVerdict;
@@ -3483,6 +3486,33 @@ const FakeFileVerdict& PartFile::fakeVerdict() const
     m_fakeVerdictHadHead = hasHead;
     logFakeVerdict();
     return m_fakeVerdict;
+}
+
+const ContainerCheck& PartFile::requestContainerCheck() const
+{
+    if (settleContainerCheckByName() || m_containerReadBusy)
+        return containerCheckIfResolved();
+    auto src = containerHeadSource();
+    if (!src)
+        return containerCheckIfResolved();
+
+    m_containerReadBusy = true;
+    // The notifier dies with the file: a removed download drops the result
+    QPointer<const PartFileNotifier> alive(&m_partNotifier);
+    QThreadPool::globalInstance()->start([this, alive, src = std::move(*src), name = fileName()] {
+        std::optional<QByteArray> head = readContainerHead(src);
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [this, alive, name, head = std::move(head)] {
+            if (!alive)
+                return;
+            m_containerReadBusy = false;
+            // Renamed meanwhile: judged against the old name, ask again
+            if (!head || containerCheckResolved() || fileName() != name)
+                return;
+            applyContainerHead(*head);
+            m_fakeVerdictAt = 0;
+        });
+    });
+    return containerCheckIfResolved();
 }
 
 void PartFile::addObservedNames(const QStringList& names)
@@ -3569,11 +3599,11 @@ std::map<QString, int> PartFile::sourceNameCounts(bool withKadNotes) const
     return counts;
 }
 
-bool PartFile::readContainerHead(QByteArray& head) const
+std::optional<ShareableFile::ContainerHeadSource> PartFile::containerHeadSource() const
 {
     // Finished: the bytes sit in the destination file like any other known file.
     if (m_status == PartFileStatus::Complete)
-        return ShareableFile::readContainerHead(head);
+        return ShareableFile::containerHeadSource();
 
     // Still downloading: only the .part file has them, and only once the first
     // chunk landed. isComplete() is a gap-list scan, far cheaper than an open --
@@ -3583,14 +3613,10 @@ bool PartFile::readContainerHead(QByteArray& head) const
     // The whole probe, not just the signature: zeroes past it would hide an Ogg's video stream.
     const uint64 probe = std::min(static_cast<uint64>(fileSize()), static_cast<uint64>(kContainerProbeBytes));
     if (probe < static_cast<uint64>(kContainerHeadBytes) || !isCompleteBDSafe(0, probe - 1))
-        return false;
+        return std::nullopt;
 
     // The data file: m_fullName is the .part.met, whose first bytes are never a container
-    QFile file(partFilePath());
-    if (!file.open(QIODevice::ReadOnly))
-        return false;
-    head = file.read(static_cast<qint64>(probe));
-    return true;
+    return ContainerHeadSource{partFilePath(), static_cast<qint64>(probe)};
 }
 
 void PartFile::logFakeVerdict() const
@@ -3676,6 +3702,7 @@ void FileMoveThread::run()
     // Try rename first (instant on same filesystem)
     if (QFile::rename(m_srcPath, finalDest)) {
         m_destPath = finalDest;
+        readDelivered(finalDest);
         emit moveFinished(true, finalDest, static_cast<int>(CompletionFailure::None));
         return;
     }
@@ -3686,11 +3713,23 @@ void FileMoveThread::run()
                                    [this] { return !isInterruptionRequested(); });
     if (!ok && isInterruptionRequested())
         return;
-    if (ok)
+    if (ok) {
         m_destPath = finalDest;
+        readDelivered(finalDest);
+    }
     const auto failure = ok ? CompletionFailure::None : QFile::exists(m_srcPath)
         ? classifyFailure(finalDest, bytes) : CompletionFailure::Unreadable;
     emit moveFinished(ok, finalDest, static_cast<int>(failure));
+}
+
+void FileMoveThread::readDelivered(const QString& path)
+{
+    if (!m_delivered)
+        return;
+    if (const qint64 mtime = QFileInfo(path).lastModified().toSecsSinceEpoch(); mtime > 0)
+        m_delivered->mtime = mtime;
+    if (m_delivered->wantMeta)
+        m_delivered->meta = KnownFile::readMetaData(path);
 }
 
 CompletionFailure FileMoveThread::classifyFailure(const QString& destPath, qint64 bytes)
@@ -3814,6 +3853,9 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
                                       static_cast<uint64>(fileSize()));
     m_moveThread = thread;
     m_completedAICHMaster.clear();
+    auto delivered = std::make_shared<FileMoveThread::Delivered>();
+    delivered->wantMeta = thePrefs.extractMetaData() != 0;
+    thread->setDelivered(delivered);
 
     QObject::connect(thread, &FileMoveThread::aichHashSetStored, &m_partNotifier,
                      [this](const QByteArray& masterHash) { m_completedAICHMaster = masterHash; });
@@ -3845,7 +3887,7 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
     });
 
     QObject::connect(thread, &FileMoveThread::moveFinished,
-                     &m_partNotifier, [this](bool success, const QString& finalPath, int failure) {
+                     &m_partNotifier, [this, delivered](bool success, const QString& finalPath, int failure) {
         m_completionRunning = false;
         m_fileOp = PartFileOp::None;
         if (success) {
@@ -3868,8 +3910,8 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
                 theApp.sharedFileList->refreshDirectoryOf(this);   // filed under the temp dir until now
             // The date known.met matches the file by at the next scan; without it the
             // file is rehashed in full (MFC srchybrid/PartFile.cpp:2930-2939).
-            if (const qint64 mtime = QFileInfo(finalPath).lastModified().toSecsSinceEpoch();
-                mtime > 0) {
+            // was: QFileInfo(finalPath).lastModified() here: read by the worker (#200)
+            if (const qint64 mtime = delivered->mtime; mtime > 0) {
                 m_tLastModified = static_cast<time_t>(mtime);
                 setUtcFileDate(m_tLastModified);
             }
@@ -3877,7 +3919,8 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
 
             // Tags that came with the download are anyone's guess; publish only
             // what the finished file says itself (MFC PartFile.cpp:3011-3014).
-            updateMetaDataTags();
+            // was: updateMetaDataTags(); (read the NAS on the main thread, #200)
+            applyMetaData(delivered->meta.value_or(MetaDataRead{}));
 
             // DownloadQueue handles SharedFileList/KnownFileList integration
             // via the downloadCompleted() signal connection

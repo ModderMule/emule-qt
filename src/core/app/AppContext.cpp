@@ -651,6 +651,10 @@ void AppContext::noteIPv6Pinhole(const Address& internal, bool ok)
     }
     if (cur.isNull() || !(internal == cur))
         return;
+    // Before the early return below: a failed server probe is exactly when the server
+    // should dial again
+    if (onIPv6PinholeOpened)
+        onIPv6PinholeOpened();
     if (m_ipv6ReachAddr == cur) {
         // Any proof already held wins: a probe that failed despite the pinhole means the
         // pinhole doesn't work; any Reachable verdict needs no second source.

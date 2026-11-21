@@ -8,6 +8,7 @@
 #include "controls/LogTextView.h"
 #include "prefs/Preferences.h"
 #include "utils/BadgeIcons.h"
+#include "utils/Clipboard.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -100,6 +101,7 @@ void Ed3kRoomTab::hideEvent(QHideEvent* event)
 void Ed3kRoomTab::setRow(const QCborMap& row)
 {
     m_row = row;
+    const QStringList oldMods = m_mods;
     m_mods.clear();
     for (const QCborValue& v : row.value(QStringLiteral("mods")).toArray())
         m_mods << v.toString();
@@ -118,7 +120,8 @@ void Ed3kRoomTab::setRow(const QCborMap& row)
     QSet<QString> muted;
     for (const QCborValue& v : row.value(QStringLiteral("muted")).toArray())
         muted.insert(v.toString().toLower());
-    if (muted != m_muted) {
+    // a new moderator's older posts get the star too
+    if (muted != m_muted || m_mods != oldMods) {
         m_muted = muted;
         redraw();
     }
@@ -342,7 +345,7 @@ bool Ed3kRoomTab::eventFilter(QObject* watched, QEvent* event)
         }
         const QString author = p->author;
         ours << new QAction(tr("Copy member key"), menu.get());
-        connect(ours.last(), &QAction::triggered, this, [author] { QApplication::clipboard()->setText(author); });
+        connect(ours.last(), &QAction::triggered, this, [author] { Clipboard::setText(author); });
     }
     if (!m_replyTo.isEmpty()) {
         ours << new QAction(tr("Cancel reply"), menu.get());
@@ -374,7 +377,7 @@ void Ed3kRoomTab::draw(const Post& p)
         return;
     QTextDocument* doc = log()->document();
     // the moderator star (§6: marks moderators' posts); clear() drops resources
-    if (p.moderator && doc->resource(QTextDocument::ImageResource, QUrl(QString::fromLatin1(kModMarkUrl))).isNull())
+    if (marked(p) && doc->resource(QTextDocument::ImageResource, QUrl(QString::fromLatin1(kModMarkUrl))).isNull())
         doc->addResource(QTextDocument::ImageResource, QUrl(QString::fromLatin1(kModMarkUrl)),
                          BadgeIcons::moderatorMark(kModMarkSize, log()->devicePixelRatioF()));
     const int before = doc->blockCount();
@@ -404,7 +407,17 @@ QString Ed3kRoomTab::render(const Post& p) const
     }
     // was: (p.moderator ? "@" : "") + shownName(..): the renderer draws a star now
     const QString shown = shownName(p.nick, p.author);
-    QString html = m_render ? m_render(p, shown, p.author == memberKey(), reply) : p.text.toHtmlEscaped();
+    // §6 star: a moderator when it posted (core) or now (a re-made owner key, a new mod)
+    QString html;
+    if (!m_render) {
+        html = p.text.toHtmlEscaped();
+    } else if (p.moderator || !marked(p)) {
+        html = m_render(p, shown, p.author == memberKey(), reply);
+    } else {
+        Post q = p;
+        q.moderator = true;
+        html = m_render(q, shown, p.author == memberKey(), reply);
+    }
     if (!p.media.root.isEmpty())
         html += m_media->html(p.media);
     return html;
@@ -431,7 +444,7 @@ void Ed3kRoomTab::buildMemberKeyBar()
     row->addWidget(copy);
     row->addWidget(m_importBtn);
     row->addWidget(close);
-    connect(copy, &QPushButton::clicked, this, [this] { QApplication::clipboard()->setText(m_keyEdit->text()); });
+    connect(copy, &QPushButton::clicked, this, [this] { Clipboard::setText(m_keyEdit->text()); });
     connect(m_importBtn, &QPushButton::clicked, this, &Ed3kRoomTab::importAdmitRequested);
     connect(close, &QPushButton::clicked, m_keyBar, &QWidget::hide);
     insertWidget(0, m_keyBar);

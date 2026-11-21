@@ -7,6 +7,7 @@
 #include "Ed3kDownloads.h"
 #include "Ed3kDownloadsBridge.h"
 #include "Ed3kSession.h"
+#include "Ed3kLocalScan.h"
 #include "Ed3kShared.h"
 #include "Ed3kStore.h"
 
@@ -18,6 +19,8 @@
 #include <QDataStream>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QDateTime>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -153,6 +156,11 @@ private slots:
     void queuedPrioritySwitchesWaitThirtyMinutes();
     void aDownloadGoesUnderTheKeyItIsGiven();
     void aSharedFileIsNotDownloadedAgain();
+    void aLocalCopyIsReadFirst();
+    void aFoundCopyFillsAnOpenDownload();
+    void aChangedFoundCopyIsNotRead();
+    void aFolderScanHashesOnlyFilesOfAWantedSize();
+    void aFolderScanFillsTheDownloads();
     void aDeclinedRootIsAddedPaused();
     void previewPartsComeFirst();
     void renameAndAUrlSourceFromTheMenu();
@@ -259,6 +267,7 @@ void tst_Ed3kDownloads::aPartFileIsTakenUpAfterARestart()
         QTRY_VERIFY_WITH_TIMEOUT(d.info(a.root)->state == Ed3kDownloadInfo::State::Paused, 60000);
         held = d.info(a.root)->done;
         QVERIFY(held > 0 && held < std::uint64_t(data.size()));
+        QCOMPARE(d.info(a.root)->transferred, held);   // Transferred column
         QVERIFY(QFile::exists(d.info(a.root)->partPath));
         d.stop();
     }
@@ -270,6 +279,7 @@ void tst_Ed3kDownloads::aPartFileIsTakenUpAfterARestart()
     QVERIFY(loaded);
     QCOMPARE(loaded->state, Ed3kDownloadInfo::State::Paused);
     QCOMPARE(loaded->done, held);
+    QCOMPARE(loaded->transferred, held);   // kept in the .met
     d.start();
     QSignalSpy done(&d, &Ed3kDownloads::completed);
     QSignalSpy progress(&d, &Ed3kDownloads::progress);
@@ -279,6 +289,7 @@ void tst_Ed3kDownloads::aPartFileIsTakenUpAfterARestart()
     // only the missing blocks came again
     QVERIFY(std::uint64_t(progress.count()) < (std::uint64_t(data.size()) + kBlock - 1) / kBlock);
     QVERIFY(readFile(d.info(a.root)->path) == data);
+    QCOMPARE(d.info(a.root)->transferred, std::uint64_t(data.size()));   // both runs
     d.stop();
 }
 
@@ -311,14 +322,14 @@ void tst_Ed3kDownloads::uncheckedHttpBytesAreCheckedByPeerValues()
     prefix[qsizetype(3 * kBlock + 5)] = char(prefix.at(qsizetype(3 * kBlock + 5)) ^ 0x5A);
     QDir().mkpath(temp);
     QVERIFY(writeFile(part, prefix));
-    // wholeAt, then the source limit (quint32) end the .met
+    // wholeAt, then the source limit (quint32) and transferred (quint64) end the .met
     const QString met = part + QStringLiteral(".met");
     QTRY_VERIFY(QFile::exists(met));
     QByteArray raw = readFile(met);
-    QVERIFY(raw.size() > 12);
+    QVERIFY(raw.size() > 20);
     QByteArray tail;
     QDataStream(&tail, QIODevice::WriteOnly) << quint64(kUnchecked);
-    raw.replace(raw.size() - 12, 8, tail);
+    raw.replace(raw.size() - 20, 8, tail);
     QVERIFY(writeFile(met, raw));
 
     Ed3kDownloads d(b, db.path());
@@ -828,6 +839,196 @@ void tst_Ed3kDownloads::aSharedFileIsNotDownloadedAgain()
     d.stop();
 }
 
+// #224: the root is in Shared Files of the same node: its blocks are read from that file, no
+// source is asked; the whole file is hashed at the end as for a peer's blocks
+void tst_Ed3kDownloads::aLocalCopyIsReadFirst()
+{
+    const QByteArray data = payload(int(4 * kBlock + 999), 21);
+    QTemporaryDir db;
+    QVERIFY(db.isValid());
+    const QString path = QDir(db.path()).filePath(QStringLiteral("have.bin"));
+    QVERIFY(writeFile(path, data));
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    FakeSource src;
+    const QByteArray md4(16, char(0x61));
+    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("have.bin"), std::uint64_t(data.size())});
+    Ed3kShared shared(b, src, db.path());
+    QSignalSpy sharedSpy(&shared, &Ed3kShared::fileShared);
+    shared.start();
+    QTRY_VERIFY_WITH_TIMEOUT(!sharedSpy.isEmpty(), 20000);
+    const auto root = shared.rootOf(md4);
+    QVERIFY(root);
+
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    Ed3kDownloadSpec spec;
+    spec.root = *root;
+    spec.size = std::uint64_t(data.size());
+    spec.name = QStringLiteral("copy.bin");
+    QVERIFY(d.add(spec).has_value());
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 30000);
+    const auto info = d.info(*root);
+    QVERIFY(info);
+    QCOMPARE(info->state, Ed3kDownloadInfo::State::Complete);
+    QCOMPARE(readFile(info->path), data);
+    QCOMPARE(readFile(path), data);   // the shared file is untouched
+    d.stop();
+    shared.stop();
+}
+
+// #224 folder scan: a file found on disk (addFoundCopy) under the root of a download that has
+// no source: it is read from there now, verified at the end
+void tst_Ed3kDownloads::aFoundCopyFillsAnOpenDownload()
+{
+    const QByteArray data = payload(int(3 * kBlock + 123), 22);
+    ::ed3k::Hasher h;
+    QVERIFY(h.update({reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())}).has_value());
+    const auto hashed = h.finish();
+    QVERIFY(hashed.has_value());
+    QTemporaryDir db;
+    QVERIFY(db.isValid());
+    const QString path = QDir(db.path()).filePath(QStringLiteral("elsewhere/found.bin"));
+    QVERIFY(QDir().mkpath(QFileInfo(path).path()));
+    QVERIFY(writeFile(path, data));
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    const Ed3kDownloadSpec spec{hashed->root, std::uint64_t(data.size()), QStringLiteral("found.bin"), {}, {}, 0, false, 1};
+    QVERIFY(d.add(spec).has_value());
+    // what a scan looks for
+    const auto wanted = Ed3kJoinBase::wantedFiles(b);
+    QVERIFY(std::ranges::find(wanted, std::pair{hashed->root, std::uint64_t(data.size())}) != wanted.end());
+    QTest::qWait(300);
+    QCOMPARE(done.count(), 0);
+
+    Ed3kJoinBase::addFoundCopy(b, hashed->root, path, std::uint64_t(data.size()), QFileInfo(path).lastModified().toMSecsSinceEpoch());
+    QCOMPARE(Ed3kJoinBase::foundCopies(b), 1);
+    QCOMPARE(Ed3kJoinBase::localCopyPath(b, hashed->root, std::uint64_t(data.size())), path);
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 30000);
+    QCOMPARE(readFile(d.info(hashed->root)->path), data);
+    d.stop();
+}
+
+// #224: a found copy changed since it was hashed (its date): not read, the download waits for
+// the network
+void tst_Ed3kDownloads::aChangedFoundCopyIsNotRead()
+{
+    const QByteArray data = payload(int(2 * kBlock + 7), 23);
+    ::ed3k::Hasher h;
+    QVERIFY(h.update({reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())}).has_value());
+    const auto hashed = h.finish();
+    QVERIFY(hashed.has_value());
+    QTemporaryDir db;
+    QVERIFY(db.isValid());
+    const QString path = QDir(db.path()).filePath(QStringLiteral("found.bin"));
+    QVERIFY(writeFile(path, data));
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    const Ed3kDownloadSpec spec{hashed->root, std::uint64_t(data.size()), QStringLiteral("found.bin"), {}, {}, 0, false, 1};
+    QVERIFY(d.add(spec).has_value());
+    const qint64 wrongDate = QFileInfo(path).lastModified().toMSecsSinceEpoch() - 60'000;
+    Ed3kJoinBase::addFoundCopy(b, hashed->root, path, std::uint64_t(data.size()), wrongDate);
+    QTest::qWait(1000);
+    const auto info = d.info(hashed->root);
+    QVERIFY(info);
+    QCOMPARE(info->state, Ed3kDownloadInfo::State::Downloading);
+    QCOMPARE(info->done, std::uint64_t(0));
+    d.stop();
+}
+
+// #224 folder scan (BiglyBT's Locate Files): only files of a wanted size are hashed; a decoy
+// of that size is hashed and left, unfinished downloads' files are not looked at, the root
+// found once is not looked for again
+void tst_Ed3kDownloads::aFolderScanHashesOnlyFilesOfAWantedSize()
+{
+    const QByteArray data = payload(int(kBlock + 5), 31);
+    ::ed3k::Hasher h;
+    QVERIFY(h.update({reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())}).has_value());
+    const auto hashed = h.finish();
+    QVERIFY(hashed.has_value());
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QDir d(dir.path());
+    QVERIFY(d.mkpath(QStringLiteral("a/deep")) && d.mkpath(QStringLiteral("b")));
+    QVERIFY(writeFile(d.filePath(QStringLiteral("a/deep/movie.mkv")), data));
+    QVERIFY(writeFile(d.filePath(QStringLiteral("a/deep/copy.mkv")), data));              // the root once only
+    QVERIFY(writeFile(d.filePath(QStringLiteral("b/decoy.bin")), payload(data.size(), 32)));   // same size
+    QVERIFY(writeFile(d.filePath(QStringLiteral("b/small.bin")), payload(100, 33)));
+    QVERIFY(writeFile(d.filePath(QStringLiteral("b/movie.mkv.part")), data));              // unfinished: skipped
+
+    std::vector<std::pair<::ed3k::Root, QString>> found;
+    std::atomic<bool> cancel{false};
+    const auto r = Ed3kLocalScan::scan({dir.path()}, {{hashed->root, std::uint64_t(data.size())}}, cancel,
+                                       [&](const ::ed3k::Root& root, const QString& path, std::uint64_t, qint64) {
+                                           found.emplace_back(root, path);
+                                       });
+    QCOMPARE(r.files, 4);
+    QCOMPARE(r.candidates, 3);
+    QCOMPARE(r.matched, 1);
+    // the folder with two candidates first: its first file matches, the rest of that size
+    // is not hashed any more
+    QCOMPARE(r.hashed, 1);
+    QCOMPARE(found.size(), std::size_t(1));
+    QCOMPARE(found[0].first, hashed->root);
+    QVERIFY(found[0].second.contains(QStringLiteral("/a/deep/")));
+
+    // cancelled: stops before hashing
+    cancel = true;
+    const auto none = Ed3kLocalScan::scan({dir.path()}, {{hashed->root, std::uint64_t(data.size())}}, cancel, {});
+    QVERIFY(none.cancelled);
+    QCOMPARE(none.matched, 0);
+}
+
+// #224: Ed3kLocalScan on a node: the root of an open download with no source found in a folder,
+// the download completes from there
+void tst_Ed3kDownloads::aFolderScanFillsTheDownloads()
+{
+    const QByteArray data = payload(int(3 * kBlock + 77), 34);
+    ::ed3k::Hasher h;
+    QVERIFY(h.update({reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())}).has_value());
+    const auto hashed = h.finish();
+    QVERIFY(hashed.has_value());
+    QTemporaryDir db, folder;
+    QVERIFY(db.isValid() && folder.isValid());
+    QVERIFY(writeFile(QDir(folder.path()).filePath(QStringLiteral("old name.bin")), data));
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    const Ed3kDownloadSpec spec{hashed->root, std::uint64_t(data.size()), QStringLiteral("new.bin"), {}, {}, 0, false, 1};
+    QVERIFY(d.add(spec).has_value());
+
+    Ed3kLocalScan scan(b);
+    QSignalSpy finished(&scan, &Ed3kLocalScan::finished);
+    QVERIFY(scan.start({folder.path()}));
+    QVERIFY(scan.running());
+    QVERIFY(!scan.start({folder.path()}));   // one at a time
+    QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 30000);
+    QCOMPARE(finished.at(0).at(0).value<Ed3kLocalScan::Result>().matched, 1);
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 30000);
+    QCOMPARE(readFile(d.info(hashed->root)->path), data);
+
+    // nothing left to look for: done at once
+    QVERIFY(!scan.start({folder.path()}));
+    QCOMPARE(finished.count(), 2);
+    d.stop();
+}
+
 void tst_Ed3kDownloads::aDownloadGoesUnderTheKeyItIsGiven()
 {
     QTemporaryDir db;
@@ -859,7 +1060,7 @@ void tst_Ed3kDownloads::aDownloadGoesUnderTheKeyItIsGiven()
     QCOMPARE(b.hide().recorded(spec.root), std::optional(::ed3k::KeyKind::Node));
     QVERIFY(anonAdded.empty());
     // hiding on: a root recorded under the other key is refused
-    b.setHideSettings(Ed3kHideSettings{true, 1, true, 25});
+    b.setHideSettings(Ed3kHideSettings{true, 1, 25});
     QVERIFY(b.hide().hiding());
     spec.root = rootOf(0x52);
     spec.name = QStringLiteral("b.bin");

@@ -25,6 +25,7 @@
 #include <QTemporaryDir>
 #include <QScopeGuard>
 #include <QTest>
+#include <QThreadPool>
 
 #include <sys/stat.h>
 #ifdef Q_OS_WIN
@@ -100,6 +101,7 @@ private slots:
     void containerCheckWaitsForTheFirstBytes();
     void containerCheckReadsTheDataFile();
     void fakeVerdictFollowsTheFirstBytesAndNames();
+    void requestContainerCheckReadsOffTheMainThread();
     void rightFileHasHigherPrio_ordering();
     void writePartStatus_basic();
     void validSourcesCount_countsMfcStates();
@@ -1363,6 +1365,7 @@ void tst_PartFile::writeReadRoundTrip_withGaps()
 
     // On disk it is eMule's form: old-style uint32 tag, 2-byte name = FT_GAPSTART or
     // FT_GAPEND + the gap index, and the end one past the gap.
+    BackgroundFileWriter::instance().flush();   // the save may still be queued
     QFile met(tempDir + QLatin1Char('/') + pf1.partMetFileName());
     QVERIFY(met.open(QIODevice::ReadOnly));
     QByteArray raw = met.readAll();
@@ -1587,6 +1590,9 @@ void tst_PartFile::fakeVerdictFollowsTheFirstBytesAndNames()
     std::copy_n(kExe, 12, head.begin());
     pf.writeToBuffer(kContainerProbeBytes, head.data(), 0, kContainerProbeBytes - 1, nullptr);
     pf.flushBuffer();
+    // The head is read on the pool; the verdict follows once it lands
+    (void)pf.fakeVerdict();
+    QTRY_VERIFY_WITH_TIMEOUT(pf.containerCheckResolved(), 10000);
     const FakeFileVerdict& verdict = pf.fakeVerdict();
     QVERIFY(verdict.has(FakeReason::HeaderExtensionMismatch));
     QVERIFY(verdict.has(FakeReason::ExecutableMasquerade));
@@ -1598,6 +1604,47 @@ void tst_PartFile::fakeVerdictFollowsTheFirstBytesAndNames()
     QCOMPARE(logged(QStringLiteral("program named like a media file")), 1);
     (void)pf.fakeVerdict();
     QCOMPARE(g_warnings.size(), 3);
+}
+
+void tst_PartFile::requestContainerCheckReadsOffTheMainThread()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/containerasync");
+    QDir().mkpath(tempDir);
+
+    static const char kAvi[] = "RIFF\x00\x10\x00\x00" "AVI ";
+    std::vector<uint8> head(kContainerProbeBytes, 0);
+    std::copy_n(kAvi, 12, head.begin());
+    const auto makeFile = [&](PartFile& pf, const QString& name) {
+        pf.setFileName(name);
+        pf.setFileSize(PARTSIZE);
+        pf.setTmpPath(tempDir);
+        QVERIFY(pf.createPartFile(tempDir));
+        pf.writeToBuffer(kContainerProbeBytes, head.data(), 0, kContainerProbeBytes - 1, nullptr);
+        pf.flushBuffer();
+    };
+
+    // Never blocks: Unchecked now, the verdict once the pool read is back
+    PartFile pf;
+    makeFile(pf, QStringLiteral("Movie.avi"));
+    QCOMPARE(pf.requestContainerCheck().verdict, ContainerVerdict::Unchecked);
+    QTRY_COMPARE_WITH_TIMEOUT(pf.requestContainerCheck().verdict, ContainerVerdict::Matches, 10000);
+
+    // Renamed while the read is out: the stale bytes are not judged against the new name
+    PartFile renamed;
+    makeFile(renamed, QStringLiteral("Clip.avi"));
+    (void)renamed.requestContainerCheck();
+    renamed.setFileName(QStringLiteral("Clip.wmv"));
+    QTRY_VERIFY_WITH_TIMEOUT(renamed.requestContainerCheck().verdict != ContainerVerdict::Unchecked, 10000);
+    QVERIFY(renamed.requestContainerCheck().isSuspect());
+
+    // Removed while the read is out: the result is dropped, no crash
+    {
+        auto gone = std::make_unique<PartFile>();
+        makeFile(*gone, QStringLiteral("Gone.avi"));
+        (void)gone->requestContainerCheck();
+    }
+    QThreadPool::globalInstance()->waitForDone();
+    QCoreApplication::processEvents();
 }
 
 void tst_PartFile::sourceTracking()

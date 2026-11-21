@@ -7,6 +7,7 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "controls/CheckComboBox.h"
 #include "dialogs/FolderPickerDialog.h"
 #include "prefs/Preferences.h"
 #include "utils/AsyncMessageBox.h"
@@ -37,6 +38,8 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <QMessageBox>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace eMule {
@@ -50,6 +53,7 @@ const QString kPrivate = QStringLiteral("private");
 const QString kDotfiles = QStringLiteral("ignoreDotfiles");
 const QString kSeed = QStringLiteral("startSeeding");
 const QString kTrackers = QStringLiteral("trackers");
+const QString kPublicTrackers = QStringLiteral("publicTrackers");   // checked URLs, \n-joined
 const QString kWebSeeds = QStringLiteral("webSeeds");
 const QString kComment = QStringLiteral("comment");
 const QString kSource = QStringLiteral("source");
@@ -182,9 +186,27 @@ TorrentCreatorDialog::TorrentCreatorDialog(IpcClient* ipc, const QString& path, 
         fields->addWidget(field, row, 1);
         return row;
     };
+    m_publicTrackers = new CheckComboBox(fieldsBox);
+    m_publicTrackers->setEmptyText(tr("None"));
+    m_publicTrackers->setRemovable(true);
+    for (const QString& url : thePrefs.btPublicTrackers())
+        m_publicTrackers->addCheckItem(url);
+    m_publicTrackers->setToolTip(
+        tr("Open public trackers, most reliable first. Each checked one is announced to as its own tier.\n"
+           "3 to 5 reliable trackers are plenty for a public torrent: more add announce traffic with "
+           "little gain, as DHT and peer exchange find the rest of the swarm.\n"
+           "Leave all unchecked for a private torrent; use the private tracker's URL below.\n"
+           "Custom trackers of a public torrent join this list. Del or Backspace removes the "
+           "highlighted entry."));
+    connect(m_publicTrackers, &CheckComboBox::itemRemoved, this, [this] { storeTrackerList(); });
+    m_publicTrackers->setActionItem(tr("Reset to defaults"));
+    connect(m_publicTrackers, &CheckComboBox::actionTriggered, this, [this] { resetTrackerList(); });
+    m_publicTrackers->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    addRow(tr("Public trackers:"), m_publicTrackers);
     m_trackers = textBox(fieldsBox, 5, true);
-    m_trackers->setToolTip(tr("One URL per line. Separate tracker tiers with an empty line."));
-    fields->setRowStretch(addRow(tr("Tracker URLs:"), m_trackers), 1);
+    m_trackers->setToolTip(tr("Your own trackers, added after the checked public ones. "
+                              "One URL per line. Separate tracker tiers with an empty line."));
+    fields->setRowStretch(addRow(tr("Custom trackers:"), m_trackers), 1);
     m_webSeeds = textBox(fieldsBox, 2, false);
     m_webSeeds->setToolTip(tr("HTTP(S) servers that host the same files. One URL per line."));
     addRow(tr("Web seed URLs:"), m_webSeeds);
@@ -286,6 +308,7 @@ void TorrentCreatorDialog::onCreate()
     m_progress->setValue(0);
     Ipc::IpcMessage msg(Ipc::IpcMsgType::CreateTorrent);
     msg.append(params());
+    rememberCustomTrackers();
     QPointer<TorrentCreatorDialog> self(this);
     m_ipc->sendRequest(std::move(msg), [self](const Ipc::IpcMessage& resp) {
         if (!self)
@@ -391,7 +414,7 @@ void TorrentCreatorDialog::updateEd3kNote()
 void TorrentCreatorDialog::setBusy(bool busy)
 {
     for (QWidget* w : std::initializer_list<QWidget*>{m_pathEdit, m_folderButton, m_format, m_pieceSize, m_private,
-                                                      m_ignoreDotfiles, m_startSeeding, m_trackers, m_webSeeds,
+                                                      m_ignoreDotfiles, m_startSeeding, m_publicTrackers, m_trackers, m_webSeeds,
                                                       m_comment, m_source, m_createButton})
         w->setEnabled(!busy);
     m_fileButton->setEnabled(!busy && m_ipc && m_ipc->isLocalConnection());
@@ -408,6 +431,8 @@ void TorrentCreatorDialog::loadSettings()
     m_private->setChecked(ui.torrentCreatorValue(kPrivate) == QLatin1String("1"));
     m_ignoreDotfiles->setChecked(ui.torrentCreatorValue(kDotfiles, QStringLiteral("1")) == QLatin1String("1"));
     m_startSeeding->setChecked(ui.torrentCreatorValue(kSeed, QStringLiteral("1")) == QLatin1String("1"));
+    // none checked until the user picks some (#212)
+    m_publicTrackers->setCheckedValues(ui.torrentCreatorValue(kPublicTrackers).split(u'\n', Qt::SkipEmptyParts));
     m_trackers->setPlainText(ui.torrentCreatorValue(kTrackers));
     m_webSeeds->setPlainText(ui.torrentCreatorValue(kWebSeeds));
     m_comment->setPlainText(ui.torrentCreatorValue(kComment));
@@ -423,6 +448,7 @@ void TorrentCreatorDialog::saveSettings() const
     ui.setTorrentCreatorValue(kPrivate, flag(m_private->isChecked()));
     ui.setTorrentCreatorValue(kDotfiles, flag(m_ignoreDotfiles->isChecked()));
     ui.setTorrentCreatorValue(kSeed, flag(m_startSeeding->isChecked()));
+    ui.setTorrentCreatorValue(kPublicTrackers, m_publicTrackers->checkedValues().join(u'\n'));
     ui.setTorrentCreatorValue(kTrackers, m_trackers->toPlainText());
     ui.setTorrentCreatorValue(kWebSeeds, m_webSeeds->toPlainText());
     ui.setTorrentCreatorValue(kComment, m_comment->toPlainText());
@@ -452,11 +478,81 @@ QCborMap TorrentCreatorDialog::params() const
                     {QStringLiteral("pieceSize"), m_pieceSize->currentData().toInt()},
                     {QStringLiteral("private"), m_private->isChecked()},
                     {QStringLiteral("ignoreDotfiles"), m_ignoreDotfiles->isChecked()},
-                    {QStringLiteral("trackers"), linesOf(m_trackers->toPlainText(), true)},
+                    {QStringLiteral("trackers"), linesOf(trackerText(), true)},
                     {QStringLiteral("webSeeds"), linesOf(m_webSeeds->toPlainText(), false)},
                     {QStringLiteral("comment"), m_comment->toPlainText()},
                     {QStringLiteral("source"), m_source->text().trimmed()},
                     {QStringLiteral("seed"), m_startSeeding->isChecked()}};
+}
+
+/// Checked public trackers, one tier each, then the custom box (its own tiers kept).
+QString TorrentCreatorDialog::trackerText() const
+{
+    const QStringList picked = m_publicTrackers->checkedValues();
+    QStringList custom;
+    for (const QString& raw : m_trackers->toPlainText().split(u'\n')) {
+        const QString line = raw.trimmed();
+        if (line.isEmpty() || !picked.contains(line))   // a duplicate of a pick goes once
+            custom.append(line);
+    }
+    QStringList tiers = picked;
+    if (const QString rest = custom.join(u'\n').trimmed(); !rest.isEmpty())
+        tiers.append(rest);
+    return tiers.join(QStringLiteral("\n\n"));
+}
+
+/// Custom URLs of a public torrent become drop-down entries for the next one (#212).
+void TorrentCreatorDialog::rememberCustomTrackers()
+{
+    if (m_private->isChecked())   // passkey URLs stay out of the shared list
+        return;
+    const QStringList known = m_publicTrackers->values();
+    bool added = false;
+    for (const QString& raw : m_trackers->toPlainText().split(u'\n')) {
+        const QString url = raw.trimmed();
+        const QUrl u(url);
+        if (url.isEmpty() || known.contains(url) || !u.isValid() || u.host().isEmpty()
+            || (u.scheme() != u"udp" && u.scheme() != u"http" && u.scheme() != u"https"))
+            continue;
+        m_publicTrackers->addCheckItem(url);
+        added = true;
+    }
+    if (added)
+        storeTrackerList();
+}
+
+/// Back to the shipped list; checks on surviving entries stay.
+void TorrentCreatorDialog::resetTrackerList()
+{
+    m_publicTrackers->hidePopup();
+    if (QMessageBox::question(this, tr("Reset Public Trackers"),
+                              tr("Replace the public tracker list with the default trackers? "
+                                 "Trackers you added are removed."),
+                              QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+        != QMessageBox::Yes)
+        return;
+    const QStringList checked = m_publicTrackers->checkedValues();
+    m_publicTrackers->clearCheckItems();
+    for (const QString& url : Preferences::defaultBtPublicTrackers())
+        m_publicTrackers->addCheckItem(url);
+    m_publicTrackers->setCheckedValues(checked);
+    storeTrackerList();
+}
+
+/// The drop-down's entries into preferences.yml (bittorrent.publicTrackers).
+void TorrentCreatorDialog::storeTrackerList() const
+{
+    const QStringList list = m_publicTrackers->values();
+    thePrefs.setBtPublicTrackers(list);
+    if (!m_ipc)
+        return;
+    Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
+    req.append(QStringLiteral("btPublicTrackers"));
+    QCborArray arr;
+    for (const QString& u : list)
+        arr.append(u);
+    req.append(arr);
+    m_ipc->sendRequest(std::move(req));
 }
 
 } // namespace eMule

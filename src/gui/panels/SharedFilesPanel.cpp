@@ -111,6 +111,8 @@ constexpr int kRoleSharedDirItem = Qt::UserRole + 3;
 constexpr int kRolePath = Qt::UserRole + 1;
 /// Marks the category sub-nodes: 1 a category's incoming folder, 2 its part files.
 constexpr int kRoleCategoryNode = Qt::UserRole + 4;
+/// Marks a UNC share root under "All Directories" (MFC m_aUNCshares)
+constexpr int kRoleUncRoot = Qt::UserRole + 5;
 
 /// #124: a folder strictly below an incoming dir is shared by the core without being
 /// on the list (SharedFileList::inShareTree); not the BT dir (#131)
@@ -141,7 +143,7 @@ bool inIncomingTree(const QString& path)
 /// folder says where it lives, "Name  (parent)"; a drive root is its path.
 QString folderLabel(const QString& dir, bool topFolder)
 {
-    const QString clean = QDir::cleanPath(dir);
+    const QString clean = SharedDirState::cleanDir(dir);
     const QFileInfo info(clean);
     if (info.fileName().isEmpty())
         return QDir::toNativeSeparators(clean);
@@ -762,6 +764,9 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
                 TorrentCreatorDialog::run(m_ipc, this, root, only);
         });
         act->setEnabled(oneFolder && m_ipc && m_ipc->isConnected());
+
+        // #212: the torrents that have the selected files; the files stay
+        addRemoveTorrentAction(m_contextMenu, torrentsOf(sel));
     }
 #endif
 
@@ -1373,6 +1378,10 @@ SharedFileRow sharedRowFromCbor(const QCborMap& m)
     row.allTimeAccepted   = m.value(QStringLiteral("allTimeAccepted")).toInteger();
     row.allTimeTransferred = m.value(QStringLiteral("allTimeTransferred")).toInteger();
     row.lastRequested     = m.value(QStringLiteral("lastRequested")).toInteger();
+    for (const auto& t : m.value(QStringLiteral("torrents")).toArray()) {
+        const QCborArray pair = t.toArray();
+        row.torrents.append({pair.at(0).toString(), pair.at(1).toString()});
+    }
     row.completeSources   = static_cast<int>(m.value(QStringLiteral("completeSources")).toInteger());
     row.completeSourcesLo = static_cast<int>(m.value(QStringLiteral("completeSourcesLo")).toInteger());
     row.completeSourcesHi = static_cast<int>(m.value(QStringLiteral("completeSourcesHi")).toInteger());
@@ -2139,6 +2148,30 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
     if (!item->data(0, kRoleFsItem).toBool())
         return;
 
+#ifdef Q_OS_WIN
+    const bool coreWindows = m_coreWindows || (m_ipc && m_ipc->isLocalConnection());
+#else
+    const bool coreWindows = m_coreWindows;
+#endif
+    if (item == m_allDirsItem && coreWindows) {
+        // a network folder no drive letter reaches: shared, it shows as a root
+        QMenu menu(this);
+        menu.addAction(tr("Add UNC Share..."), this, [this] {
+            const QString path = FolderLister::askUncShare(this);
+            if (path.isEmpty() || !m_ipc || !m_ipc->isConnected() || !thePrefs.isShareableDirectory(path))
+                return;
+            auto dirs = thePrefs.sharedDirs();
+            if (!SharedDirState::isSharedDir(dirs, path))
+                dirs.append(path);
+            sendShareDirsUpdate(dirs);
+            if (m_allDirsItem->childCount() == 0)
+                populateFilesystemChildren(m_allDirsItem);
+            m_allDirsItem->setExpanded(true);
+        })->setEnabled(m_ipc && m_ipc->isConnected());
+        menu.exec(m_folderTree->viewport()->mapToGlobal(pos));
+        return;
+    }
+
     const QString path = item->data(0, kRolePath).toString();
     if (path.isEmpty())
         return;
@@ -2220,10 +2253,12 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
         ->setEnabled(m_ipc && m_ipc->isConnected());
 #ifdef EMULE_HAVE_BITTORRENT
     // Torrent Creator (#191): the whole folder
-    if (thePrefs.btEnabled())
+    if (thePrefs.btEnabled()) {
         menu.addAction(skinIcon(QStringLiteral(":/icons/Torrent.ico")), tr("Create Torrent..."), this,
                        [this, path] { TorrentCreatorDialog::run(m_ipc, this, path); })
             ->setEnabled(m_ipc && m_ipc->isConnected());
+        addRemoveTorrentAction(&menu, torrentsOf(rowsUnder(path)));
+    }
 #endif
 
     menu.exec(m_folderTree->viewport()->mapToGlobal(pos));
@@ -2413,7 +2448,40 @@ void SharedFilesPanel::populateFilesystemChildren(QTreeWidgetItem* parentItem)
             addFilesystemChild(item, e.path, e.label, e.hasSubfolders);
         if (ok && rows.isEmpty() && item != m_allDirsItem)   // a failed ask can be expanded again
             item->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
+        if (item == m_allDirsItem) {
+            m_coreWindows = std::ranges::any_of(rows, [](const FolderEntry& e) { return isDriveRoot(e.path); });
+            syncUncRoots();
+        }
     });
+}
+
+void SharedFilesPanel::syncUncRoots()
+{
+    if (m_allDirsItem->childCount() == 0)
+        return;   // the drives bring them when listed
+    const QStringList roots = uncShareRoots(thePrefs.sharedDirs());
+    QSet<QString> wanted;
+    for (const QString& r : roots)
+        wanted.insert(SharedDirState::dirKey(r));
+    QSet<QString> present;
+    for (int i = m_allDirsItem->childCount(); --i >= 0;) {
+        QTreeWidgetItem* child = m_allDirsItem->child(i);
+        if (!child->data(0, kRoleUncRoot).toBool())
+            continue;
+        const QString key = SharedDirState::dirKey(child->data(0, kRolePath).toString());
+        if (wanted.contains(key))
+            present.insert(key);
+        else
+            delete m_allDirsItem->takeChild(i);   // nothing shared there any more
+    }
+    for (const QString& r : roots) {
+        if (present.contains(SharedDirState::dirKey(r)))
+            continue;
+        addFilesystemChild(m_allDirsItem, r, uncLabel(r), true);
+        QTreeWidgetItem* added = m_allDirsItem->child(m_allDirsItem->childCount() - 1);
+        added->setData(0, kRoleUncRoot, true);
+        added->setToolTip(0, uncLabel(r));
+    }
 }
 
 void SharedFilesPanel::addFilesystemChild(QTreeWidgetItem* parent,
@@ -2483,6 +2551,7 @@ void SharedFilesPanel::applyDisplayOptions()
 
 void SharedFilesPanel::refreshSharedDirs()
 {
+    syncUncRoots();
     // Only what is loaded: an unexpanded folder gets its marks when it is filled.
     QList<QTreeWidgetItem*> pending{m_allDirsItem};
     while (!pending.isEmpty()) {
@@ -2603,7 +2672,7 @@ void SharedFilesPanel::rebuildSharedDirsNode()
         const QString parentDir = parents.value(dir);
         QTreeWidgetItem* parentItem = items.value(parentDir, m_sharedDirsItem);
 
-        const QString clean = QDir::cleanPath(dir);
+        const QString clean = SharedDirState::cleanDir(dir);
         auto* item = new QTreeWidgetItem(parentItem, {folderLabel(dir, parentItem == m_sharedDirsItem)});
         item->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::SpecificDir));
         item->setData(0, kRolePath, dir);
@@ -2760,6 +2829,17 @@ void SharedFilesPanel::showSharedDirMenu(QTreeWidgetItem* item, const QPoint& gl
         menu.addAction(tr("Publish as ed3k Set..."), this, [this, path] { Ed3kOwnSetDialog::run(m_ipc, this, {}, path); })
             ->setEnabled(connected);
     }
+#ifdef EMULE_HAVE_BITTORRENT
+    // #191/#212: a shared folder as one torrent; the torrents of the listed files, files kept
+    if (thePrefs.btEnabled()) {
+        menu.addSeparator();
+        if (isDirNode && !path.isEmpty())
+            menu.addAction(skinIcon(QStringLiteral(":/icons/Torrent.ico")), tr("Create Torrent..."), this,
+                           [this, path] { TorrentCreatorDialog::run(m_ipc, this, path); })
+                ->setEnabled(connected);
+        addRemoveTorrentAction(&menu, torrentsOf({files.cbegin(), files.cend()}));
+    }
+#endif
 
     menu.exec(globalPos);
 }
@@ -2990,6 +3070,70 @@ void SharedFilesPanel::dumpEd3kMenus()
         logInfo(QStringLiteral("ed3k menu Shared %1%2: %3")
                     .arg(f->fileName, f->ed3kOnly ? QStringLiteral(" (ed3k only)") : QString(), MenuDump::text(m_contextMenu)));
     }
+}
+
+void SharedFilesPanel::removeTorrentsKeepFiles(const QList<QPair<QString, QString>>& torrents)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (torrents.isEmpty() || !IpcFeedback::requireConnection(m_ipc, tr("Remove Torrent")))
+        return;
+    QStringList names;
+    for (const auto& t : torrents)
+        names.append(t.second);
+    const QString text = torrents.size() == 1
+                             ? tr("Remove the torrent \"%1\"? Its files stay on disk and shared.").arg(names.constFirst())
+                             : tr("Remove these %n torrent(s)? Their files stay on disk and shared.\n\n%1", nullptr,
+                                  int(torrents.size()))
+                                   .arg(names.join(u'\n'));
+    if (QMessageBox::question(this, tr("Remove Torrent"), text, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+        != QMessageBox::Yes)
+        return;
+    for (const auto& t : torrents) {
+        IpcMessage msg(IpcMsgType::RemoveTorrent);
+        msg.append(t.first);
+        msg.append(false);   // keep the files
+        m_ipc->sendRequest(std::move(msg));
+    }
+#else
+    Q_UNUSED(torrents)
+#endif
+}
+
+/// "Remove Torrent(s) (Keep Files)..." for @p torrents, greyed when none (#212).
+void SharedFilesPanel::addRemoveTorrentAction(QMenu* menu, const QList<QPair<QString, QString>>& torrents)
+{
+    auto* act = menu->addAction(
+        torrents.size() == 1 ? tr("Remove Torrent \"%1\" (Keep Files)...").arg(torrents.constFirst().second)
+                             : tr("Remove Torrents (Keep Files)..."),
+        this, [this, torrents]() { removeTorrentsKeepFiles(torrents); });
+    act->setEnabled(!torrents.isEmpty() && m_ipc && m_ipc->isConnected());
+    act->setToolTip(tr("Removes the torrent from the Torrents list and stops seeding it. "
+                       "The files stay on disk and in Shared Files."));
+}
+
+/// The torrents (id, name) that cover any of @p rows, each once.
+QList<QPair<QString, QString>> SharedFilesPanel::torrentsOf(const std::vector<const SharedFileRow*>& rows)
+{
+    QList<QPair<QString, QString>> out;
+    for (const SharedFileRow* f : rows)
+        for (const auto& t : f->torrents)
+            if (!out.contains(t))
+                out.append(t);
+    return out;
+}
+
+/// Every shared file in @p dir or below it.
+std::vector<const SharedFileRow*> SharedFilesPanel::rowsUnder(const QString& dir) const
+{
+    std::vector<const SharedFileRow*> out;
+    if (dir.isEmpty())
+        return out;
+    const QString key = SharedDirState::dirKey(QDir::fromNativeSeparators(dir));
+    for (int r = 0; r < m_model->fileCount(); ++r)
+        if (const SharedFileRow* f = m_model->fileAt(r);
+            f && SharedDirState::isBelowKey(SharedDirState::dirKey(QDir::fromNativeSeparators(f->filePath)), key))
+            out.push_back(f);
+    return out;
 }
 
 } // namespace eMule

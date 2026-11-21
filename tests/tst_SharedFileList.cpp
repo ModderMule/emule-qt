@@ -1974,9 +1974,9 @@ void tst_SharedFileList::staleMediaStamp_isBroughtUpToDateInTheBackground()
     RESCAN(shared, reload());
     QCOMPARE(shared.getCount(), 2);
     QCOMPARE(shared.m_metaRebuildQueue.size(), size_t{2});
-    for (int i = 0; i < 100 && !shared.m_metaRebuildQueue.empty(); ++i)
-        shared.process();
-    QVERIFY(shared.m_metaRebuildQueue.empty());
+    // read on the thread pool, applied on the main thread
+    shared.process();
+    QTRY_VERIFY_WITH_TIMEOUT(!shared.isRebuildingMetaData(), 10000);
     shared.forEachFile([](KnownFile* f) { QVERIFY(!f->mediaExtractIsStale()); });
 }
 
@@ -2811,7 +2811,8 @@ void tst_SharedFileList::theSweepSettlesVerdictsOffThePollPath()
 
     shared.process();
 
-    QVERIFY(fake->containerCheckResolved());
+    // read on the pool, applied on this thread
+    QTRY_VERIFY_WITH_TIMEOUT(fake->containerCheckResolved() && real->containerCheckResolved(), 10000);
     QVERIFY(fake->containerCheckIfResolved().isSuspect());
     QCOMPARE(fake->containerCheckIfResolved().expected, QStringLiteral("ASF"));
 
@@ -2829,10 +2830,11 @@ void tst_SharedFileList::theSweepStopsAndANewFileRestartsIt()
     SharedFileList shared(&knownFiles);
 
     const QByteArray asf("\x30\x26\xB2\x75\x8E\x66\xCF\x11\xA6\xD9\x00\xAA", 12);
-    makeFileOnDisk(knownFiles, shared, 0x31, dir.path(), QStringLiteral("one.wmv"), asf);
+    auto* one = makeFileOnDisk(knownFiles, shared, 0x31, dir.path(), QStringLiteral("one.wmv"), asf);
 
     // First tick resolves it, the second finds nothing left and parks the sweep.
     shared.process();
+    QTRY_VERIFY_WITH_TIMEOUT(one->containerCheckResolved(), 10000);
     shared.process();
 
     // A file joining the share afterwards must re-arm it. This is the whole of what
@@ -2843,7 +2845,7 @@ void tst_SharedFileList::theSweepStopsAndANewFileRestartsIt()
                                 QByteArray("\xFF\xFB\x10\xC0\x0B\x0A\x07\x05\x00\x07\x07\x0A", 12));
     QVERIFY(!late->containerCheckResolved());
     shared.process();
-    QVERIFY(late->containerCheckResolved());
+    QTRY_VERIFY_WITH_TIMEOUT(late->containerCheckResolved(), 10000);
     QVERIFY(late->containerCheckIfResolved().isSuspect());
 }
 
@@ -2918,9 +2920,8 @@ void tst_SharedFileList::rebuildMetaData_rereadsSharedFilesOnly()
     QVERIFY(!bare->hasMetaDataTags());
 
     QCOMPARE(shared.rebuildMetaData(), 2);
-    for (int i = 0; i < 20 && shared.isRebuildingMetaData(); ++i)
-        shared.process();
-    QVERIFY(!shared.isRebuildingMetaData());
+    shared.process();
+    QTRY_VERIFY_WITH_TIMEOUT(!shared.isRebuildingMetaData(), 10000);
 
     for (KnownFile* f : {stale, bare}) {
         QCOMPARE(f->getIntTagValue(FT_MEDIA_LENGTH), uint32{2});

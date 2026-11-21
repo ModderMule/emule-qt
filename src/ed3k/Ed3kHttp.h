@@ -19,7 +19,8 @@
 ///
 /// Anonymous share reports (via ED3K_HTTP_VIA_ANON_REPORT_PROXY, subscription.md §5.3) go
 /// only through the report proxy (setReportProxy), never directly nor the normal proxy;
-/// without one they fail.
+/// without one they fail. So do HTTP sources of anonymous downloads (http-source.md §3.2):
+/// the core sends them, and their redirects, with the same via.
 
 #include "Ed3kFfi.h"
 

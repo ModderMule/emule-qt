@@ -365,10 +365,12 @@ void ExternalLinkHandler::openFileNow(const QString& path)
     if (gui::isContainerFilePath(path)) {
 #ifdef EMULE_HAVE_HOSTER_JD
         HosterPanel* hoster = m_mainWindow ? m_mainWindow->hosterPanel() : nullptr;
-        if (!hoster || !thePrefs.hosterDownloadsOn()) {
-            logError(QStringLiteral("Hoster downloads are off, cannot open %1").arg(path));
+        if (!hoster) {
+            logError(QStringLiteral("No Hoster panel to open %1 in").arg(path));
             return;
         }
+        if (!m_mainWindow->requireHoster())
+            return;
         if (thePrefs.bringToFrontOnLinkClick())
             m_mainWindow->restoreWindow();
         m_mainWindow->switchToTab(MainWindow::TabHoster);
@@ -410,6 +412,8 @@ void ExternalLinkHandler::openFileNow(const QString& path)
         logError(QStringLiteral("No Usenet panel to add %1 to").arg(path));
         return;
     }
+    if (!m_mainWindow->requireUsenet())
+        return;
 
     // Before the add, not after: the add is asynchronous and may come back asking
     // "download it again?", and that question wants the queue behind it.

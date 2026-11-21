@@ -565,6 +565,9 @@ QWidget* FileDetailDialog::createDownloadGeneralTab(const QCborMap& d)
     if (ed3kRow && !multi) {
         DetailGroup ed3k(tr("ed3k"), layout);
         ed3k.pair(tr("Key"), ed3kKeyText(str(d, QLatin1StringView("ed3kKey"))));
+        // hops.md §1: no HTTP source under the anonymous key; no row when none was dropped
+        if (const qint64 dropped = count("ed3kWebDropped"); dropped > 0)
+            ed3k.wide(tr("HTTP sources"), ed3kWebDroppedText(int(dropped)));
         if (!aliases.isEmpty())
             ed3k.wide(tr("Also known as"), aliases.join(u'\n'));
         if (const QString joins = ed3kJoinsText(d.value(QLatin1StringView("ed3kJoins")).toArray()); !joins.isEmpty())
@@ -816,11 +819,19 @@ QWidget* FileDetailDialog::createMediaInfoTab(const QCborMap& d)
     const QString album   = str(d, QLatin1StringView("mediaAlbum"));
     const QString title   = str(d, QLatin1StringView("mediaTitle"));
     const QString codec   = str(d, QLatin1StringView("mediaCodec"));
+    const QString format  = str(d, QLatin1StringView("mediaFormat"));
+    const QString audio   = str(d, QLatin1StringView("mediaAudioCodec"));
     const qint64  length  = num(d, QLatin1StringView("mediaLength"));
     const qint64  bitrate = num(d, QLatin1StringView("mediaBitrate"));
+    const qint64  width   = num(d, QLatin1StringView("mediaWidth"));
+    const qint64  height  = num(d, QLatin1StringView("mediaHeight"));
+    const qint64  channels = num(d, QLatin1StringView("mediaChannels"));
+    const qint64  sampleRate = num(d, QLatin1StringView("mediaSampleRate"));
+    const double  fps     = d.value(QLatin1StringView("mediaFps")).toDouble();
 
     const bool hasAny = !artist.isEmpty() || !album.isEmpty() || !title.isEmpty()
-                     || !codec.isEmpty() || length > 0 || bitrate > 0;
+                     || !codec.isEmpty() || !format.isEmpty() || !audio.isEmpty()
+                     || length > 0 || bitrate > 0 || width > 0;
 
     if (!hasAny) {
         form->addRow(new QLabel(tr("No media information available.")));
@@ -834,19 +845,45 @@ QWidget* FileDetailDialog::createMediaInfoTab(const QCborMap& d)
         form->addRow(QStringLiteral("<b>%1:</b>").arg(label), lbl);
     };
 
+    if (!format.isEmpty())  addRow(tr("Format"), format);
     if (!title.isEmpty())   addRow(tr("Title"), title);
     if (!artist.isEmpty())  addRow(tr("Artist"), artist);
     if (!album.isEmpty())   addRow(tr("Album"), album);
-    if (!codec.isEmpty())   addRow(tr("Codec"), codec);
 
+    if (length > 0) {
+        const qint64 h = length / 3600;
+        const int m = static_cast<int>((length % 3600) / 60);
+        const int s = static_cast<int>(length % 60);
+        QString text = h > 0 ? QStringLiteral("%1:%2:%3").arg(h).arg(m, 2, 10, QLatin1Char('0'))
+                                   .arg(s, 2, 10, QLatin1Char('0'))
+                             : QStringLiteral("%1:%2").arg(m).arg(s, 2, 10, QLatin1Char('0'));
+        if (d.value(QLatin1StringView("mediaLengthEstimated")).toBool())
+            text += QStringLiteral(" (%1)").arg(tr("estimated"));
+        addRow(tr("Length"), text);
+    }
     if (bitrate > 0)
         addRow(tr("Bitrate"), QStringLiteral("%1 Kbit/s").arg(bitrate));
 
-    if (length > 0) {
-        const int mins = static_cast<int>(length / 60);
-        const int secs = static_cast<int>(length % 60);
-        addRow(tr("Length"), QStringLiteral("%1:%2")
-            .arg(mins).arg(secs, 2, 10, QLatin1Char('0')));
+    if (!codec.isEmpty() && codec != audio)
+        addRow(tr("Codec"), codec);
+    if (width > 0 && height > 0)
+        addRow(tr("Resolution"), QStringLiteral("%1 x %2").arg(width).arg(height));
+    if (fps > 0.0)
+        addRow(tr("Frame Rate"), QStringLiteral("%1 fps").arg(fps, 0, 'f', 2));
+
+    if (!audio.isEmpty() || channels > 0 || sampleRate > 0) {
+        QStringList parts;
+        if (!audio.isEmpty())
+            parts << audio;
+        if (channels == 1)
+            parts << tr("Mono");
+        else if (channels == 2)
+            parts << tr("Stereo");
+        else if (channels > 0)
+            parts << tr("%n channels", nullptr, static_cast<int>(channels));
+        if (sampleRate > 0)
+            parts << QStringLiteral("%1 Hz").arg(sampleRate);
+        addRow(tr("Audio"), parts.join(QStringLiteral(", ")));
     }
 
     form->addItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));

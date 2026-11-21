@@ -7,6 +7,7 @@
 #include "controls/FolderTreeModel.h"
 #include "utils/DialogSizing.h"
 #include "utils/FolderLister.h"
+#include "utils/SharedDirState.h"
 
 #include <QDialogButtonBox>
 #include <QDir>
@@ -59,12 +60,13 @@ FolderPickerDialog::FolderPickerDialog(IpcClient* ipc, const QString& title, con
         if (!typed.isEmpty())
             m_pathEdit->setText(typed);   // a typed folder that does not exist yet stays
     });
+    // a UNC folder has no drive above it: its share becomes a root
+    if (const QString root = uncShareRoot(startDir); !root.isEmpty())
+        m_model->addRoot(root, uncLabel(root));
     if (startDir.isEmpty())
         connect(m_model, &FolderTreeModel::homeKnown, this, [this](const QString& home) { m_model->reveal(home); });
     else
         m_model->reveal(startDir);
-    if (!m_model->homePath().isEmpty() && startDir.isEmpty())
-        m_model->reveal(m_model->homePath());   // a local core answered in the constructor
     updateOk();
 
     DialogSizing::applySize(this, {420, 380}, {520, 480}, DialogSizing::Fit::Layout);
@@ -73,7 +75,7 @@ FolderPickerDialog::FolderPickerDialog(IpcClient* ipc, const QString& title, con
 QString FolderPickerDialog::selectedFolder() const
 {
     const QString text = m_pathEdit->text().trimmed();
-    return text.isEmpty() ? QString() : QDir::cleanPath(QDir::fromNativeSeparators(text));
+    return text.isEmpty() ? QString() : SharedDirState::cleanDir(QDir::fromNativeSeparators(text));
 }
 
 QString FolderPickerDialog::getExistingDirectory(QWidget* parent, IpcClient* ipc, const QString& title,

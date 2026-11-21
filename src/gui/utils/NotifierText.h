@@ -54,8 +54,9 @@ struct NotifierText {
                 QCoreApplication::translate("Notifier", "Fatal Error: Unable to create socket on port %1").arg(arg)};
     case Ipc::NotifierEvent::Ed3kAnonExposed:     // ed3k hops.md §1: no MFC counterpart
         return {true, QCoreApplication::translate("Notifier", "Hidden file not hidden"),
-                QCoreApplication::translate("Notifier", "\"%1\" is under the anonymous key and on %2 too: "
-                                                        "sources there show your address.")
+                QCoreApplication::translate("Notifier", "\"%1\" is shared on ed3k under the anonymous key but also "
+                                                        "on %2, where peers see your address next to it. Stop it "
+                                                        "there, or move it to the node key in Shared Files.")
                     .arg(arg, arg2.isEmpty() ? QStringLiteral("eD2K/Kad") : arg2)};
     case Ipc::NotifierEvent::Ed3kDeclinedAdded:   // ed3k declined-records.md §2: no MFC counterpart
         return {true, QCoreApplication::translate("Notifier", "Declined file added paused"),

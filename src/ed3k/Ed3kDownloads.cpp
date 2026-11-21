@@ -28,7 +28,7 @@ namespace {
 
 constexpr quint32 kStateMagic = 0x4533444c;   // "E3DL"
 /// 1: every row; 2: the complete rows (the others are in the .met files)
-constexpr quint32 kStateVersion = 2;
+constexpr quint32 kStateVersion = 3;   // 3: transferred
 constexpr quint32 kMetMagic = 0x4533504d;     // "E3PM"
 constexpr quint32 kMetVersion = 1;
 const QString kMetSuffix = QStringLiteral(".ed3k.part.met");
@@ -171,7 +171,8 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
     // hops.md §1: a set's member goes under the set's key; never under both keys
     if (spec.key) {
         const auto& hide = m_session.hide();
-        if (*spec.key == ffi::KeyKind::Anon && !hide.hiding()) {
+        // the anonymous node may not run yet (no connect): the download waits for it
+        if (*spec.key == ffi::KeyKind::Anon && !hide.hidingWanted()) {
             logWarning(QStringLiteral("download of %1 refused: hiding is off (anonymous key)").arg(hexOf(spec.root.bytes)));
             return std::unexpected(tr("Hiding is off: nothing is downloaded under the anonymous key."));
         }
@@ -578,6 +579,10 @@ std::optional<Ed3kDownloadInfo> Ed3kDownloads::info(const ffi::Root& root) const
     // whole read from an HTTP source, also while paused or before it goes on
     if (i.state != Ed3kDownloadInfo::State::Complete)
         i.unchecked = std::min(i.size, it->second.wholeAt);
+    // hops.md §1: no HTTP source under the anonymous key (webAttach), the user is told
+    if (i.state != Ed3kDownloadInfo::State::Complete && !it->second.webUrls.isEmpty() && keyOf(root) == ffi::KeyKind::Anon
+        && !anonWebAllowed())
+        i.webDropped = int(it->second.webUrls.size());
     return i;
 }
 
@@ -620,7 +625,7 @@ void Ed3kDownloads::saveNow()
             const auto& i = e.info;
             out << rootBytes(root) << quint64(i.size) << i.name << i.owner << qint32(i.category) << qint32(i.priority)
                 << qint32(int(i.state)) << i.partPath << i.targetPath << i.path << packBits(e.have) << qint64(i.addedOn)
-                << qint64(i.completedOn) << e.sharedByList << i.error << qint32(e.id);
+                << qint64(i.completedOn) << e.sharedByList << i.error << qint32(e.id) << quint64(i.transferred);
         }
     }
     QDir().mkpath(stateDir(m_configDir));
@@ -678,6 +683,13 @@ void Ed3kDownloads::onFileBlock(const Download& d, const ffi::event::Block& b)
 {
     if (Entry* e = entryOfId(d.member))
         (void)storeBlock(*e, b.offset, b.data);
+}
+
+bool Ed3kDownloads::takeLocalBlock(const Download& d, std::uint64_t offset, std::span<const std::byte> data)
+{
+    // #224: written like a peer's block; the whole file is hashed at the end (verify)
+    Entry* e = entryOfId(d.member);
+    return e && storeBlock(*e, offset, data);
 }
 
 void Ed3kDownloads::onBlobFetched(const QString& owner, int member, const ffi::Root& root, const QByteArray& data)
@@ -803,6 +815,8 @@ void Ed3kDownloads::openEntry(Entry& e)
     else
         webAttach(e);
     sharePieces(e);
+    // #224: the same root on disk here (Shared Files, another network's file, a found copy)
+    (void)copyLocal(e.info.root);
 }
 
 void Ed3kDownloads::verify(Entry& e)
@@ -934,7 +948,7 @@ void Ed3kDownloads::sharePieces(Entry& e)
                       e.info.owner, e.id);
 }
 
-bool Ed3kDownloads::storeBlock(Entry& e, std::uint64_t offset, const ffi::Bytes& data)
+bool Ed3kDownloads::storeBlock(Entry& e, std::uint64_t offset, std::span<const std::byte> data)
 {
     if (e.info.state != Ed3kDownloadInfo::State::Downloading || offset % kBlock != 0)
         return false;
@@ -953,6 +967,7 @@ bool Ed3kDownloads::storeBlock(Entry& e, std::uint64_t offset, const ffi::Bytes&
     e.have[std::size_t(index)] = true;
     e.info.done = std::min(e.info.size, e.info.done + std::uint64_t(data.size()));
     e.received += std::uint64_t(data.size());
+    e.info.transferred += std::uint64_t(data.size());
     emit progress(e.info.root, e.info.done);
     markChanged();
     touch(e);
@@ -1051,6 +1066,9 @@ void Ed3kDownloads::load()
         Entry e;
         in >> root >> size >> e.info.name >> e.info.owner >> category >> priority >> state >> e.info.partPath >> e.info.targetPath
             >> e.info.path >> have >> addedOn >> completedOn >> sharedByList >> e.info.error >> id;
+        quint64 transferred = 0;
+        if (version >= 3)
+            in >> transferred;
         const auto r = rootFrom(root);
         if (in.status() != QDataStream::Ok || !r || size == 0 || state < 0 || state > int(Ed3kDownloadInfo::State::Failed))
             break;
@@ -1065,11 +1083,14 @@ void Ed3kDownloads::load()
             e.info.state = Ed3kDownloadInfo::State::Downloading;
         e.info.addedOn = addedOn;
         e.info.completedOn = completedOn;
+        e.info.transferred = transferred;
         e.sharedByList = sharedByList;
         e.have = unpackBits(have, std::size_t(blockCount(size)));
         if (e.info.state == Ed3kDownloadInfo::State::Complete) {
             std::fill(e.have.begin(), e.have.end(), true);
             e.info.done = size;
+            if (version < 3)
+                e.info.transferred = size;   // older file: not counted, the size is the closest guess
         } else {
             for (std::size_t i = 0; i < e.have.size(); ++i)
                 if (e.have[i])
@@ -1170,6 +1191,17 @@ std::optional<Ed3kDownloads::Entry> Ed3kDownloads::readMet(const QString& metPat
         else
             in.resetStatus();
     }
+    bool hasTransferred = false;
+    if (in.status() == QDataStream::Ok && !in.atEnd()) {
+        quint64 transferred = 0;
+        in >> transferred;
+        if (in.status() == QDataStream::Ok) {
+            e.info.transferred = transferred;
+            hasTransferred = true;
+        } else {
+            in.resetStatus();
+        }
+    }
     const auto r = rootFrom(root);
     if (in.status() != QDataStream::Ok || !r || size == 0 || state < 0 || state > int(Ed3kDownloadInfo::State::Failed)
         || Ed3kDownloadInfo::State(state) == Ed3kDownloadInfo::State::Complete)
@@ -1198,6 +1230,8 @@ std::optional<Ed3kDownloads::Entry> Ed3kDownloads::readMet(const QString& metPat
     for (std::size_t i = 0; i < e.have.size(); ++i)
         if (e.have[i])
             e.info.done += std::min<std::uint64_t>(kBlock, size - std::uint64_t(i) * kBlock);
+    if (!hasTransferred)
+        e.info.transferred = e.info.done;   // older .met: not counted, what is held is the closest guess
     return e;
 }
 
@@ -1243,7 +1277,8 @@ void Ed3kDownloads::writeMet(Entry& e)
             << quint8(e.info.previewPrio ? 1 : 0)    // flags (bit 0 preview); older .met: none
             << e.webUrls                             // ws= sources; older .met: none
             << e.webHashUrls << quint64(e.wholeAt)   // wh= URLs, whole read so far; older .met: none
-            << quint32(e.info.maxSources);           // source limit; older .met: none
+            << quint32(e.info.maxSources)            // source limit; older .met: none
+            << quint64(e.info.transferred);          // bytes received; older .met: none
     }
     const QString path = metPathOf(e);
     QDir().mkpath(QFileInfo(path).absolutePath());

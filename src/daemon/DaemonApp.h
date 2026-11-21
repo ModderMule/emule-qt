@@ -21,6 +21,7 @@
 class QTimer;
 
 namespace eMule {
+class ArchiveFill;
 
 class BandwidthCoordinator;
 class ScheduleNetworkBridge;
@@ -287,6 +288,8 @@ private:
     /// archive contents records (hoster.md §6.1, ArchiveContentsBridge); readers of the
     /// unpack hook stop on m_archiveCancel
     std::unique_ptr<ed3k::Ed3kArchiveContents> m_archiveContents;
+    /// #224: Usenet volumes filled from archive entries on disk here
+    std::unique_ptr<ArchiveFill> m_archiveFill;
     std::shared_ptr<std::atomic<bool>> m_archiveCancel = std::make_shared<std::atomic<bool>>(false);
     /// the Link Grabber (hoster.md "Link Grabber"): links checked and edited before they become
     /// hoster downloads; dies before the join and the resolver

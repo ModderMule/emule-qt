@@ -203,6 +203,7 @@
     <ClCompile Include="BtBridge.cpp" />
     <ClCompile Include="BtShareGuard.cpp" />
     <ClCompile Include="BtCreateBridge.cpp" />
+    <ClCompile Include="BtFileIndex.cpp" />
     <ClCompile Include="LandedFiles.cpp" />
     <ClCompile Include="Ed3kBridge.cpp" />
     <ClCompile Include="Ed3kFriendsBridge.cpp" />
@@ -223,6 +224,7 @@
     <ClCompile Include="Ed3kTunnelBridge.cpp" />
     <ClCompile Include="Ed3kHosterBridge.cpp" />
     <ClCompile Include="ArchiveContentsBridge.cpp" />
+    <ClCompile Include="ArchiveFill.cpp" />
     <ClCompile Include="Ed3kKadBridge.cpp" />
     <ClCompile Include="Ed3kLinksBridge.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
@@ -233,6 +235,7 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="ApiEventFeeder.h" />
+    <QtMoc Include="ArchiveFill.h" />
     <QtMoc Include="CliIpcClient.h" />
     <ClInclude Include="CommandLineExec.h" />
     <ClInclude Include="IpcTlsIdentity.h" />
@@ -264,6 +267,7 @@
     <ClInclude Include="BtBridge.h" />
     <ClInclude Include="BtShareGuard.h" />
     <ClInclude Include="BtCreateBridge.h" />
+    <ClInclude Include="BtFileIndex.h" />
     <ClInclude Include="LandedFiles.h" />
     <ClInclude Include="Ed3kBridge.h" />
     <ClInclude Include="Ed3kOffGate.h" />

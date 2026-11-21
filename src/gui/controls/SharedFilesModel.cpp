@@ -15,6 +15,7 @@
 #include "utils/OtherFunctions.h"
 #include "utils/PriorityText.h"
 #include "utils/RatingIcons.h"
+#include "utils/SharedDirState.h"
 #include "utils/StringUtils.h"
 
 #include <QCoreApplication>
@@ -118,9 +119,11 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
     // the same one the download list draws. Nothing here touches the disk: the
     // daemon's background sweep settled the verdict and sent a bool.
     if (role == Qt::DecorationRole && index.column() == ColFileName) {
+        // #212: torrent mark right after the type icon: a torrent has this file
         return fileMarksIcon(f.fileType, containerMark(f.containerSuspect, f.containerMislabelled),
                              f.ownComment,
-                             ratingMark(f.hasComment, f.userRating));
+                             ratingMark(f.hasComment, f.userRating),
+                             f.torrents.isEmpty() ? QString() : QStringLiteral(":/icons/Torrent.ico"));
     }
     if (role == Qt::DecorationRole && index.column() == ColSharedNetworks)
         return networkIcons(f.publishedED2K, f.kadPublished);
@@ -195,9 +198,12 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
                  networkText(f.publishedED2K, f.kadPublished), f.path);
         // The marks in column 0 explain themselves here, worded exactly as they are
         // in the download list — same helper, same cell, same sentence.
-        return QString(tip + fileMarksTooltip(f.fileName,
-                                             containerMark(f.containerSuspect, f.containerMislabelled),
-                                             f.containerActual, f.hasComment, f.userRating));
+        QString torrents;
+        for (const auto& [id, name] : f.torrents)
+            torrents += u'\n' + tr("Torrent:\t%1").arg(name);
+        return QString(tip + torrents
+                       + fileMarksTooltip(f.fileName, containerMark(f.containerSuspect, f.containerMislabelled),
+                                          f.containerActual, f.hasComment, f.userRating));
     }
 
     if (role == AltSortRole) {
@@ -506,7 +512,7 @@ bool sameDir(const QString& a, const QString& b)
 {
     if (a.isEmpty() || b.isEmpty())
         return false;
-    return QDir::cleanPath(a).compare(QDir::cleanPath(b), Qt::CaseInsensitive) == 0;
+    return SharedDirState::cleanDir(a).compare(SharedDirState::cleanDir(b), Qt::CaseInsensitive) == 0;
 }
 
 /// @p dir is @p root or a folder below it
@@ -514,8 +520,8 @@ bool atOrBelow(const QString& dir, const QString& root)
 {
     if (dir.isEmpty() || root.isEmpty())
         return false;
-    const QString d = QDir::cleanPath(dir);
-    const QString r = QDir::cleanPath(root);
+    const QString d = SharedDirState::cleanDir(dir);
+    const QString r = SharedDirState::cleanDir(root);
     return d.compare(r, Qt::CaseInsensitive) == 0
         || (d.startsWith(r, Qt::CaseInsensitive) && d.size() > r.size() && d.at(r.size()) == u'/');
 }
@@ -599,7 +605,7 @@ SharedCategoryNodes sharedCategoryNodes(const QList<std::pair<QString, QString>>
     if (categories.size() <= 1)
         return nodes;
 
-    const auto key = [](const QString& dir) { return QDir::cleanPath(dir).toCaseFolded(); };
+    const auto key = [](const QString& dir) { return SharedDirState::dirKey(dir); };
     const QString mainKey = key(mainIncomingDir);
     QSet<QString> seen;
     for (int i = 0; i < categories.size(); ++i) {
@@ -608,7 +614,7 @@ SharedCategoryNodes sharedCategoryNodes(const QList<std::pair<QString, QString>>
         if (dir.isEmpty() || key(dir) == mainKey || seen.contains(key(dir)))
             continue;
         seen.insert(key(dir));
-        nodes.incomingDirs << QDir::cleanPath(dir);
+        nodes.incomingDirs << SharedDirState::cleanDir(dir);
     }
     return nodes;
 }

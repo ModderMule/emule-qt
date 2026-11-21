@@ -5,6 +5,7 @@
 ///
 /// Matches the "Contacts" histogram in the MFC eMule Kad tab right panel.
 
+#include <QFont>
 #include <QWidget>
 
 #include <cstdint>
@@ -32,6 +33,14 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 private:
+    struct Margins {
+        int labelW;   ///< left margin for the y labels
+        int labelH;   ///< label line height, also the bottom margin
+        int top;      ///< plot top offset
+    };
+    [[nodiscard]] static QFont labelFont();
+    [[nodiscard]] Margins margins() const;
+
     static constexpr int kMaxSamples = 120;
     std::deque<int> m_samples;
     int m_peakValue = 1;

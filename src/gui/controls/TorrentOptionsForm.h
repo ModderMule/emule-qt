@@ -72,9 +72,8 @@ private:
     bool m_edited[FieldCount] = {};
     /// a fill is under way: changes are not the user's
     bool m_filling = false;
-    /// from the last fill: the router is on / the session mixes (no "I2P only" then)
+    /// from the last fill: the router is on
     bool m_i2pEnabled = true;
-    bool m_i2pMixed = false;
     bool m_i2pWarn = false;
 };
 

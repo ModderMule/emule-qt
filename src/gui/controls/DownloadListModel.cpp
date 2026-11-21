@@ -500,6 +500,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         switch (index.column()) {
         // marked as the Messages panel marks ed3k friends (no MFC original)
         case ColFileName:
+            if (d.isNetworkJob() && !d.ed3kJoined)
+                return tr("%1 (%2)").arg(d.fileName, networkName(ed3kJoinOf(d.ed3kNetwork)));
             if (d.isNetworkJob())
                 return tr("%1 (ed3k + %2)").arg(d.fileName, networkName(ed3kJoinOf(d.ed3kNetwork)));
             return d.isEd3k() ? tr("%1 (ed3k)").arg(d.fileName) : d.fileName;
@@ -583,6 +585,9 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         // ed3k: the jobs here with the same root (alias.md); the row is in Transfers only
         if (!d.ed3kAliases.isEmpty())
             tip += u'\n' + tr("Also known as:") + QStringLiteral("\n  ") + d.ed3kAliases.join(QStringLiteral("\n  "));
+        // hops.md §1: HTTP sources left out while hiding
+        if (d.ed3kWebDropped > 0)
+            tip += u'\n' + tr("HTTP sources:") + QStringLiteral("\n  ") + ed3kWebDroppedText(d.ed3kWebDropped);
         // Only when there is something to say: a clean file needs no extra lines
         if (!d.fakeReasons.isEmpty())
             tip += QStringLiteral("\n\n") + confidenceTooltip(d.confidence, d.fakeScore, d.fakeReasons);

@@ -25,6 +25,9 @@
 #include <QLabel>
 #include <QLayout>
 #include <QPushButton>
+#include <QCborArray>
+#include <QCborMap>
+#include <QSignalSpy>
 #include <QScreen>
 #include <QTabWidget>
 #include <QTemporaryDir>
@@ -134,6 +137,7 @@ private slots:
     void sharedFileShowsItsBlake3Root();
     void shrinksAndKeepsItsSizeAfterARename();
     void scrollFitShrinksContentThatFits();
+    void archiveViewOffersTakeFromDisk();
 };
 
 /// The window manager may not let the user drag a window smaller than its minimum, so
@@ -414,29 +418,44 @@ void TestFileDetailDialog::shrinksAndKeepsItsSizeAfterARename()
 
 /// Issue #181 on a screen tall enough for all of it: Fit::Content pins the minimum to
 /// the content, Fit::Scroll opens just as tall but lets the scroll area give way.
+/// Issue #234: Content whose whole page scrolls is Scroll, floor included.
 void TestFileDetailDialog::scrollFitShrinksContentThatFits()
 {
-    const auto measure = [](DialogSizing::Fit fit) {
+    const auto measure = [](DialogSizing::Fit fit, bool scroll, QSize floor = {}) {
         QDialog dlg;
         auto* layout = new QVBoxLayout(&dlg);
         auto* page = new QWidget;
         auto* form = new QFormLayout(page);
         for (int row = 0; row < 8; ++row)
             form->addRow(QStringLiteral("Row %1:").arg(row), new QLabel(QStringLiteral("value")));
-        auto* area = new ContentScrollArea;
-        area->setWidget(page);
-        layout->addWidget(area);
-        DialogSizing::applySize(&dlg, {}, {}, fit);
-        return std::pair{dlg.minimumHeight(), dlg.height()};
+        if (scroll) {
+            auto* area = new ContentScrollArea;
+            area->setWidget(page);
+            layout->addWidget(area);
+        } else {
+            layout->addWidget(page);
+        }
+        DialogSizing::applySize(&dlg, floor, {}, fit);
+        return std::pair{dlg.minimumSize(), dlg.size()};
     };
 
-    const auto [contentMin, contentHeight] = measure(DialogSizing::Fit::Content);
-    const auto [scrollMin, scrollHeight] = measure(DialogSizing::Fit::Scroll);
-    QVERIFY2(contentHeight < kScreenHeight - 120, qPrintable(QString::number(contentHeight)));
-    QCOMPARE(contentMin, contentHeight);
-    QCOMPARE(scrollHeight, contentHeight);
-    QVERIFY2(scrollMin < scrollHeight - 50,
-             qPrintable(QStringLiteral("%1 of %2").arg(scrollMin).arg(scrollHeight)));
+    const auto [contentMin, contentSize] = measure(DialogSizing::Fit::Content, false);
+    const auto [scrollMin, scrollSize] = measure(DialogSizing::Fit::Scroll, true);
+    const auto [wholeMin, wholeSize] = measure(DialogSizing::Fit::Content, true);
+    QVERIFY2(contentSize.height() < kScreenHeight - 120, qPrintable(QString::number(contentSize.height())));
+    QCOMPARE(contentMin.height(), contentSize.height());
+    QCOMPARE(scrollSize.height(), contentSize.height());
+    QVERIFY2(scrollMin.height() < scrollSize.height() - 50,
+             qPrintable(QStringLiteral("%1 of %2").arg(scrollMin.height()).arg(scrollSize.height())));
+    QCOMPARE(wholeMin, scrollMin);
+    QCOMPARE(wholeSize, scrollSize);
+
+    // the hand-picked floor (scaled to the 800x600 screen) opens it, no longer locks it
+    const QSize floor(500, 400);
+    const auto [floorMin, floorSize] = measure(DialogSizing::Fit::Content, true, floor);
+    QVERIFY2(floorSize.width() >= floorMin.width() + 150 && floorSize.height() >= floorMin.height() + 100,
+             qPrintable(QStringLiteral("min %1x%2, size %3x%4").arg(floorMin.width()).arg(floorMin.height())
+                            .arg(floorSize.width()).arg(floorSize.height())));
 }
 
 int main(int argc, char* argv[])
@@ -512,6 +531,49 @@ void TestFileDetailDialog::ed3kDownloadHasNamesAndMetadataFromKad()
     emit archive->lookupFinished(0);
     QVERIFY(status().contains(FileDetailDialog::tr("Nothing found in Kad.")));
     QVERIFY(!status().contains(ArchivePreviewPanel::tr("Table of contents not found.")));
+}
+
+// #224: a queued download whose archive's every file is on disk here: marked, and "Take From
+// Disk" hands that archive (name, parts, entries) on; one entry missing: not offered
+void TestFileDetailDialog::archiveViewOffersTakeFromDisk()
+{
+    ArchiveContentsView view(nullptr, false);
+    view.setQueued(true);
+    QVERIFY(!view.takeFromDiskButton()->isHidden());
+    const auto entry = [](const QString& path, bool local) {
+        QCborMap e{{QStringLiteral("path"), path}, {QStringLiteral("size"), 10}, {QStringLiteral("root"), QString(64, u'b')}};
+        if (local)
+            e.insert(QStringLiteral("local"), true);
+        return e;
+    };
+    QCborMap all{{QStringLiteral("name"), QStringLiteral("show.part1.rar")},
+                 {QStringLiteral("state"), QStringLiteral("found")},
+                 {QStringLiteral("parts"), QCborArray{QStringLiteral("show.part1.rar"), QStringLiteral("show.part2.rar")}},
+                 {QStringLiteral("allLocal"), true},
+                 {QStringLiteral("entries"), QCborArray{entry(QStringLiteral("a.mkv"), true), entry(QStringLiteral("b.nfo"), true)}}};
+    QCborMap some{{QStringLiteral("name"), QStringLiteral("extra.rar")},
+                  {QStringLiteral("state"), QStringLiteral("found")},
+                  {QStringLiteral("entries"), QCborArray{entry(QStringLiteral("c.mkv"), true), entry(QStringLiteral("d.mkv"), false)}}};
+    view.setResult(QCborMap{{QStringLiteral("archives"), QCborArray{all, some}}, {QStringLiteral("editable"), true}});
+    QCOMPARE(view.tree()->topLevelItem(0)->child(0)->text(ArchiveContentsView::ColStatus), ArchiveContentsView::tr("On disk"));
+    QVERIFY(view.tree()->topLevelItem(1)->child(1)->text(ArchiveContentsView::ColStatus).isEmpty());
+    QVERIFY(view.takeFromDiskButton()->isEnabled());
+    QSignalSpy spy(&view, &ArchiveContentsView::takeFromDiskRequested);
+    view.takeFromDiskButton()->click();
+    QCOMPARE(spy.count(), 1);
+    const QCborArray archives = spy.at(0).at(0).value<QCborArray>();
+    QCOMPARE(archives.size(), 1);
+    const QCborMap a = archives.at(0).toMap();
+    QCOMPARE(a.value(QStringLiteral("name")).toString(), QStringLiteral("show.part1.rar"));
+    QCOMPARE(a.value(QStringLiteral("parts")).toArray().size(), 2);
+    QCOMPARE(a.value(QStringLiteral("entries")).toArray().size(), 2);
+
+    // unpacked already: nothing changes any more
+    view.setResult(QCborMap{{QStringLiteral("archives"), QCborArray{all}}, {QStringLiteral("editable"), false}});
+    QVERIFY(!view.takeFromDiskButton()->isEnabled());
+    // only some on disk: the archive is still needed
+    view.setResult(QCborMap{{QStringLiteral("archives"), QCborArray{some}}, {QStringLiteral("editable"), true}});
+    QVERIFY(!view.takeFromDiskButton()->isEnabled());
 }
 
 #include "tst_FileDetailDialog.moc"

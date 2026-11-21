@@ -112,6 +112,7 @@ QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
         {QStringLiteral("size"), qint64(i.size)},
         {QStringLiteral("done"), qint64(i.done)},
         {QStringLiteral("rate"), qint64(i.rate)},
+        {QStringLiteral("transferred"), qint64(i.transferred)},
         {QStringLiteral("sources"), i.sources},
         {QStringLiteral("transferring"), i.transferring},
         {QStringLiteral("a4af"), i.a4af},
@@ -134,6 +135,9 @@ QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
                                                                       qsizetype(i.root.bytes.size())));
         !aliases.isEmpty())
         m.insert(QStringLiteral("aliases"), aliases);
+    // HTTP sources not used while hiding (tooltip, Details); absent: none dropped
+    if (i.webDropped > 0)
+        m.insert(QStringLiteral("webDropped"), i.webDropped);
     // the progress bar: held blocks as runs (BlockRuns.h), those asked for, sources per piece
     m.insert(QStringLiteral("blockSize"), qint64(kBarBlock));
     // HTTP whole read: its bytes on disk show as held, root checked at the end
@@ -394,6 +398,9 @@ std::optional<QCborMap> detailsOf([[maybe_unused]] const QString& hexRoot, [[may
                                                                  qsizetype(info->root.bytes.size())));
         !joins.isEmpty())
         m.insert(QStringLiteral("ed3kJoins"), joins);
+    // HTTP sources not used while hiding (hops.md §1); absent: none dropped
+    if (info->webDropped > 0)
+        m.insert(QStringLiteral("ed3kWebDropped"), info->webDropped);
     if (generalOnly)
         return m;
     // Comments: NOTE records found by "Search Kad" (Ed3kSearch::searchNotes)
@@ -447,15 +454,8 @@ std::optional<QCborMap> detailsOf([[maybe_unused]] const QString& hexRoot, [[may
     // Media Info: read from the file once its head is here (eD2K reads it at completion)
     if (info->state == State::Complete || info->previewPossible) {
         MediaInfo mi;
-        if (extractMediaInfo(info->path, mi)) {
-            m.insert(QStringLiteral("mediaTitle"), mi.title);
-            m.insert(QStringLiteral("mediaArtist"), mi.author);
-            m.insert(QStringLiteral("mediaAlbum"), mi.album);
-            m.insert(QStringLiteral("mediaLength"), qint64(mi.lengthSec));
-            const qint64 kbps = (qint64(mi.video.bitRate) + qint64(mi.audio.avgBytesPerSec) * 8) / 1000;
-            m.insert(QStringLiteral("mediaBitrate"), kbps);
-            m.insert(QStringLiteral("mediaCodec"), mi.videoStreamCount > 0 ? mi.video.codecName : mi.audio.codecName);
-        }
+        if (extractMediaInfo(info->path, mi))
+            insertMediaInfoFields(m, mi);
     }
     // ed3k Link tab
     ffi::FileLink link;

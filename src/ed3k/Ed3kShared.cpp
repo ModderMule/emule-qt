@@ -210,6 +210,7 @@ std::optional<SharedEntry> Ed3kShared::entryOf(const KnownFile& file)
     e.title = clipUtf8(file.getStrTagValue(FT_MEDIA_TITLE), kMediaTagMax);
     e.codec = clipUtf8(file.getStrTagValue(FT_MEDIA_CODEC), kCodecMax);
     e.ed3kOnly = file.isEd3kOnly();
+    e.fileDate = file.utcFileDate();
     return e;
 }
 
@@ -424,8 +425,11 @@ bool Ed3kShared::tellExposed(const ffi::Root& root, const QString& name, const Q
 {
     if (!m_exposedTold.insert(root).second)
         return false;
-    logWarning(QStringLiteral("\"%1\" is under the anonymous key and on %2 too: sources there show this "
-                              "address (hops.md §1). Remove it there or move it to the node key.").arg(name, networks));
+    // was: "... is under the anonymous key and on %2 too: sources there show this address (hops.md §1). Remove it
+    // there or move it to the node key."
+    logWarning(QStringLiteral("\"%1\" is shared on ed3k under the anonymous key but also on %2, where peers see "
+                              "this computer's address next to it. Stop it there, or move it to the node key in "
+                              "Shared Files.").arg(name, networks));
     emit anonExposed(name, networks);
     return true;
 }
@@ -646,8 +650,11 @@ void Ed3kShared::onFileRelocated(const SharedEntry& entry)
     File& f = it->second;
     if (f.entry.path == entry.path)
         return;
-    // a rename keeps size and date: the root stays, reads follow the new path
-    if (unchanged(entry.path, f.entry.size, f.mtimeMs)) {
+    // a rename keeps size and date: the root stays, reads follow the new path. The share
+    // list's date (stat'ed off the main thread) answers it without a stat here (#200)
+    const bool sameDate = entry.fileDate != 0 && f.mtimeMs != kMtimeUnknown && entry.size == f.entry.size
+        && time_t(f.mtimeMs / 1000) == entry.fileDate;
+    if (sameDate || unchanged(entry.path, f.entry.size, f.mtimeMs)) {
         f.entry = entry;
         if (const auto c = m_cache.find(entry.md4); c != m_cache.end()) {
             c->second.path = entry.path;
@@ -855,15 +862,25 @@ void Ed3kShared::add(const SharedEntry& entry, bool aliasOnly)
             onFileRelocated(entry);
         return;
     }
-    const QFileInfo fi(entry.path);
-    if (!fi.isFile() || std::uint64_t(fi.size()) != entry.size) {
-        logDebug([&]() -> QString { return QStringLiteral("\"%1\" is not what the share list says, left out").arg(entry.path); });
-        return;
+    // was: a stat per file here: thousands on a NAS froze the core for seconds (#200).
+    // The share list stat'ed it off the main thread: its date picks the cached one
+    qint64 mtimeMs = kMtimeUnknown;
+    if (const auto known = listedDateMs(entry, byPath, aliasOnly)) {
+        mtimeMs = *known;
+    } else if (entry.fileDate == 0 || hasCacheFor(entry, byPath)) {
+        // unknown date, or a cached one off by a DST hour: stat'ed as before
+        const QFileInfo fi(entry.path);
+        if (!fi.isFile() || std::uint64_t(fi.size()) != entry.size) {
+            logDebug([&]() -> QString { return QStringLiteral("\"%1\" is not what the share list says, left out").arg(entry.path); });
+            return;
+        }
+        mtimeMs = fi.lastModified().toMSecsSinceEpoch();
     }
+    // else: nothing cached, hashed: hashNext stats it
     File& f = m_files[entry.md4];
     f.entry = entry;
     f.aliasOnly = aliasOnly;
-    f.mtimeMs = mtimeOf(entry.path);
+    f.mtimeMs = mtimeMs;
     if (!aliasOnly) {
         f.member = m_nextMember++;
         m_members[f.member] = entry.md4;
@@ -1022,7 +1039,8 @@ void Ed3kShared::publishFile(File& f, const ffi::Root& root, std::uint64_t size)
     // (done for BitTorrent: DaemonApp, Ed3kTorrentJoin::memberVerified of a root held here
     // under the anonymous key, and setAnonAddedHook asks Ed3kTorrentJoin::holdsRoot)
     // ToDo: a plain HTTP download (not a hoster item) of such a file is still not checked
-    if (anon)
+    // eD2K off (Options › Extended, setEd2kHashing): nothing serves it there, nothing to tell (#232)
+    if (anon && m_ed2kHashing)
         (void)tellExposed(root, f.entry.name, QStringLiteral("eD2K/Kad"));
     // alias.md §3: the root is shared here and both names come from these bytes; never for a
     // file of the anonymous key (ffi.md: eD2K is never anonymous)
@@ -1096,6 +1114,8 @@ void Ed3kShared::hashNext()
                 continue;
             File& f = it->second;
             f.queued = false;
+            if (f.mtimeMs == kMtimeUnknown)
+                f.mtimeMs = mtimeOf(f.entry.path);   // one stat per hashed file, not per added one
             m_hashingVolumes.insert(volume);
             ++m_hashCount;
             const QString path = f.entry.path;
@@ -1314,6 +1334,35 @@ bool Ed3kShared::unchanged(const QString& path, std::uint64_t size, qint64 mtime
 {
     const QFileInfo fi(path);
     return fi.isFile() && std::uint64_t(fi.size()) == size && fi.lastModified().toMSecsSinceEpoch() == mtimeMs;
+}
+
+std::optional<qint64> Ed3kShared::listedDateMs(const SharedEntry& entry, bool byPath, bool aliasOnly) const
+{
+    if (aliasOnly || entry.fileDate == 0)
+        return std::nullopt;
+    const auto matches = [&](const Hashed& h) -> std::optional<qint64> {
+        if (h.size == entry.size && time_t(h.mtimeMs / 1000) == entry.fileDate)
+            return h.mtimeMs;
+        return std::nullopt;
+    };
+    if (const auto c = m_cache.find(entry.md4); c != m_cache.end())
+        return matches(c->second);
+    if (byPath)
+        return std::nullopt;
+    // hashed before without an MD4 (add() moves it under the MD4)
+    if (const auto p = m_cache.find(pathKeyOf(entry.path)); p != m_cache.end() && !m_aliasOnly.contains(p->first))
+        return matches(p->second);
+    return std::nullopt;
+}
+
+bool Ed3kShared::hasCacheFor(const SharedEntry& entry, bool byPath) const
+{
+    if (m_cache.contains(entry.md4))
+        return true;
+    if (byPath)
+        return false;
+    const auto p = m_cache.find(pathKeyOf(entry.path));
+    return p != m_cache.end() && !m_aliasOnly.contains(p->first);
 }
 
 qint64 Ed3kShared::mtimeOf(const QString& path)

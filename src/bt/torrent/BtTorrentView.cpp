@@ -205,6 +205,49 @@ BtTorrentRow BtTorrentView::row(const lt::torrent_status& st)
     return r;
 }
 
+void BtTorrentView::exactBytes(BtTorrentRow& r, const lt::torrent_status& st,
+                               const std::vector<lt::download_priority_t>& priorities)
+{
+    const auto ti = st.torrent_file.lock();
+    if (!ti || !ti->is_valid() || st.pieces.size() != ti->num_pieces())
+        return;
+    const lt::file_storage& fs = ti->layout();
+    const qint64 pieceLen = fs.piece_length();
+    qint64 total = 0;
+    qint64 have = 0;
+    qint64 wanted = 0;
+    qint64 wantedDone = 0;
+    for (lt::file_index_t f : fs.file_range()) {
+        const qint64 size = fs.file_size(f);
+        if (fs.pad_file_at(f) || size <= 0)
+            continue;
+        const qint64 begin = fs.file_offset(f);
+        const qint64 end = begin + size;
+        qint64 done = 0;
+        for (qint64 p = begin / pieceLen; p * pieceLen < end; ++p)
+            if (st.pieces.get_bit(lt::piece_index_t(static_cast<int>(p))))
+                done += std::min(end, (p + 1) * pieceLen) - std::max(begin, p * pieceLen);
+        const auto idx = static_cast<std::size_t>(static_cast<int>(f));
+        total += size;
+        have += done;
+        if (idx >= priorities.size() || priorities[idx] != lt::dont_download) {
+            wanted += size;
+            wantedDone += done;
+        }
+    }
+    // unfinished: libtorrent's count also has the blocks of pieces on their way
+    if (wantedDone < wanted)
+        wantedDone = std::clamp<qint64>(st.total_wanted_done, wantedDone, wanted);
+    r.size = wanted;
+    r.done = wantedDone;
+    r.totalSize = total;
+    r.haveBytes = have;
+    // checking: progress is the check's (libtorrent)
+    if (r.state != BtState::CheckingFiles && r.state != BtState::CheckingResume)
+        r.progress = wanted > 0 ? double(wantedDone) / double(wanted) : 1.0;
+    r.eta = r.rateDown > 0 && wanted > wantedDone ? (wanted - wantedDone) / r.rateDown : -1;
+}
+
 QList<BtFileRow> BtTorrentView::files(const lt::torrent_info& ti, const std::vector<std::int64_t>& progress,
                                       const std::vector<lt::download_priority_t>& prio,
                                       const std::vector<int>& avail)
@@ -259,6 +302,12 @@ QList<BtPeerRow> BtTorrentView::peers(const std::vector<lt::peer_info>& list)
         r.utp = static_cast<bool>(p.flags & lt::peer_info::utp_socket);
         r.source = sourceOf(p.source);
         r.flags = peerFlags(p);
+        if (const int n = p.pieces.size(); n > 0) {
+            r.have = QByteArray((n + 7) / 8, '\0');
+            for (int i = 0; i < n; ++i)
+                if (p.pieces.get_bit(lt::piece_index_t{i}))
+                    r.have[i / 8] = static_cast<char>(static_cast<std::uint8_t>(r.have[i / 8]) | (1u << (i % 8)));
+        }
         out.append(r);
     }
     return out;

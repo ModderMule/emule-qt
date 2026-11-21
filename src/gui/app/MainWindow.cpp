@@ -86,6 +86,7 @@
 #include <QPushButton>
 #include <QTreeView>
 #include <QClipboard>
+#include <QCborArray>
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QRegularExpression>
@@ -669,6 +670,7 @@ void MainWindow::showOptionsDialog(int page)
     applyFeatureTabs();
     m_serverPanel->refreshUpdateUrl();   // Options "List..." edits the same URL
     updateFreeSpaceLabel();
+    updateSessionTotalsLabel();
 
     // The daemon reacts to logToDiskCore over IPC; logToDiskGui is ours to act on.
     LogWidget::applyLogFileSettings();
@@ -1006,6 +1008,14 @@ void MainWindow::updateTransferRates(double upKBs, double downKBs,
     updateTrayToolTip();
 }
 
+void MainWindow::setSessionTotals(const QCborMap& totals)
+{
+    if (totals == m_sessionTotals)
+        return;
+    m_sessionTotals = totals;
+    updateSessionTotalsLabel();
+}
+
 void MainWindow::updateWindowTitle()
 {
     // MFC ShowTransferRate (srchybrid/EmuleDlg.cpp:1147-1151). Unlike MFC the plain
@@ -1057,9 +1067,16 @@ void MainWindow::showNotification(const QString& title, const QString& message,
                                   const QString& soundFile)
 {
     m_notificationClick = nullptr;
-    // System tray popup
-    if (trayInUse() && QSystemTrayIcon::supportsMessages())
-        m_trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 5000);
+    // System tray popup: Windows drops the balloon if the shell lost our icon
+    // (NIM_ADD before Explorer's tray was up), so re-add it first
+    if (trayInUse() && QSystemTrayIcon::supportsMessages()) {
+        if (ensureTrayIconShown()) {
+            m_trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 5000);
+        } else if (!m_popupDropLogged) {
+            m_popupDropLogged = true;
+            logWarning(QStringLiteral("Pop-up not shown: tray icon not in the notification area"));
+        }
+    }
     m_lastNotification = {title, message, soundFile};
 
     if (!soundFile.isEmpty() && QFile::exists(soundFile)) {
@@ -1087,6 +1104,13 @@ void MainWindow::dragMoveEvent(QDragMoveEvent* event)
 void MainWindow::dropEvent(QDropEvent* event)
 {
 #ifdef EMULE_HAVE_HOSTER_JD
+    // Hoster downloads off: the drop is taken, and the prompt names the switch
+    if (m_hosterPanel && !gui::containerDropFiles(event->mimeData()).isEmpty() && !thePrefs.hosterDownloadsOn()) {
+        event->acceptProposedAction();
+        // not modal inside the drop: the drag source waits for it
+        QTimer::singleShot(0, this, [this] { std::ignore = requireHoster(); });
+        return;
+    }
     if (m_hosterPanel && !isTabHidden(TabHoster) && m_hosterPanel->acceptContainerDrop(event->mimeData())) {
         switchToTab(TabHoster);
         event->acceptProposedAction();
@@ -1109,6 +1133,12 @@ void MainWindow::dropEvent(QDropEvent* event)
 #endif
     if (m_usenetPanel == nullptr)
         return;
+    // Usenet off: same as BitTorrent above
+    if (!gui::nzbDropCandidates(event->mimeData()).isEmpty() && !thePrefs.usenetEnabled()) {
+        event->acceptProposedAction();
+        QTimer::singleShot(0, this, [this] { std::ignore = requireUsenet(); });
+        return;
+    }
     if (!m_usenetPanel->acceptNzbDrop(event->mimeData()))
         return;
 
@@ -1488,6 +1518,9 @@ void MainWindow::onClipboardChanged()
             if (!m_ipc || !m_ipc->isConnected())
                 return;   // as below: the reconnect re-check picks it up
             m_lastClipboardContents = text;
+            // a room we're in: nothing to do, no tab, no notice (copying links to invite is common)
+            if (m_ircPanel->isEd3kRoomMember(room))
+                return;
             if (m_ircPanel->openEd3kRoomLink(room))
                 switchToTab(TabIRC);
             return;
@@ -1597,7 +1630,7 @@ void MainWindow::buildToolsMenu()
     // icon and one enabled state. addAction(QAction*) does not take ownership,
     // and this menu is cleared and rebuilt on every aboutToShow, so re-adding it
     // is safe.
-    if (m_usenetPanel)
+    if (m_usenetPanel && !isTabHidden(TabUsenet))
         m_toolsMenu->addAction(m_usenetPanel->addNzbUrlAction());
 #ifdef EMULE_HAVE_BITTORRENT
     if (m_torrentPanel && !isTabHidden(TabTorrents))
@@ -2439,6 +2472,11 @@ void MainWindow::setupStatusBar()
     sb->addPermanentWidget(m_statusFreeSpace);
     connect(m_pages, &QStackedWidget::currentChanged, this, &MainWindow::updateFreeSpaceLabel);
 
+    // Session totals of all networks (#223, as qBittorrent's status bar)
+    m_statusSessionTotals = new QLabel(this);
+    m_statusSessionTotals->hide();
+    sb->addPermanentWidget(m_statusSessionTotals);
+
     // Users/Files indicator with green person icon (matching MFC status bar)
     m_statusUsersWidget = new QWidget(this);
     auto* usersLayout = new QHBoxLayout(m_statusUsersWidget);
@@ -2652,22 +2690,20 @@ void MainWindow::setupPages()
     connect(m_ircPanel, &IrcPanel::roomFileOpened, this, [this](const QString& name, const QByteArray& bytes) {
         switch (MediaSniff::fileKind(bytes, name)) {
         case MediaSniff::FileKind::Nzb:
-            if (!thePrefs.usenetEnabled()) {
-                QMessageBox::information(this, tr("Add NZB"), tr("Usenet is off. Turn it on in Options to add %1.").arg(name));
+            if (!requireUsenet())
                 return;
-            }
             switchToTab(TabUsenet);
             m_usenetPanel->promptAddNzbData(name, bytes);
             return;
         case MediaSniff::FileKind::Dlc:
 #ifdef EMULE_HAVE_HOSTER_JD
-            if (m_hosterPanel && thePrefs.hosterDownloadsOn()) {
+            if (m_hosterPanel && requireHoster()) {
                 switchToTab(TabHoster);
                 m_hosterPanel->openContainerData(name, bytes);
-                return;
             }
+#else
+            QMessageBox::information(this, tr("Open DLC"), tr("Built without the hoster resolver, cannot open %1.").arg(name));
 #endif
-            QMessageBox::information(this, tr("Open DLC"), tr("Hoster downloads are off. Turn them on in Options to open %1.").arg(name));
             return;
         case MediaSniff::FileKind::Torrent:
 #ifdef EMULE_HAVE_BITTORRENT
@@ -3319,24 +3355,34 @@ void MainWindow::showLowIdHint()
 
 bool MainWindow::requireBitTorrent()
 {
-    if (thePrefs.btEnabled())
-        return true;
-    QMessageBox box(QMessageBox::Information, tr("BitTorrent Disabled"),
-                    tr("BitTorrent is turned off, so torrents and magnet links cannot be added.\n\n"
-                       "Turn it on under Options → BitTorrent, then try again."),
-                    QMessageBox::Cancel, this);
-    auto* openOptions = box.addButton(tr("Open Options"), QMessageBox::AcceptRole);
-    box.setDefaultButton(openOptions);
-    box.exec();
-    if (box.clickedButton() == openOptions)
-        showOptionsDialog(OptionsDialog::PageBitTorrent);
-    return false;
+    return requireFeature(thePrefs.btEnabled(), tr("BitTorrent Disabled"),
+                          tr("BitTorrent is turned off, so torrents and magnet links cannot be added.\n\n"
+                             "Turn it on under Options → BitTorrent, then try again."),
+                          OptionsDialog::PageBitTorrent);
+}
+
+bool MainWindow::requireUsenet()
+{
+    return requireFeature(thePrefs.usenetEnabled(), tr("Usenet Disabled"),
+                          tr("Usenet is turned off, so NZB files and links cannot be added.\n\n"
+                             "Turn it on under Options → Usenet, then try again."),
+                          OptionsDialog::PageUsenet);
+}
+
+bool MainWindow::requireHoster()
+{
+    return requireFeature(thePrefs.hosterDownloadsOn(), tr("Hoster Downloads Disabled"),
+                          tr("Hoster downloads are turned off, so link containers cannot be opened.\n\n"
+                             "Turn them on under Options → ed3k → Hoster, then try again."),
+                          OptionsDialog::PageEd3kHoster);
 }
 
 bool MainWindow::isTabHidden(int tab)
 {
     if (singleTransferHides(tab))
         return true;
+    if (tab == TabUsenet)
+        return !thePrefs.usenetEnabled();
     if (tab == TabTorrents)
         return !thePrefs.btEnabled();
     // hoster downloads run on the ed3k node: shown while both are on
@@ -3523,6 +3569,40 @@ void MainWindow::updateFreeSpaceLabel()
     m_statusFreeSpace->show();
 }
 
+void MainWindow::updateSessionTotalsLabel()
+{
+    if (!m_statusSessionTotals)
+        return;
+    if (!thePrefs.showStatusBarSessionTotals() || m_sessionTotals.isEmpty()) {
+        m_statusSessionTotals->hide();
+        return;
+    }
+    static constexpr std::pair<QLatin1StringView, const char*> kNetworks[] = {
+        {QLatin1StringView("ed2k"), QT_TR_NOOP("eD2K")},
+        {QLatin1StringView("ed3k"), QT_TR_NOOP("ed3k")},
+        {QLatin1StringView("bt"), QT_TR_NOOP("BitTorrent")},
+        {QLatin1StringView("usenet"), QT_TR_NOOP("Usenet")},
+        {QLatin1StringView("hoster"), QT_TR_NOOP("Hoster")},
+    };
+    qint64 down = 0;
+    qint64 up = 0;
+    QStringList lines;
+    for (const auto& [key, name] : kNetworks) {
+        const QCborArray pair = m_sessionTotals.value(QString(key)).toArray();
+        const qint64 d = pair.at(0).toInteger();
+        const qint64 u = pair.at(1).toInteger();
+        down += d;
+        up += u;
+        if (d > 0 || u > 0)   // a network that moved nothing would only be noise
+            lines.append(tr("%1: Down %2 / Up %3").arg(tr(name), formatByteSize(d), formatByteSize(u)));
+    }
+    m_statusSessionTotals->setText(tr("Session: Down %1 / Up %2")
+                                       .arg(formatByteSize(down), formatByteSize(up)));
+    m_statusSessionTotals->setToolTip(lines.isEmpty() ? tr("Nothing transferred since the core started")
+                                                      : lines.join(QLatin1Char('\n')));
+    m_statusSessionTotals->show();
+}
+
 // MFC CemuleDlg::ShowUserCount: "Users:ed2k(kad)|Files:ed2k(kad)" when both are up
 void MainWindow::updateNetworkStatsLabel()
 {
@@ -3587,6 +3667,19 @@ bool MainWindow::ensureTrayIconShown()
 #else
     return true;
 #endif
+}
+
+bool MainWindow::requireFeature(bool on, const QString& title, const QString& text, int page)
+{
+    if (on)
+        return true;
+    QMessageBox box(QMessageBox::Information, title, text, QMessageBox::Cancel, this);
+    auto* openOptions = box.addButton(tr("Open Options"), QMessageBox::AcceptRole);
+    box.setDefaultButton(openOptions);
+    box.exec();
+    if (box.clickedButton() == openOptions)
+        showOptionsDialog(page);
+    return false;
 }
 
 } // namespace eMule

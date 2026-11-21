@@ -6,6 +6,7 @@
 #include "utils/Appearance.h"
 #include "controls/KadContactsModel.h"
 
+#include <QFontMetrics>
 #include <QPainter>
 #include <QPaintEvent>
 
@@ -17,7 +18,6 @@ namespace eMule {
 KadContactHistogram::KadContactHistogram(QWidget* parent)
     : QWidget(parent)
 {
-    setMinimumSize(140, 50);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_buckets.fill(0);
 }
@@ -49,12 +49,18 @@ void KadContactHistogram::clear()
 
 QSize KadContactHistogram::minimumSizeHint() const
 {
-    return {140, 50};
+    // top + bottom label rows and a plot that fits "Contacts" over the "0" label;
+    // a fixed 50 px overlapped them at large text sizes
+    QFont labelFont;
+    labelFont.setPixelSize(scaledPixelSize(10));
+    labelFont.setBold(true);
+    const int labelH = QFontMetrics(labelFont).height();
+    return {140, std::max(50, 5 * labelH)};
 }
 
 QSize KadContactHistogram::sizeHint() const
 {
-    return {280, 80};
+    return {280, std::max(80, minimumSizeHint().height() + 20)};
 }
 
 // ---------------------------------------------------------------------------

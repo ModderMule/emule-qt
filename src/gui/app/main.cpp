@@ -253,30 +253,32 @@ bool ipcPortFree(const QString& host, uint16_t port)
 void claimFreePorts(const QString& configDir, bool firstStart)
 {
     using eMule::Preferences;
-    if (eMule::AppConfig::coreRunningFor(configDir))
-        return;   // ours holds them
+    if (eMule::AppConfig::coreRunningFor(configDir)) {
+        // Ours holds them; it may have moved off a reserved IPC port since we loaded
+        const uint16_t saved = eMule::Preferences::savedIpcPort(eMule::thePrefs.filePath());
+        if (saved != 0 && saved != eMule::thePrefs.ipcPort()) {
+            eMule::logInfo(QStringLiteral("The core moved its IPC port to %1").arg(saved));
+            eMule::thePrefs.setIpcPort(saved);
+        }
+        return;
+    }
     bool changed = false;
 
     const QString host = eMule::thePrefs.ipcListenAddress();
     if (const uint16_t taken = eMule::thePrefs.ipcPort(); !ipcPortFree(host, taken)) {
         const QList<uint16_t> ownPorts{eMule::thePrefs.port(), eMule::thePrefs.udpPort(),
                                        eMule::thePrefs.webServerPort(), eMule::thePrefs.btListenPort()};
-        uint16_t freePort = 0;
-        for (uint32_t port = taken + 1u; port <= 65535u && port <= taken + 100u; ++port) {
-            if (!ownPorts.contains(static_cast<uint16_t>(port))
-                && ipcPortFree(host, static_cast<uint16_t>(port))) {
-                freePort = static_cast<uint16_t>(port);
-                break;
-            }
-        }
-        if (freePort != 0) {
-            eMule::logInfo(QStringLiteral("IPC port %1 is taken by another program, using %2")
-                               .arg(taken).arg(freePort));
+        // Windows reserved ranges come in blocks of 100: past them, then random
+        const bool reserved = Preferences::ipcPortReserved(host, taken);
+        const QString why = reserved ? QStringLiteral("reserved by the system")
+                                     : QStringLiteral("taken by another program");
+        if (const uint16_t freePort = Preferences::freeIpcPort(host, taken, ownPorts); freePort != 0) {
+            eMule::logInfo(QStringLiteral("IPC port %1 is %2, using %3").arg(taken).arg(why).arg(freePort));
             eMule::thePrefs.setIpcPort(freePort);
             changed = true;
         } else {
-            eMule::logWarning(QStringLiteral("IPC port %1 is taken by another program, "
-                                             "and no free port follows it").arg(taken));
+            eMule::logWarning(QStringLiteral("IPC port %1 is %2, and no free port found")
+                                  .arg(taken).arg(why));
         }
     }
 
@@ -1527,11 +1529,14 @@ int main(int argc, char* argv[])
                                     + val(QLatin1StringView("rateUpBt"));
                 const double downRate = val(QLatin1StringView("rateDown"))
                                       + val(QLatin1StringView("rateDownUsenet"))
-                                      + val(QLatin1StringView("rateDownBt"));
+                                      + val(QLatin1StringView("rateDownBt"))
+                                      + val(QLatin1StringView("rateDownEd3k"));
                 mainWindow.updateTransferRates(
                     upRate, downRate,
                     val(QLatin1StringView("upOverheadRate")),
-                    val(QLatin1StringView("downOverheadRate")));
+                    val(QLatin1StringView("downOverheadRate"))
+                        + val(QLatin1StringView("rateDownEd3kOverhead")));
+                mainWindow.setSessionTotals(stats.value(QStringLiteral("sessionTotals")).toMap());
 
                 // Upload SpeedSense pane; absent while the option is off
                 const QCborValue uss = stats.value(QStringLiteral("uss"));

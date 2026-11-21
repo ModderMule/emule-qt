@@ -307,8 +307,10 @@ void TorrentPanel::setupUi()
 
     m_addFileAction = toolbar->addAction(menuIcon("ListAdd.ico"), tr("Add Torrent…"), this,
                                          &TorrentPanel::promptAddTorrentFiles);
-    m_addMagnetAction = toolbar->addAction(menuIcon("DirectDownload.ico"), tr("Add Magnet Link…"),
-                                           this, [this] { promptAddMagnets(); });
+    m_addMagnetAction = toolbar->addAction(menuIcon("DirectDownload.ico"), tr("Add Magnet Link…"));
+    // Queued, also in the Tools menu: see UsenetPanel's Add NZB from URL
+    connect(m_addMagnetAction, &QAction::triggered, this, [this] { promptAddMagnets(); },
+            Qt::QueuedConnection);
     toolbar->addSeparator();
     m_pauseAction = toolbar->addAction(menuIcon("Pause.ico"), tr("Pause"), this,
                                        [this] { sendForSelection(IpcMsgType::PauseTorrent); });
@@ -380,10 +382,13 @@ void TorrentPanel::setupUi()
                               TorrentListModel::ColProgress, TorrentListModel::ColDownSpeed,
                               TorrentListModel::ColUpSpeed, TorrentListModel::ColSeeds,
                               TorrentListModel::ColPeers, TorrentListModel::ColRatio,
-                              TorrentListModel::ColAdded});
+                              TorrentListModel::ColAdded, TorrentListModel::ColUploaded,
+                              TorrentListModel::ColSessionUploaded, TorrentListModel::ColDownloaded});
     // After setModel(): a header without sections cannot take a restore
     view->bindColumns(QStringLiteral("torrentList"),
-                      {260, 80, 80, 150, 110, 80, 80, 75, 75, 50, 90, 120});
+                      {260, 80, 80, 150, 110, 80, 80, 75, 75, 50, 90, 120, 90, 90, 90},
+                      {TorrentListModel::ColUploaded, TorrentListModel::ColSessionUploaded,
+                       TorrentListModel::ColDownloaded});
 
     connect(m_model, &TorrentListModel::filesWanted, this, &TorrentPanel::fetchFiles);
     connect(m_view, &QTreeView::expanded, this, [this](const QModelIndex& index) {

@@ -13,6 +13,7 @@
 #include <functional>
 
 class QObject;
+class QWidget;
 
 namespace eMule {
 class IpcClient;
@@ -25,11 +26,16 @@ namespace eMule::FolderLister {
 
 using Rows = std::function<void(bool ok, const QList<FolderEntry>& rows, const QString& home)>;
 
-/// Folders right below @p path ("" = drives). A local core answers at once, a remote
-/// one later; @p done is dropped when @p ctx is gone.
+/// Folders right below @p path ("" = drives). Always answers later: a local core's
+/// disk is read on a worker thread, a remote one over IPC; @p done runs on the GUI
+/// thread and is dropped when @p ctx is gone.
 void list(IpcClient* ipc, const QString& path, QObject* ctx, Rows done);
 
 /// @p root and every folder below it (Ctrl+click share), as list()
 void tree(IpcClient* ipc, const QString& root, QObject* ctx, std::function<void(const QStringList&)> done);
+
+/// Asks for a UNC folder (MFC OnBnClickedAddUNC). "//server/share/..." with '/'
+/// separators, "" when cancelled or refused.
+[[nodiscard]] QString askUncShare(QWidget* parent);
 
 } // namespace eMule::FolderLister

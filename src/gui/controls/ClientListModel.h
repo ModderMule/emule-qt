@@ -22,6 +22,7 @@ namespace eMule {
 /// The Obtained Parts bar of one uploading or queued client (MFC DrawUpStatusBar).
 struct UpStatusBar {
     int64_t fileSize = 0;                                 ///< 0 = nothing to draw
+    int64_t partSize = 0;                                 ///< bytes per part; 0 = PARTSIZE (BT: piece length)
     QByteArray parts;                                     ///< one byte per part, non-zero = peer has it
     std::vector<int> nextParts;                           ///< whole parts about to be sent
     std::vector<std::pair<int64_t, int64_t>> sentRanges;  ///< inclusive byte ranges already sent
@@ -154,12 +155,15 @@ protected:
 private:
     /// Uploading and On Queue append Uploaded, Downloaded, Ratio, Session Ratio
     /// after Shared List, so saved layouts keep their indices. Uploading adds Slot.
-    enum ExtraColumn { ExtraUploaded = 0, ExtraDownloaded, ExtraRatio, ExtraSessionRatio, ExtraSlot, ExtraCount };
+    /// Then Software (MorphXT's client software column), shown without ext controls.
+    enum ExtraColumn { ExtraUploaded = 0, ExtraDownloaded, ExtraRatio, ExtraSessionRatio, ExtraSlot, ExtraSoftware, ExtraCount };
 
     /// Columns up to and including Shared List.
     [[nodiscard]] int baseColumnCount() const;
     /// Columns after Shared List in this mode.
     [[nodiscard]] int extraColumnCount() const;
+    /// The ExtraColumn at offset @p extra after Shared List (On Queue has no Slot).
+    [[nodiscard]] int extraKind(int extra) const;
     [[nodiscard]] QVariant extraData(const ClientRow& c, int extra, int role) const;
     [[nodiscard]] QVariant displayData(const ClientRow& c, int column) const;
     [[nodiscard]] QVariant sortData(const ClientRow& c, int column) const;

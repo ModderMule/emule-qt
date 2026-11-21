@@ -139,7 +139,11 @@ void tst_SharedFileLargeSet::hashExternalPath()
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
 
+    QSignalSpy scannedSpy(&shared, &SharedFileList::scanned);
     shared.reload();
+    // the scan runs off-thread: until it lands nothing is hashing yet
+    if (scannedSpy.isEmpty())
+        QVERIFY(scannedSpy.wait(60000));
 
     // Wait for all hashing to finish (not for an exact count — duplicates reduce it)
     constexpr int timeoutMs = 240000;

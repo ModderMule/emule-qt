@@ -8,6 +8,9 @@
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kFriends.h"
+#include "app/AppContext.h"
+#include "friends/FriendList.h"
+#include "prefs/Preferences.h"
 
 #include <QHostAddress>
 #include <QObject>
@@ -60,6 +63,7 @@ QCborMap friendsToCbor(ed3k::Ed3kFriends& f)
             {QStringLiteral("asking"), row.asking},
             {QStringLiteral("heldLink"), row.heldLink},
             {QStringLiteral("lastSeen"), row.lastSeen},
+            {QStringLiteral("friendSlot"), row.friendSlot},
         };
         if (row.addr)
             m.insert(QStringLiteral("addr"), addressText(*row.addr));
@@ -114,6 +118,22 @@ void answer(const IpcMessage& msg, ed3k::Ed3kFriends& f, const std::function<voi
         r ? ok() : fail(r.error());
         break;
     }
+    case IpcMsgType::SetEd3kFriendSlot: {
+        const auto key = keyArg();
+        if (!key) {
+            fail(ffi::Error::Argument);
+            break;
+        }
+        const bool on = msg.fieldBool(1);
+        const auto r = f.setFriendSlot(*key, on);
+        // one friend slot for both networks, as MFC has one (FriendListCtrl.cpp:218-224)
+        if (r && on && theApp.friendList) {
+            theApp.friendList->removeAllFriendSlots();
+            theApp.friendList->save(thePrefs.configDir());
+        }
+        r ? ok() : fail(r.error());
+        break;
+    }
     case IpcMsgType::GetEd3kMyFriendLink:
         if (auto link = f.myLink(msg.fieldBool(0), msg.fieldString(1)))
             ok(*link);
@@ -153,6 +173,14 @@ void answer(const IpcMessage& msg, ed3k::Ed3kFriends& f, const std::function<voi
 void setFriends(ed3k::Ed3kFriends* friends)
 {
     s_friends = friends;
+}
+
+void clearFriendSlot()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (s_friends)
+        s_friends->clearFriendSlot();
+#endif
 }
 
 bool isFriendsRequest(IpcMsgType type)

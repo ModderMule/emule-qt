@@ -28,6 +28,7 @@ struct FrameGrabRequest {
     bool reduceColor = false;
     uint16 maxWidth = 0;       // 0 = no limit
     double spanFraction = 1.0; // frames only from the first part of the clip (a fetched head)
+    std::vector<qint64> positionsMs; // non-empty: exactly these, instead of frameCount/start/span
     uint16 loadTimeoutMs = 10'000;
 };
 

@@ -370,6 +370,15 @@ public:
     [[nodiscard]] uint32 maxDownload() const;
     void setMaxDownload(uint32 val);
 
+    /// Alternative speed ("turtle", KB/s, 0 = no limit): while on, maxUpload() /
+    /// maxDownload() return these over the scheduler and the stored pair. Saved.
+    [[nodiscard]] bool altSpeed() const;
+    void setAltSpeed(bool on);
+    [[nodiscard]] uint32 altSpeedUp() const;
+    void setAltSpeedUp(uint32 kb);
+    [[nodiscard]] uint32 altSpeedDown() const;
+    void setAltSpeedDown(uint32 kb);
+
     /// Limits a running schedule puts over the stored ones (MFC CScheduler).
     /// Getters such as maxUpload() return the scheduled value while one is set;
     /// setters, save() and toIpcMap() use the stored value, so a schedule never
@@ -1488,6 +1497,10 @@ public:
     /// Left out: kept out also inside incoming.
     [[nodiscard]] int btShareMode() const;
     void setBtShareMode(int val);
+    /// Deleting the last wanted file of a torrent in Shared Files removes the torrent
+    /// (its other files stay). YAML only (bittorrent.removeEmptiedTorrent). Default on.
+    [[nodiscard]] bool btRemoveEmptiedTorrent() const;
+    void setBtRemoveEmptiedTorrent(bool val);
 
     /// A meta search file row (one file of a torrent) downloads only that file; the
     /// others start skipped. Off: the whole torrent. Default on.
@@ -1571,6 +1584,9 @@ public:
     void setBtI2pTunnelLength(int val);
     [[nodiscard]] int btI2pTunnelQuantity() const;
     void setBtI2pTunnelQuantity(int val);
+    /// Torrent Creator's public tracker drop-down: defaults + user-added, minus removed.
+    [[nodiscard]] QStringList btPublicTrackers() const;
+    void setBtPublicTrackers(const QStringList& val);
     /// Announce URLs added to I2P torrents (and to all while mixed).
     [[nodiscard]] QStringList btI2pTrackers() const;
     void setBtI2pTrackers(const QStringList& val);
@@ -1601,6 +1617,8 @@ public:
     void setBtI2pStatusPagePassword(const QString& val);
     /// The public I2P trackers of issue #118 (http only: no UDP over SAM in libtorrent).
     [[nodiscard]] static QStringList defaultBtI2pTrackers();
+    /// Public clearnet trackers offered by the Torrent Creator, most reliable first.
+    [[nodiscard]] static QStringList defaultBtPublicTrackers();
 
     static constexpr int kBtI2pOff = 0;
     static constexpr int kBtI2pBundled = 1;
@@ -1751,13 +1769,14 @@ public:
     /// the anonymous key while on; files keep their key. Default off; live. IPC/REST `ed3kHide`.
     [[nodiscard]] bool ed3kHide() const;
     void setEd3kHide(bool val);
-    /// Hops 0 to 3 for every use while hiding (0 = deniable, not hidden; only while hopping,
-    /// else 1 is used: hops.md §2.6). Default 1. `ed3kHops`.
+    /// HTTP sources (ws=/wh=) of anonymous downloads through the report proxy alone, never
+    /// direct (hops.md §1); without that proxy they are not used. Default off; live. `ed3kAnonHttp`.
+    [[nodiscard]] bool ed3kAnonHttp() const;
+    void setEd3kAnonHttp(bool val);
+    /// Hops 0 to 3 for every use while hiding (0 = deniable, not hidden: hops.md §2.6).
+    /// Default 1. `ed3kHops`. Forwarding for others is always on while hiding (§1, §5).
     [[nodiscard]] int ed3kHops() const;
     void setEd3kHops(int val);
-    /// Forward for others' paths while hiding (hops.md §5). Default on. `ed3kHopping`.
-    [[nodiscard]] bool ed3kHopping() const;
-    void setEd3kHopping(bool val);
     /// Share of the upload limit for others' paths, 1 to 100 %. Default 25. `ed3kHopShare`.
     [[nodiscard]] int ed3kHopShare() const;
     void setEd3kHopShare(int val);
@@ -2006,6 +2025,15 @@ public:
     /// Where a client on this machine dials a core listening at @p value: a wildcard
     /// ("*", 0.0.0.0, ::), "" or a name over loopback.
     [[nodiscard]] static QString ipcDialHostOf(const QString& value);
+    /// The OS refuses TCP @p port on ipcBindAddressOf(@p host) for access, not use:
+    /// a Windows excluded range (Hyper-V, WSL2, Docker), a privileged port.
+    [[nodiscard]] static bool ipcPortReserved(const QString& host, uint16 port);
+    /// A port the IPC server can listen on at @p host: the 300 after @p from first,
+    /// then random (Windows reserves blocks of 100). Never one of @p avoid. 0 = none.
+    [[nodiscard]] static uint16 freeIpcPort(const QString& host, uint16 from,
+                                            const QList<uint16>& avoid);
+    /// ipc.port saved in the preferences file @p filePath; 0 = none or unreadable.
+    [[nodiscard]] static uint16 savedIpcPort(const QString& filePath);
 
     /// Path to emulecored binary. Empty = search next to GUI executable.
     [[nodiscard]] QString ipcDaemonPath() const;
@@ -2032,6 +2060,11 @@ public:
     /// or a pair secret is out.
     [[nodiscard]] bool ipcTunnel() const;
     void setIpcTunnel(bool val);
+    /// ipc.upnp: map the IPC port by UPnP/NAT-PMP/PCP (needs enableUPnP and a listen address
+    /// beyond loopback). Default off: TLS and the token guard it, but it opens the core to
+    /// the Internet. Set over IPC (phone app), not by REST.
+    [[nodiscard]] bool ipcUPnP() const;
+    void setIpcUPnP(bool val);
     /// ipc.tunnelPeers: paired phones, "<node id 32 hex> <name>" each.
     [[nodiscard]] QStringList ipcTunnelPeers() const;
     void setIpcTunnelPeers(const QStringList& val);
@@ -2392,6 +2425,10 @@ public:
     /// Free space of the current window's save folder in the status bar (#165)
     [[nodiscard]] bool showStatusBarFreeSpace() const;
     void setShowStatusBarFreeSpace(bool val);
+
+    /// Session download/upload totals of all networks in the status bar (#223)
+    [[nodiscard]] bool showStatusBarSessionTotals() const;
+    void setShowStatusBarSessionTotals(bool val);
 
     [[nodiscard]] bool showCatTabInfos() const;
     void setShowCatTabInfos(bool val);

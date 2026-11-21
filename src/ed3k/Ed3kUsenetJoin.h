@@ -148,6 +148,7 @@ protected:
     [[nodiscard]] std::vector<std::uint64_t> wantedBlocks(const Download& d) const override;
     [[nodiscard]] QString downloadName(const ffi::Root& root, const Download& d) const override;
     void onFileBlock(const Download& d, const ::ed3k::event::Block& b) override;
+    bool takeLocalBlock(const Download& d, std::uint64_t offset, std::span<const std::byte> data) override;
     void onBlobFetched(const QString& owner, int member, const ::ed3k::Root& root, const QByteArray& data) override;
     void onDownloadHashes(const Download& d, const ::ed3k::Bytes& blob) override;
     [[nodiscard]] std::optional<FileRead> sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
@@ -201,6 +202,9 @@ private:
     [[nodiscard]] std::optional<QByteArray> readMember(const QString& itemId, int fileIndex, std::uint64_t offset,
                                                        std::uint32_t len) const;
     void startDownload(const QString& itemId, int fileIndex);
+    /// A block of file @p fileIndex written into its temp file and handed to the join
+    /// (ed3kBlock: its articles accepted). false: not written (sealed, gone).
+    bool writeBlock(QString itemId, int fileIndex, std::uint64_t offset, std::span<const std::byte> data);
     void onAliasFound(const ::ed3k::event::AliasFound& f);
     /// §4.2: the `nzb` search of the post id; none (no post id, searches off): the claims.
     void startPostSearch(const QString& itemId);

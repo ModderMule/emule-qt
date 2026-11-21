@@ -402,6 +402,10 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
             sendPacket(std::move(pkt));
         }
 
+        // aMule way too: the address may have moved since the login packet (or arrived
+        // only now); a server taking OP_IPV6_UPDATE gets it right after OP_IDCHANGE
+        syncServerIPv6();
+
         // Update obfuscation info on the server list entry
         if (cserver) {
             Server* listServer = listEntryFor(cserver);
@@ -1068,6 +1072,13 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     // (hello, Kad source publish, links).
     const Address publicIPv6 = theApp.publicIPv6();
     const bool sendIPv6Tag = theApp.shouldAdvertisePublicIPv6ToServer();
+    // Deliberate divergence from aMule (eNode-go agrees): aMule sends only a proven address
+    // here and an unproven one in OP_IPV6_UPDATE to a probing server (0x400000), since a
+    // non-probing server would publish it unchecked. We always send it at login so servers
+    // without 0x8000 (older eNode-go) can probe it; both servers probe the login tag too.
+    // What this connection's server holds from us; later changes go in OP_IPV6_UPDATE.
+    if (Server* cur = socket ? socket->currentServer() : nullptr)
+        cur->setIPv6Told(sendIPv6Tag ? publicIPv6 : Address{});
 
     // NAT traversal: CT_EMULE_UDPPORTS opts in to ed2k-server's hole punch (safe on any
     // server). The Lugdunum bit makes eserver hand us LowID sources, so only set it while
@@ -1590,6 +1601,33 @@ uint16 ServerConnect::loginTcpPort() const
     return mappedPort != 0 ? mappedPort : m_config.listenPort;
 }
 
+bool ServerConnect::syncServerIPv6()
+{
+    Server* live = ipv6UpdateTarget();
+    if (!live)
+        return false;
+    // Same gate as the login tag: the server needs the unproven address to probe it
+    const Address want = theApp.shouldAdvertisePublicIPv6ToServer() ? theApp.publicIPv6() : Address{};
+    if (want == live->ipv6Told())
+        return false;
+    live->setIPv6Told(want);
+    return sendIPv6Update(want, want.isNull() ? QStringLiteral("withdraw") : QStringLiteral("address changed"));
+}
+
+bool ServerConnect::ipv6PinholeOpened()
+{
+    Server* live = ipv6UpdateTarget();
+    if (!live || !(live->tcpFlags() & SrvTcpFlag::Ipv6Probe))
+        return false;
+    const Address cur = theApp.publicIPv6();
+    // Only a failed server probe of the address it holds is worth a second dial, once
+    if (cur.isNull() || !(cur == live->ipv6Told()) || live->ipv6Repeated()
+        || !theApp.publicIPv6ProbedUnreachable())
+        return false;
+    live->setIPv6Repeated();
+    return sendIPv6Update(cur, QStringLiteral("pinhole opened, probe again"));
+}
+
 void ServerConnect::finishRecheck(bool highId)
 {
     m_recheckAnswerTimer.stop();
@@ -1954,6 +1992,29 @@ ServerSocket* ServerConnect::createServerSocket(bool manualSingleConnect)
             });
 
     return socket;
+}
+
+Server* ServerConnect::ipv6UpdateTarget() const
+{
+    if (!m_connected || !m_connectedSocket || m_connectedSocket->sessionAddress().isIPv6())
+        return nullptr;
+    Server* live = m_connectedSocket->currentServer();
+    return live && live->supportsIPv6Update() ? live : nullptr;
+}
+
+bool ServerConnect::sendIPv6Update(const Address& addr, const QString& why)
+{
+    SafeMemFile data;
+    std::array<uint8, 16> raw{};
+    if (addr.isIPv6())
+        raw = addr.ipv6Bytes();
+    data.write(raw.data(), raw.size());
+    auto packet = std::make_unique<Packet>(data);
+    packet->opcode = OP_IPV6_UPDATE;
+    logInfo(QStringLiteral("IPv6: telling %1 our address (%2): %3")
+                .arg(m_connectedSocket->currentServer()->name(), why,
+                     addr.isNull() ? QStringLiteral("none") : addr.toString()));
+    return sendPacket(std::move(packet));
 }
 
 } // namespace eMule

@@ -245,6 +245,22 @@ private:
     ClientList* m_prev;
 };
 
+/// theApp.sharedFileList for a scope: a failed QVERIFY returns early, and a later test
+/// would read the destroyed list (a crash in an unrelated slot).
+class GlobalSharedFileList {
+public:
+    explicit GlobalSharedFileList(SharedFileList* list) : m_prev(theApp.sharedFileList)
+    {
+        theApp.sharedFileList = list;
+    }
+    ~GlobalSharedFileList() { theApp.sharedFileList = m_prev; }
+    GlobalSharedFileList(const GlobalSharedFileList&) = delete;
+    GlobalSharedFileList& operator=(const GlobalSharedFileList&) = delete;
+
+private:
+    SharedFileList* m_prev;
+};
+
 /// Saves and restores every global the two slot gates read: the three preferences and the
 /// USS finder. Without this a slot that leaves dynUpEnabled on would silently change the
 /// verdict of every later slot in the binary.
@@ -876,7 +892,7 @@ void tst_UploadQueue::addClientToQueue_ipv6LimitIsOnePerAddress()
 void tst_UploadQueue::addClientToQueue_trackedClientsGate()
 {
     ClientList clientList;
-    theApp.clientList = &clientList;
+    GlobalClientList clientListGuard(&clientList);
 
     UploadQueue queue;
     qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
@@ -924,8 +940,6 @@ void tst_UploadQueue::addClientToQueue_trackedClientsGate()
     UpDownClient v6client;
     setupClient(v6client, v6, 0xE0, 6003);
     QVERIFY(queue.addClientToQueue(&v6client));
-
-    theApp.clientList = nullptr;
 }
 
 // emule-qt#150: a free line and only LowID peers waiting. MFC leaves the slots empty
@@ -939,11 +953,12 @@ void tst_UploadQueue::lowIdCallbackSlot_whenLineHasRoom()
     thePrefs.setMaxUpload(0);   // unlimited: the line always has room
     thePrefs.setMaxGraphUploadRate(0);
     const uint16 oldUdp = thePrefs.udpPort();
+    const auto restoreUdp = qScopeGuard([&] { thePrefs.setUdpPort(oldUdp); });
     thePrefs.setUdpPort(4672);
 
     KnownFileList knownFiles;
     SharedFileList sharedFiles(&knownFiles);
-    theApp.sharedFileList = &sharedFiles;
+    GlobalSharedFileList sharedGuard(&sharedFiles);
     uint8 fileHash[16];
     std::memset(fileHash, 0x78, sizeof(fileHash));
     auto* file = new KnownFile();
@@ -1018,8 +1033,6 @@ void tst_UploadQueue::lowIdCallbackSlot_whenLineHasRoom()
 
     queue.removeFromUploadQueue(&viaUdp);
     queue.removeFromWaitingQueue(&noRoute);
-    theApp.sharedFileList = nullptr;
-    thePrefs.setUdpPort(oldUdp);
 }
 
 // With separateIPv6Queue on and clients of both families waiting, each freed slot goes
@@ -1030,9 +1043,10 @@ void tst_UploadQueue::lowIdCallbackSlot_whenLineHasRoom()
 // wait start time), otherwise every candidate scores 0 and nobody is ever selected.
 void tst_UploadQueue::slotAssignment_alternatesBetweenFamilies()
 {
+    const auto restoreSeparate = qScopeGuard([] { thePrefs.setSeparateIPv6Queue(false); });   // the default
     KnownFileList knownFiles;
     SharedFileList sharedFiles(&knownFiles);
-    theApp.sharedFileList = &sharedFiles;
+    GlobalSharedFileList sharedGuard(&sharedFiles);
 
     uint8 fileHash[16];
     std::memset(fileHash, 0x77, sizeof(fileHash));
@@ -1147,8 +1161,6 @@ void tst_UploadQueue::slotAssignment_alternatesBetweenFamilies()
              "so alternation must not happen");
     QVERIFY(withoutPref != withPref);
 
-    thePrefs.setSeparateIPv6Queue(false);  // restore the default
-    theApp.sharedFileList = nullptr;
 }
 
 // The upload-side send point for a queued OP_CHANGE_CLIENT_IP: findBestClientInQueue()
@@ -1159,7 +1171,7 @@ void tst_UploadQueue::process_flushesPendingIPChangeForWaitingClients()
 {
     IPv6AdvertiseGuard guard;
     ClientList clientList;
-    theApp.clientList = &clientList;
+    GlobalClientList clientListGuard(&clientList);
 
     UploadQueue queue;   // deliberately no shared file list — the noFile purge stays off
 
@@ -1230,7 +1242,6 @@ void tst_UploadQueue::process_flushesPendingIPChangeForWaitingClients()
     freshPeer->close();
     stalePeer->close();
     QCoreApplication::processEvents();
-    theApp.clientList = nullptr;
 }
 
 // The timer purge: a waiter silent for MAX_PURGEQUEUETIME leaves the queue without a slot
@@ -1238,7 +1249,7 @@ void tst_UploadQueue::process_flushesPendingIPChangeForWaitingClients()
 void tst_UploadQueue::purgeStaleWaiters_dropsSilentWaitersOnly()
 {
     ClientList clientList;
-    theApp.clientList = &clientList;
+    GlobalClientList clientListGuard(&clientList);
 
     UploadQueue queue;   // no shared file list — the noFile purge stays off
 
@@ -1266,8 +1277,6 @@ void tst_UploadQueue::purgeStaleWaiters_dropsSilentWaitersOnly()
     QVERIFY(queue.isOnUploadQueue(&fresh));
     QVERIFY(!queue.isOnUploadQueue(&stale));
     QCOMPARE(stale.uploadState(), UploadState::None);
-
-    theApp.clientList = nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -1316,6 +1325,7 @@ void tst_UploadQueue::connectingSlot_registersWithThrottler()
 
     UploadBandwidthThrottler throttler;   // never started: only the list is looked at
     theApp.uploadBandwidthThrottler = &throttler;   // ~EMSocket deregisters through this
+    const auto restoreThrottler = qScopeGuard([] { theApp.uploadBandwidthThrottler = nullptr; });
 
     {
         UploadQueue queue;
@@ -1333,8 +1343,6 @@ void tst_UploadQueue::connectingSlot_registersWithThrottler()
         queue.removeFromUploadQueue(&client);
         QCOMPARE(throttler.standardListSize(), 0);
     }
-
-    theApp.uploadBandwidthThrottler = nullptr;
 }
 
 void tst_UploadQueue::connectingSlot_notGrantedASlot_staysConnecting()

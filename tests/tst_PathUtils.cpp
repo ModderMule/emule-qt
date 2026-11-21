@@ -16,6 +16,38 @@ class PathUtilsTest : public QObject {
     Q_OBJECT
 
 private slots:
+    // UNC share roots for the folder trees (#213)
+    void uncShareRoot_parsesBothSeparators()
+    {
+        using eMule::uncShareRoot;
+        QCOMPARE(uncShareRoot(QStringLiteral("\\\\nas\\media\\Movies")), QStringLiteral("//nas/media"));
+        QCOMPARE(uncShareRoot(QStringLiteral("//nas/media/")), QStringLiteral("//nas/media"));
+        QCOMPARE(uncShareRoot(QStringLiteral(" //nas/media ")), QStringLiteral("//nas/media"));
+        QVERIFY(uncShareRoot(QStringLiteral("//nas")).isEmpty());
+        QVERIFY(uncShareRoot(QStringLiteral("//nas/")).isEmpty());
+        QVERIFY(uncShareRoot(QStringLiteral("\\\\?\\C:\\long")).isEmpty());
+        QVERIFY(uncShareRoot(QStringLiteral("\\\\.\\pipe\\x")).isEmpty());
+        QVERIFY(uncShareRoot(QStringLiteral("C:/Users")).isEmpty());
+        QVERIFY(uncShareRoot(QStringLiteral("/home/me")).isEmpty());
+    }
+
+    void uncShareRoots_distinctAndSorted()
+    {
+        const QStringList dirs{QStringLiteral("//srv/b/x"), QStringLiteral("C:/share"), QStringLiteral("//SRV/B/y"),
+                               QStringLiteral("//srv/a")};
+        QCOMPARE(eMule::uncShareRoots(dirs), (QStringList{QStringLiteral("//srv/a"), QStringLiteral("//srv/b")}));
+        QCOMPARE(eMule::uncLabel(QStringLiteral("//srv/a")), QStringLiteral("\\\\srv\\a"));
+    }
+
+    void isDriveRoot_onlyDriveLetters()
+    {
+        QVERIFY(eMule::isDriveRoot(QStringLiteral("C:/")));
+        QVERIFY(eMule::isDriveRoot(QStringLiteral("d:")));
+        QVERIFY(!eMule::isDriveRoot(QStringLiteral("/")));
+        QVERIFY(!eMule::isDriveRoot(QStringLiteral("C:/Users")));
+        QVERIFY(!eMule::isDriveRoot(QStringLiteral("//nas/a")));
+    }
+
     // FileRelocate (#187)
     void relocateFile_renamesAndReplacesTheTarget()
     {

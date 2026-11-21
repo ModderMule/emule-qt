@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFileInfoList>
+#include <QSet>
 #include <QThread>
 
 #include <vector>
@@ -86,6 +87,32 @@ Par2Result Par2Verifier::verify(const QString& par2Path, const QString& basePath
 Par2Result Par2Verifier::repair(const QString& par2Path, const QString& basePath)
 {
     return run(par2Path, basePath, /*doRepair=*/true, /*renameOnly=*/false);
+}
+
+QList<Par2FoundBlock> Par2Verifier::locate(const QString& par2Path, const QString& basePath,
+                                           const QStringList& extraFiles, Par2Result* check)
+{
+    Q_UNUSED(basePath)
+    QList<Par2FoundBlock> found;
+    // par2 takes extra files only below its base path, canonical (commandline.cpp "out of
+    // basepath"; a symlink resolves to its target): the base is their common folder. The set's
+    // files need not be there, only where their blocks lie in the extras counts; no siblings
+    QStringList canonical;
+    for (const QString& f : extraFiles)
+        if (const QString c = QFileInfo(f).canonicalFilePath(); !c.isEmpty())
+            canonical << c;
+    if (canonical.isEmpty())
+        return found;
+    QString common = QFileInfo(canonical.constFirst()).path();
+    for (const QString& c : std::as_const(canonical))
+        while (!common.isEmpty() && !c.startsWith(common.endsWith(u'/') ? common : common + u'/'))
+            common = common == QStringLiteral("/") ? QString() : QFileInfo(common).path();
+    if (common.isEmpty())
+        return found;   // no common folder (two drives on Windows)
+    Par2Result r = run(par2Path, common, /*doRepair=*/false, /*renameOnly=*/false, canonical, &found, /*siblings=*/false);
+    if (check)
+        *check = std::move(r);
+    return found;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +291,36 @@ public:
         return out;
     }
 
+    /// #224: the source blocks whose data par2 found in one of @p extras (absolute paths).
+    [[nodiscard]] QList<Par2FoundBlock> foundIn(const QSet<QString>& extras) const
+    {
+        QList<Par2FoundBlock> out;
+        if (!mainpacket || sourceblocks.empty())
+            return out;
+        const qint64 blockSize = qint64(mainpacket->BlockSize());
+        const size_t recoverable = size_t(mainpacket->RecoverableFileCount());
+        for (size_t i = 0; i < sourcefiles.size() && i < recoverable; ++i) {
+            const Par2::Par2RepairerSourceFile* sf = sourcefiles[i];
+            const Par2::DescriptionPacket* dp = sf ? sf->GetDescriptionPacket() : nullptr;
+            if (!dp)
+                continue;
+            const QString name = QString::fromStdString(dp->FileName());
+            const qint64 size = qint64(dp->FileSize());
+            auto block = sf->SourceBlocks();
+            for (Par2::u32 b = 0; b < sf->BlockCount(); ++b, ++block) {
+                const Par2::DiskFile* df = block->IsSet() ? block->GetDiskFile() : nullptr;
+                if (!df)
+                    continue;
+                const QString source = QFileInfo(QString::fromStdString(df->FileName())).absoluteFilePath();
+                if (!extras.contains(source))
+                    continue;
+                const qint64 offset = qint64(b) * blockSize;
+                out.append({name, offset, qMin(blockSize, size - offset), source, qint64(block->GetOffset())});
+            }
+        }
+        return out;
+    }
+
     [[nodiscard]] bool wasCancelled() const { return cancelled; }
     [[nodiscard]] bool repairRan() const { return m_repairRan; }
 
@@ -346,7 +403,8 @@ Par2FileList Par2Verifier::listFiles(const QString& par2Path, const QString& bas
 // ---------------------------------------------------------------------------
 
 Par2Result Par2Verifier::run(const QString& par2Path, const QString& basePath,
-                             bool doRepair, bool renameOnly)
+                             bool doRepair, bool renameOnly,
+                             const QStringList& extraFiles, QList<Par2FoundBlock>* found, bool siblings)
 {
     Par2Result result;
     // Every failure logs, early exits included: a silent "PAR2 error" is
@@ -396,7 +454,15 @@ Par2Result Par2Verifier::run(const QString& par2Path, const QString& basePath,
     // Rebuilt on every call: the rename pass renames files on disk between them,
     // and par2 just skips a path it cannot open, so a reused list degrades in
     // silence.
-    const QList<QByteArray> argStorage = par2ArgV(baseArg, parArg, siblingFiles(basePath));
+    // was: par2ArgV(baseArg, parArg, siblingFiles(basePath)); now #224's extra files after them
+    QList<QByteArray> extras = siblings ? siblingFiles(basePath) : QList<QByteArray>{};
+    QSet<QString> extraSet;
+    for (const QString& f : extraFiles) {
+        const QString abs = QFileInfo(f).absoluteFilePath();
+        extraSet.insert(abs);
+        extras.append(abs.toUtf8());
+    }
+    const QList<QByteArray> argStorage = par2ArgV(baseArg, parArg, extras);
 
     std::vector<const char*> argv;
     argv.reserve(size_t(argStorage.size()));
@@ -445,6 +511,8 @@ Par2Result Par2Verifier::run(const QString& par2Path, const QString& basePath,
 
         result = repairer.snapshot();
         result.message = QString::fromStdString(serr.str()).trimmed();
+        if (found)
+            *found = repairer.foundIn(extraSet);
 
         if (repairer.wasCancelled()) {
             result.outcome = Par2Outcome::Cancelled;
@@ -503,12 +571,16 @@ Par2FileList Par2Verifier::listFiles(const QString& par2Path, const QString& bas
 }
 
 Par2Result Par2Verifier::run(const QString& par2Path, const QString& basePath,
-                             bool doRepair, bool renameOnly)
+                             bool doRepair, bool renameOnly,
+                             const QStringList& extraFiles, QList<Par2FoundBlock>* found, bool siblings)
 {
+    Q_UNUSED(siblings)
     Q_UNUSED(par2Path)
     Q_UNUSED(basePath)
     Q_UNUSED(doRepair)
     Q_UNUSED(renameOnly)
+    Q_UNUSED(extraFiles)
+    Q_UNUSED(found)
 
     Par2Result result;
     result.outcome = Par2Outcome::Unavailable;

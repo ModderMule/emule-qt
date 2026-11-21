@@ -159,6 +159,8 @@ private slots:
     void closedRoomAdmitRoundTrip();
     void banDropsPosts();
     void roomsAcrossRestart();
+    void ownerWithLostMemberKeyIsModeratorAgain();
+    void starFollowsCurrentMods();
     // batch 13
     void replyRoundTripShowsTheQuotedLine();
     void muteIsKeptAndHidesPosts();
@@ -509,6 +511,53 @@ void tst_Ed3kRooms::roomsAcrossRestart()
     info.append(QCborArray{Ed3kRooms::keyText(memberKey)});
     QVERIFY(ask(ra.get(), info).fieldBool(0));
     QTRY_COMPARE_WITH_TIMEOUT(rb.find(*room)->title, QStringLiteral("Kept, renamed"), 30000);
+}
+
+// owner restarts without its member key file (cleanup): the new member key goes into the mods
+void tst_Ed3kRooms::ownerWithLostMemberKeyIsModeratorAgain()
+{
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    const std::uint16_t aPort = a.udpPort();
+    Ed3kRooms ra(a);
+    const IpcMessage made = create(ra, QStringLiteral("Mine"), 0, QStringLiteral("owner"));
+    QVERIFY(made.fieldBool(0));
+    const auto room = Ed3kRooms::roomFrom(made.fieldMap(1).value(QStringLiteral("room")).toString());
+    QVERIFY(room.has_value());
+    const auto oldKey = ra.find(*room)->memberKey;
+    QVERIFY(ra.find(*room)->isModerator(oldKey));
+
+    a.stop();
+    QVERIFY(QFile::remove(QDir(a.stateDir()).filePath(QStringLiteral("rooms/%1.member").arg(hexOf(*room)))));
+    QVERIFY(a.start(loopback(da.path(), aPort)));
+    const auto* again = ra.find(*room);
+    QVERIFY(again && again->owner);
+    QVERIFY(again->memberKey != oldKey);
+    QTRY_VERIFY_WITH_TIMEOUT(ra.find(*room)->isModerator(ra.find(*room)->memberKey), 10000);
+    QVERIFY(ra.find(*room)->isModerator(oldKey));   // only added, nothing dropped
+}
+
+// §6 star: a post stored without it gets it once its author is a moderator (and redraws)
+void tst_Ed3kRooms::starFollowsCurrentMods()
+{
+    eMule::Ed3kRoomTab tab(QStringLiteral("00"), [](const QString&) {},
+        [](const eMule::Ed3kRoomTab::Post& p, const QString&, bool, const QString&) {
+            return (p.moderator ? QStringLiteral("STAR ") : QString()) + p.text.toHtmlEscaped();
+        });
+    eMule::Ed3kRoomTab::Post p;
+    p.id = QStringLiteral("01");
+    p.author = QStringLiteral("newkey");
+    p.text = QStringLiteral("hello");
+    tab.setPosts({p});
+    const auto shown = [&] { return tab.log()->document()->toPlainText(); };
+    QVERIFY(shown().contains(QStringLiteral("hello")));
+    QVERIFY(!shown().contains(QStringLiteral("STAR")));
+    tab.setRow(QCborMap{{QStringLiteral("mods"), QCborArray{QStringLiteral("newkey")}}});
+    QVERIFY(shown().contains(QStringLiteral("STAR hello")));
+    tab.setRow(QCborMap{{QStringLiteral("mods"), QCborArray{}}});
+    QVERIFY(!shown().contains(QStringLiteral("STAR")));
 }
 
 // §2.5: reply_to round trip; the post shows a quoted line of its post, or that it answers

@@ -2,6 +2,9 @@
 #include "controls/ContactsGraph.h"
 #include "utils/Appearance.h"
 
+#include <algorithm>
+
+#include <QFontMetrics>
 #include <QPainter>
 #include <QPaintEvent>
 
@@ -11,7 +14,6 @@ namespace eMule {
 ContactsGraph::ContactsGraph(QWidget* parent)
     : QWidget(parent)
 {
-    setMinimumSize(140, 80);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 }
 
@@ -34,12 +36,15 @@ void ContactsGraph::clearSamples()
 
 QSize ContactsGraph::minimumSizeHint() const
 {
-    return {140, 80};
+    // title + plot of a few label lines + x label: overlapped at large text sizes
+    const Margins m = margins();
+    return {std::max(140, m.labelW + 100), std::max(80, m.top + m.labelH + 4 * m.labelH)};
 }
 
 QSize ContactsGraph::sizeHint() const
 {
-    return {180, 100};
+    const QSize min = minimumSizeHint();
+    return {std::max(180, min.width()), std::max(100, min.height() + 20)};
 }
 
 void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
@@ -57,10 +62,9 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
     p.drawRect(r.adjusted(0, 0, -1, -1));
 
     // Leave margin for axis labels
-    const int labelW = 25;
-    const int labelH = 14;
-    const QRect plotArea(r.left() + labelW, r.top() + 4,
-                         r.width() - labelW - 4, r.height() - labelH - 4);
+    const auto [labelW, labelH, top] = margins();
+    const QRect plotArea(r.left() + labelW, r.top() + top,
+                         r.width() - labelW - 4, r.height() - labelH - top);
 
     if (plotArea.width() < 10 || plotArea.height() < 10)
         return;
@@ -69,22 +73,20 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
     const int yMax = ((m_peakValue + 4) / 5) * 5;
 
     // Draw Y-axis labels
-    QFont labelFont;
-    labelFont.setPointSize(scaledPointSize(7));
+    const QFont labelFont = this->labelFont();
     p.setFont(labelFont);
     p.setPen(Qt::darkGray);
-    p.drawText(QRect(0, plotArea.top() - 6, labelW - 2, 12),
+    p.drawText(QRect(0, plotArea.top() - labelH / 2, labelW - 2, labelH),
                Qt::AlignRight | Qt::AlignVCenter, QString::number(yMax));
-    p.drawText(QRect(0, plotArea.bottom() - 6, labelW - 2, 12),
+    p.drawText(QRect(0, plotArea.bottom() - labelH / 2, labelW - 2, labelH),
                Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("0"));
 
     // Draw "Contacts" title
     p.setPen(palette().color(QPalette::Text));
-    QFont titleFont;
-    titleFont.setPointSize(scaledPointSize(7));
+    QFont titleFont = labelFont;
     titleFont.setBold(true);
     p.setFont(titleFont);
-    p.drawText(QRect(plotArea.left(), r.top(), plotArea.width(), 12),
+    p.drawText(QRect(plotArea.left(), r.top(), plotArea.width(), labelH),
                Qt::AlignRight, tr("Contacts"));
 
     // X-axis label
@@ -129,6 +131,27 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
             p.fillRect(QRect(x, plotArea.bottom() - barH, 1, barH), barColorDark);
     }
 
+}
+
+// ---------------------------------------------------------------------------
+// private
+// ---------------------------------------------------------------------------
+
+QFont ContactsGraph::labelFont()
+{
+    QFont font;
+    font.setPointSize(scaledPointSize(7));
+    return font;
+}
+
+ContactsGraph::Margins ContactsGraph::margins() const
+{
+    QFont bold = labelFont();
+    bold.setBold(true);
+    const QFontMetrics fm(labelFont());
+    const int labelH = std::max(QFontMetrics(bold).height(), fm.height());
+    // y labels up to 4 digits; plot starts below the title's upper half
+    return {fm.horizontalAdvance(QStringLiteral("8888")) + 4, labelH, std::max(4, labelH / 2 + 2)};
 }
 
 } // namespace eMule

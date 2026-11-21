@@ -10,6 +10,7 @@
 #include "files/KadPublishStore.h"
 #include "files/KnownFileList.h"
 #include "files/PublishKeywordList.h"
+#include "files/ShareableFile.h"
 #include "files/SharedDirWatcher.h"   // ListedFile
 #include "files/SideHasher.h"
 #include "protocol/Tag.h"
@@ -209,7 +210,7 @@ public:
     /// (srchybrid/SharedFileList.cpp:1381-1386), there in one blocking loop.
     /// @return number of files queued.
     int rebuildMetaData();
-    [[nodiscard]] bool isRebuildingMetaData() const { return !m_metaRebuildQueue.empty(); }
+    [[nodiscard]] bool isRebuildingMetaData() const { return !m_metaRebuildQueue.empty() || m_metaReadBusy; }
 
     /// Hash every shared complete file again and rebuild known.met from the result,
     /// for after disk errors. Runs behind the workers, one file per worker at a time;
@@ -590,8 +591,26 @@ private:
     /// The list payloads then report whatever this has resolved so far.
     void warmContainerChecks();
 
-    /// One slice of a running rebuildMetaData() pass.
+    /// One slice of the sweep: files whose heads are read on the pool.
+    struct ContainerReadBatch {
+        struct Item {
+            MD4Key key;
+            const KnownFile* file;   // identity only, never dereferenced off the main thread
+            QString name;            // a rename meanwhile voids the read
+            ShareableFile::ContainerHeadSource source;
+            std::optional<QByteArray> head;
+        };
+        std::vector<Item> items;
+        size_t tried = 0;
+        size_t stillUnresolved = 0;
+    };
+    void applyContainerReads(const ContainerReadBatch& batch);
+    void finishContainerSlice(size_t tried, size_t stillUnresolved);
+
+    /// One batch of a running rebuildMetaData() pass: read on the thread pool, applied
+    /// here; the next batch starts right after.
     void stepMetaDataRebuild();
+    void finishMetaDataRebuild();
 
     // EntityMap<MD4Key, KnownFile> hooks. Storage (m_map) and the mutex guarding it
     // live in the base. These carry only work that must happen under that lock;
@@ -750,6 +769,10 @@ private:
     /// share between ticks. Main thread only.
     std::vector<MD4Key> m_metaRebuildQueue;
     int m_metaRebuildTotal = 0;
+    /// A batch of the pass being read on the thread pool (a NAS stalled the core, #200)
+    bool m_metaReadBusy = false;
+    /// A slice of the container sweep being read on the thread pool (#200)
+    bool m_containerReadBusy = false;
 
     /// A rehashAllFiles() pass. Main thread only, but for the counter
     /// getHashingCount() reads.

@@ -239,6 +239,10 @@
 // eNode-go firewall recheck (flag SrvTcpFlag::FirewallRecheck): <tcp port 2> (0 = login port);
 // server re-tests the port and answers with a fresh OP_IDCHANGE (#156)
 #define OP_RECHECKFIREWALL          0x27    // client -> server
+// ed2k-server IPv6 update (flag SrvTcpFlag::Ipv6Update, ed2k-server#34/#43/#60), after login:
+// <ipv6 16> our new public IPv6, or zeros to withdraw. No reply; the verdict comes in a
+// fresh OP_SERVERIDENT (ST_IPV6_STATUS). Same address again only re-dials after a failure.
+#define OP_IPV6_UPDATE              0x63    // client -> server
 
 // LowID<->LowID rendezvous, server TCP.
 // Lugdunum eserver: <ip 4><udp port 2><requester id 4><crypt flags 1>[<hash 16> if flags & 0x80]

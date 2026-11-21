@@ -53,6 +53,7 @@ public:
 
     std::vector<ReceivedPacket> receivedPackets;
     int lastErrorCode = 0;
+    int receiveProgress = 0;
 
     /// Emulate a real socket tearing itself down on error (ClientReqSocket sets
     /// m_deleteThis and drops the connection). With this on, nothing deferred can
@@ -82,6 +83,8 @@ protected:
         return true;
     }
 
+    void onReceiveProgress() override { ++receiveProgress; }
+
     void onError(int errorCode) override
     {
         lastErrorCode = errorCode;
@@ -101,6 +104,7 @@ private slots:
     void singlePacketFraming();
     void multiplePacketsInOneRead();
     void partialPacketReassembly();
+    void partialPacket_reportsReceiveProgress();
     void wrongHeaderRejection();
     void oversizedPacketRejection();
     void downloadRateLimiting();
@@ -306,6 +310,39 @@ void tst_EMSocket::singlePacketFraming()
     QCOMPARE(clientSocket.receivedPackets[0].prot, static_cast<uint8>(OP_EDONKEYPROT));
     QCOMPARE(clientSocket.receivedPackets[0].data.size(), static_cast<std::size_t>(5));
     QVERIFY(std::memcmp(clientSocket.receivedPackets[0].data.data(), "Hello", 5) == 0);
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+// ---------------------------------------------------------------------------
+// MFC CClientReqSocket::OnReceive resets the timeout on every read: a big packet
+// (a shared files list) trickling in must not time the link out before it completes.
+// ---------------------------------------------------------------------------
+
+void tst_EMSocket::partialPacket_reportsReceiveProgress()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    TestEMSocket clientSocket;
+    clientSocket.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    // header announcing 64 KiB, then only the first 1 KiB of it
+    HeaderStruct hdr;
+    hdr.eDonkeyID = OP_EDONKEYPROT;
+    hdr.packetLength = 65536 + 1;
+    hdr.command = 0x01;
+    serverSide->write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
+    serverSide->write(QByteArray(1024, 'x'));
+    serverSide->flush();
+
+    QTRY_VERIFY_WITH_TIMEOUT(clientSocket.receiveProgress > 0, 3000);
+    QVERIFY2(clientSocket.receivedPackets.empty(), "the packet is not complete yet");
 
     serverSide->close();
     clientSocket.close();

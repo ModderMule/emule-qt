@@ -153,6 +153,7 @@ private slots:
     void resumeAfterRestart();
     void peersTrackersAndOptions();
     void ipFilterBlocksPeer();
+    void i2pOnlyDropsDirectPeers_data();
     void i2pOnlyDropsDirectPeers();
     void stopAfterMetadata();
     void addWithWantedFiles();
@@ -162,7 +163,7 @@ private slots:
 private:
     void runJoin(bool spoil, bool deferred);
     /// Starts a seeder of a torrent of the payload; its port to `port`.
-    void startSeeder(BtSession& seeder, const Torrent& torrent, quint16& port);
+    void startSeeder(BtSession& seeder, const Torrent& torrent, quint16& port, bool i2pMixed = false);
     static QString magnet(const Torrent& torrent, quint16 port);
     QByteArray readDownloaded(const BtSession& s, const QString& id) const;
 
@@ -426,16 +427,25 @@ void tst_BtLocalSwarm::peersTrackersAndOptions()
     bool sawOutgoingSeed = false;   // the leecher dialled a peer that has everything
     bool sawIncoming = false;       // ... and the seeder saw it come in
     bool sawAvailable = false;      // every piece with at least one peer
+    bool sawSeedBitfield = false;   // the seed's piece bitfield: one bit per piece, all set
     QTRY_VERIFY_WITH_TIMEOUT(([&] {
-        for (const auto& p : leecher.peers(added.id))
+        const auto t = leecher.torrent(added.id);
+        for (const auto& p : leecher.peers(added.id)) {
             sawOutgoingSeed = sawOutgoingSeed
                 || (p.address.startsWith(QStringLiteral("127.0.0.1:")) && !p.flags.contains(QLatin1Char('I')) && p.progress >= 1.0);
+            if (t && t->pieces > 0 && p.progress >= 1.0 && p.have.size() == (t->pieces + 7) / 8) {
+                int set = 0;
+                for (int i = 0; i < t->pieces; ++i)
+                    set += (static_cast<quint8>(p.have[i / 8]) >> (i % 8)) & 1;
+                sawSeedBitfield = sawSeedBitfield || set == t->pieces;
+            }
+        }
         for (const auto& p : seeder.peers(seedId))
             sawIncoming = sawIncoming || p.flags.contains(QLatin1Char('I'));
         const QByteArray avail = leecher.availabilityMap(added.id);
         sawAvailable = sawAvailable
             || (!avail.isEmpty() && std::all_of(avail.cbegin(), avail.cend(), [](char c) { return c != 0; }));
-        return sawOutgoingSeed && sawIncoming && sawAvailable;
+        return sawOutgoingSeed && sawIncoming && sawAvailable && sawSeedBitfield;
     }()), kTimeoutMs);
     QTRY_VERIFY_WITH_TIMEOUT(leecher.torrent(added.id).has_value() && leecher.torrent(added.id)->totalSize == kPayload, 10'000);
 
@@ -499,16 +509,25 @@ void tst_BtLocalSwarm::ipFilterBlocksPeer()
     seeder.stop();
 }
 
+void tst_BtLocalSwarm::i2pOnlyDropsDirectPeers_data()
+{
+    QTest::addColumn<bool>("mixed");
+    QTest::newRow("strict") << false;
+    // mixed: libtorrent lets the redial reach attach_peer, the gate refuses it there
+    QTest::newRow("mixed") << true;
+}
+
 // switched to I2P only after the add: the direct peer is disconnected and stays out
 void tst_BtLocalSwarm::i2pOnlyDropsDirectPeers()
 {
+    QFETCH(const bool, mixed);
     BtSession seeder;
     quint16 port = 0;
-    startSeeder(seeder, m_v1, port);
+    startSeeder(seeder, m_v1, port, mixed);
     const QString seedId = seeder.torrents().first().id;
 
     BtSession leecher;
-    leecher.start(settingsIn(m_dir, QStringLiteral("leechI2pDrop")));
+    leecher.start(settingsIn(m_dir, QStringLiteral("leechI2pDrop%1").arg(mixed ? 1 : 0)));
     auto hook = std::make_shared<HoldHook>();
     leecher.diskIo()->attach(m_v1.hashes, hook);
     const BtAddResult added = leecher.addMagnet(magnet(m_v1, port));
@@ -524,7 +543,17 @@ void tst_BtLocalSwarm::i2pOnlyDropsDirectPeers()
     QTest::qWait(3000);
     QVERIFY(seeder.peers(seedId).isEmpty());
 
+    // a fresh direct peer dials in: the gate refuses it inside attach_peer
+    BtSession late;
+    late.start(settingsIn(m_dir, QStringLiteral("leechI2pLate%1").arg(mixed ? 1 : 0)));
+    QSignalSpy lateFinished(&late, &BtSession::torrentFinished);
+    QCOMPARE(late.addMagnet(magnet(m_v1, port)).outcome, BtAddOutcome::Added);
+    QTest::qWait(3000);
+    QVERIFY(seeder.peers(seedId).isEmpty());
+    QVERIFY(lateFinished.isEmpty());
+
     hook->release();
+    late.stop();
     leecher.stop();
     seeder.stop();
 }
@@ -710,11 +739,17 @@ void tst_BtLocalSwarm::moveStorageClearsAWriteError()
     seeder.stop();
 }
 
-void tst_BtLocalSwarm::startSeeder(BtSession& seeder, const Torrent& torrent, quint16& port)
+void tst_BtLocalSwarm::startSeeder(BtSession& seeder, const Torrent& torrent, quint16& port, bool i2pMixed)
 {
     port = 0;
     // a state dir of its own: one of an earlier test would resume the torrent
-    seeder.start(settingsIn(m_dir, QStringLiteral("seeder%1").arg(++m_seeders)));
+    BtSettings s = settingsIn(m_dir, QStringLiteral("seeder%1").arg(++m_seeders));
+    if (i2pMixed) {
+        // no SAM bridge (port 0): only allow_i2p_mixed matters
+        s.i2pEnabled = true;
+        s.i2pMixed = true;
+    }
+    seeder.start(s);
     const BtAddResult r = seeder.addTorrentFile(torrent.bytes, m_seedDir);
     QCOMPARE(r.outcome, BtAddOutcome::Added);
     QTRY_VERIFY_WITH_TIMEOUT(seeder.torrent(r.id).has_value() && seeder.torrent(r.id)->state == BtState::Seeding, kTimeoutMs);

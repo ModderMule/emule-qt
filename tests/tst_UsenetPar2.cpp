@@ -15,6 +15,7 @@
 
 #include "post/Par2NameIndex.h"
 #include "post/Par2Verifier.h"
+#include "post/Par2LocalFill.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -122,6 +123,8 @@ private slots:
     void twoIdenticalFilesInASetAreLeftUnnamed();
     void aFileWhoseOpeningBytesAreNotThereYetIsNotMatched();
     void aVerifySaysWhichFileTheMissingBlocksBelongTo();
+    void locateFindsAStoredVolumeInsideItsEntry();
+    void localFillWritesTheFoundBlocksIntoThePartFile();
 };
 
 // ---------------------------------------------------------------------------
@@ -725,6 +728,112 @@ void TestUsenetPar2::aVerifySaysWhichFileTheMissingBlocksBelongTo()
         if (f.fileName == QStringLiteral("movie.bin"))
             QVERIFY(f.complete);
     }
+#endif
+}
+
+// #224 stored archives: a volume of a stored (-m0) archive holds its entry's bytes as they
+// are, behind a header. With the entry (on disk here) as an extra file, par2 finds every
+// block of the volume that lies wholly in it, at its own offset there; header and tail not
+void TestUsenetPar2::locateFindsAStoredVolumeInsideItsEntry()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    QTemporaryDir dir, elsewhere;
+    QVERIFY(dir.isValid() && elsewhere.isValid());
+    // no repeating pattern: each block must be found at one place only
+    const auto noise = [](int size, quint32 seed) {
+        QByteArray out(size, Qt::Uninitialized);
+        for (int i = 0; i < size; ++i) {
+            seed = seed * 1664525u + 1013904223u;
+            out[i] = char(seed >> 24);
+        }
+        return out;
+    };
+    constexpr int kBlock = 4000;
+    constexpr int kHeader = 1234;
+    const QByteArray entry = noise(50000, 7);
+    const QByteArray volume = noise(kHeader, 8) + entry + noise(300, 9);
+    const QString volPath = QDir(dir.path()).filePath(QStringLiteral("show.rar"));
+    QVERIFY(writeFile(volPath, volume));
+    QVERIFY(createPar2Set(dir.path(), QStringLiteral("show"), {QStringLiteral("show.rar")}, kBlock, 4));
+    QVERIFY(QFile::remove(volPath));   // not downloaded
+    const QString entryPath = QDir(elsewhere.path()).filePath(QStringLiteral("episode.mkv"));
+    QVERIFY(writeFile(entryPath, entry));
+
+    Par2Verifier v;
+    Par2Result check;
+    const QList<Par2FoundBlock> found = v.locate(QDir(dir.path()).filePath(QStringLiteral("show.par2")), dir.path(),
+                                                 {entryPath}, &check);
+    // blocks wholly inside [kHeader, kHeader + entry): 1..12 of 0..13
+    QList<qint64> expected;
+    for (qint64 off = 0; off + kBlock <= volume.size(); off += kBlock)
+        if (off >= kHeader && off + kBlock <= kHeader + entry.size())
+            expected << off;
+    QCOMPARE(found.size(), expected.size());
+    for (const Par2FoundBlock& b : found) {
+        QCOMPARE(b.fileName, QStringLiteral("show.rar"));
+        QVERIFY(expected.contains(b.offset));
+        QCOMPARE(b.length, qint64(kBlock));
+        QCOMPARE(QFileInfo(b.source).fileName(), QStringLiteral("episode.mkv"));
+        QCOMPARE(b.sourceOffset, b.offset - kHeader);
+    }
+    // the blocks left: header and tail, within the recovery blocks
+    QCOMPARE(check.missingBlocks, int((volume.size() + kBlock - 1) / kBlock - expected.size()));
+
+    // nothing given: nothing looked for
+    QVERIFY(v.locate(QDir(dir.path()).filePath(QStringLiteral("show.par2")), dir.path(), {}).isEmpty());
+#endif
+}
+
+// #224: the blocks found in an entry on disk go into the volume's part file (made when
+// missing, never truncated), one range per run of blocks; the rest stays as it was
+void TestUsenetPar2::localFillWritesTheFoundBlocksIntoThePartFile()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    QTemporaryDir dir, elsewhere;
+    QVERIFY(dir.isValid() && elsewhere.isValid());
+    const auto noise = [](int size, quint32 seed) {
+        QByteArray out(size, Qt::Uninitialized);
+        for (int i = 0; i < size; ++i) {
+            seed = seed * 1664525u + 1013904223u;
+            out[i] = char(seed >> 24);
+        }
+        return out;
+    };
+    constexpr int kBlock = 4000;
+    constexpr int kHeader = 777;
+    const QByteArray entry = noise(30000, 11);
+    const QByteArray volume = noise(kHeader, 12) + entry + noise(100, 13);
+    const QString volPath = QDir(dir.path()).filePath(QStringLiteral("rel.rar"));
+    QVERIFY(writeFile(volPath, volume));
+    QVERIFY(createPar2Set(dir.path(), QStringLiteral("rel"), {QStringLiteral("rel.rar")}, kBlock, 3));
+    QVERIFY(QFile::remove(volPath));
+    const QString entryPath = QDir(elsewhere.path()).filePath(QStringLiteral("e.bin"));
+    QVERIFY(writeFile(entryPath, entry));
+    // the part file: the first article (block 0) is there already
+    const QString part = QDir(dir.path()).filePath(QStringLiteral("rel.rar.part"));
+    QByteArray before(volume.size(), '\0');
+    before.replace(0, kBlock, volume.left(kBlock));
+    QVERIFY(writeFile(part, before));
+
+    const auto ranges = Par2LocalFill::fill(QDir(dir.path()).filePath(QStringLiteral("rel.par2")), {entryPath},
+                                            {{QStringLiteral("rel.rar"), part}});
+    QCOMPARE(ranges.size(), 1);   // blocks 1..6 lie wholly in the entry, adjacent
+    QCOMPARE(ranges[0].fileName, QStringLiteral("rel.rar"));
+    QCOMPARE(ranges[0].offset, qint64(kBlock));
+    QCOMPARE(ranges[0].length, qint64(6 * kBlock));
+    const QByteArray after = readFile(part);
+    QCOMPARE(after.size(), volume.size());
+    QCOMPARE(after.left(kBlock), volume.left(kBlock));                         // untouched
+    QCOMPARE(after.mid(kBlock, 6 * kBlock), volume.mid(kBlock, 6 * kBlock));   // from disk
+    QCOMPARE(after.mid(7 * kBlock), before.mid(7 * kBlock));                   // still to come
+
+    // a target the set does not name: nothing written
+    QVERIFY(Par2LocalFill::fill(QDir(dir.path()).filePath(QStringLiteral("rel.par2")), {entryPath},
+                                {{QStringLiteral("other.rar"), part}}).isEmpty());
 #endif
 }
 

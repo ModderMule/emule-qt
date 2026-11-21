@@ -10,6 +10,7 @@
 
 #include "Ed3kSession.h"
 #include "Ed3kUsenetJoin.h"
+#include "Ed3kLocalSharer.h"
 
 #include "decode/YencDecoder.h"
 #include "nzb/NzbFile.h"
@@ -224,6 +225,7 @@ private slots:
     void serverTagIsStableAndOpaque();
     void articlesFromTheQueueVerifyAClaimedMember();
     void blocksFromAnotherNodeFillTheHoles();
+    void aLocalCopyFillsAMember();
     void aFalseClaimDropsItsEd3kBytes();
     void aPostSetFoundIsFetchedAndKept();
     void theLinkFetchesItsPostSet();
@@ -405,7 +407,8 @@ void tst_Ed3kUsenetJoin::articlesFromTheQueueVerifyAClaimedMember()
     again.setSearchEnabled(false);
     QSignalSpy republished(&again, &Ed3kUsenetJoin::keptRecordsPublished);
     again.start();
-    QVERIFY(again.sharesRoot(manifest.root) && again.sharesRoot(list.root));
+    // kept blobs are read on the read pool (report 58)
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(manifest.root) && again.sharesRoot(list.root), 10000);
     QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(h.root), 10000);
     // the set and the ALIAS records (nzb, nzb-file) go out again once the member is shared
     QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 1, 10000);
@@ -420,7 +423,7 @@ void tst_Ed3kUsenetJoin::articlesFromTheQueueVerifyAClaimedMember()
     QCOMPARE(republished.at(1).at(1).toInt(), 0);
     // and off again: all of it back
     again.setHoldBack(false);
-    QVERIFY(again.sharesRoot(manifest.root) && again.sharesRoot(list.root));
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(manifest.root) && again.sharesRoot(list.root), 10000);
     QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 3, 10000);
     QVERIFY(republished.at(2).at(1).toInt() >= 1);
     // the row cleared, the file left in incoming: still shared, its records kept
@@ -435,7 +438,7 @@ void tst_Ed3kUsenetJoin::articlesFromTheQueueVerifyAClaimedMember()
     third.setSearchEnabled(false);
     QSignalSpy republishedCleared(&third, &Ed3kUsenetJoin::keptRecordsPublished);
     third.start();
-    QVERIFY(third.sharesRoot(manifest.root));
+    QTRY_VERIFY_WITH_TIMEOUT(third.sharesRoot(manifest.root), 10000);
     QTRY_VERIFY_WITH_TIMEOUT(third.sharesRoot(h.root), 10000);
     QTRY_COMPARE_WITH_TIMEOUT(republishedCleared.count(), 1, 10000);
     QVERIFY(republishedCleared.at(0).at(1).toInt() >= 1);
@@ -503,6 +506,54 @@ void tst_Ed3kUsenetJoin::blocksFromAnotherNodeFillTheHoles()
     join.stop();
     QVERIFY(!queue.hold);
     a.stop();
+    b.stop();
+}
+
+// #224: the claimed root is served from disk by another join of the node (Shared Files):
+// its blocks are written before any source is asked, the articles they cover accepted
+void tst_Ed3kUsenetJoin::aLocalCopyFillsAMember()
+{
+    constexpr int kParts = 3;
+    constexpr int kPart = 200000;
+    const QByteArray data = payload(int(2 * kBlock + 70000), 4);
+    const Hashed h = hashOf(data);
+
+    QTemporaryDir db;
+    QVERIFY(db.isValid());
+    const QString copy = QDir(db.path()).filePath(QStringLiteral("shared.bin"));
+    {
+        QFile f(copy);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(data), data.size());
+    }
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    eMule::ed3k::test::LocalSharer local(b, db.path());
+    local.start();
+    QVERIFY(local.shareFile(copy, data));
+
+    FakeQueue queue;
+    queue.item = fakeItem(db.path(), data.size(), kParts);
+    Ed3kUsenetJoin join(b, queue, db.path());
+    join.setSearchEnabled(false);
+    QSignalSpy verified(&join, &Ed3kUsenetJoin::memberVerified);
+    join.start();
+    const QString id = queue.item->id;
+    // the first articles came before the claim (its search takes a while): the claim is
+    // compared against them, the copied blocks count at once
+    landArticle(join, *queue.item, data, 1, kParts, kPart);
+    landArticle(join, *queue.item, data, 2, kParts, kPart);
+    QVERIFY(join.fileClaim(id, 0, h.root, h.size));
+
+    QTRY_COMPARE_WITH_TIMEOUT(verified.count(), 1, 30000);
+    QVERIFY(!queue.accepted.isEmpty());
+    QCOMPARE(queue.refetched.size(), 0);
+    QFile f(queue.item->files.at(0).tempPath);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), data);
+
+    join.stop();
+    local.stop();
     b.stop();
 }
 
@@ -672,7 +723,8 @@ void tst_Ed3kUsenetJoin::fetchPostSet(bool byLink)
     Ed3kUsenetJoin again(b, queue, db.path());
     again.setSearchEnabled(false);
     again.start();
-    QVERIFY(again.sharesRoot(manifest.root) && again.sharesRoot(list.root));
+    // kept blobs are read on the read pool (report 58)
+    QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(manifest.root) && again.sharesRoot(list.root), 10000);
     QTRY_VERIFY_WITH_TIMEOUT(again.sharesRoot(member.root), 10000);
     again.stop();
 

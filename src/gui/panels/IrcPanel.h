@@ -117,6 +117,9 @@ public:
     /// room list is not in yet: then the link waits for it (membership check first).
     bool openEd3kRoomLink(const QString& link);
 
+    /// True when the room list is in and holds @p link's room (same key + id).
+    [[nodiscard]] bool isEd3kRoomMember(const QString& link) const;
+
     /// --subtab: the tab at @p index (Status, Rooms (ed3k), then channels and rooms); a room
     /// tab opens once the core lists it, so this waits up to 30 s for it.
     void switchToSubTab(int index);
@@ -224,6 +227,8 @@ private:
     void markActivity(const QString& key);
     /// Someone's message in tab @p key: unread unless on screen; sound and alert (MainWindow).
     void noteMessage(const QString& key, bool mention);
+    /// Tab @p key unread unless on screen (red tab, toolbar "!"); true when on screen.
+    bool markUnread(const QString& key);
     /// Tab @p key read or gone.
     void markRead(const QString& key);
     void playIrcSound(const QString& fileName);
@@ -269,6 +274,10 @@ private:
     /// The tab of @p room (made from its list row when missing); null when unknown.
     Ed3kRoomTab* ensureRoomTab(const QString& room, bool show = false);
     [[nodiscard]] Ed3kRoomTab* roomTab(const QString& room) const;
+    /// After the first posts of a tab: those after the read mark (uistate) are unread.
+    void noteUnreadRoomPosts(Ed3kRoomTab* tab);
+    /// Room tab @p key read: its newest post is the read mark.
+    void rememberRoomRead(const QString& key);
     /// Posts @p text in the active room tab.
     void postToRoom(Ed3kRoomTab* tab, const QString& text);
     void ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint& globalPos);

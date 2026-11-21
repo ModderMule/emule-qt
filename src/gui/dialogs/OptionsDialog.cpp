@@ -277,6 +277,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_showActiveDownloadsBoldCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showRatesInTitleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showStatusBarFreeSpaceCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_showStatusBarSessionTotalsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showCatTabInfosCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoRemoveFinishedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showTransToolbarCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -358,7 +359,12 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     // Directories page
     connect(m_incomingDirEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_tempDirEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
-    connect(m_sharedDirsModel, &QAbstractItemModel::dataChanged, this, &OptionsDialog::markDirty);
+    // a check, not a folder loading or losing its arrow
+    connect(m_sharedDirsModel, &QAbstractItemModel::dataChanged, this,
+            [this](const QModelIndex&, const QModelIndex&, const QList<int>& roles) {
+                if (roles.contains(Qt::CheckStateRole))
+                    markDirty();
+            });
 
     // Files page
     connect(m_addFilesPausedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -559,9 +565,9 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
         m_proxyPasswordEdit->setEnabled(proxyOn && on);
     });
 
-    // A designed minimum, not {}: every page is behind a scroll area now, so the
-    // layout minimum has collapsed to the sidebar plus a scrollbar and would let the
-    // window be dragged down to a few hundred pixels. Fit::Layout, not Fit::Content --
+    // Fit::Layout: the size below is where the dialog opens, the minimum is the layout's
+    // own (sidebar + page scroll areas), so a small screen can shrink it (#234).
+    // Fit::Layout, not Fit::Content --
     // the latter asks ContentScrollArea for the content's *full* height, which is the
     // 1300 px Usenet column this all exists to stop.
     // 700, not the old 640: measured against every page's preferred height, that is
@@ -1321,6 +1327,12 @@ QWidget* OptionsDialog::createDisplayPage()
         tr("Free space of the save folder of the current window: the torrent folder in Torrents, "
            "the Usenet and hoster targets in theirs, the incoming folder everywhere else."));
     layout->addWidget(m_showStatusBarFreeSpaceCheck);
+
+    m_showStatusBarSessionTotalsCheck = new QCheckBox(tr("Show session transfer totals in status bar"), page);
+    m_showStatusBarSessionTotalsCheck->setToolTip(
+        tr("Data downloaded and uploaded since the core started, all networks together. "
+           "The tooltip splits it by network."));
+    layout->addWidget(m_showStatusBarSessionTotalsCheck);
 
     m_showCatTabInfosCheck = new QCheckBox(tr("Show download info on category tabs"), page);
     layout->addWidget(m_showCatTabInfosCheck);
@@ -2360,22 +2372,40 @@ QWidget* OptionsDialog::createDirectoriesPage()
 
     m_sharedDirsTree = new QTreeView(sharedGroup);
     m_sharedDirsTree->setHeaderHidden(true);
-    if (FolderLister::remote(m_ipc)) {
-        // the core's disk, not this one's (IPC ListFolders)
-        m_remoteDirsModel = new FolderTreeModel(m_ipc, true, this);
-        m_sharedDirsModel = m_remoteDirsModel;
-        m_sharedDirsTree->setModel(m_remoteDirsModel);
+#ifdef Q_OS_WIN
+    constexpr bool kUncRoots = true;   // UNC shares join the drives as roots (MFC)
+#else
+    constexpr bool kUncRoots = false;
+#endif
+    if (kUncRoots || FolderLister::remote(m_ipc)) {
+        // the core's disk (IPC ListFolders when on another host); takes added roots
+        m_folderTreeModel = new FolderTreeModel(m_ipc, true, this);
+        m_sharedDirsModel = m_folderTreeModel;
+        m_sharedDirsTree->setModel(m_folderTreeModel);
         m_sharedDirsTree->setItemDelegate(new SharedDirsDelegate(
-            [model = m_remoteDirsModel](const QString& path, bool checked) { model->setSubtreeChecked(path, checked); },
+            [model = m_folderTreeModel](const QString& path, bool checked) { model->setSubtreeChecked(path, checked); },
             m_sharedDirsTree));
-        connect(m_remoteDirsModel, &FolderTreeModel::homeKnown, this, [this](const QString& home) {
-            m_remoteDirsModel->reveal(home);
+        connect(m_folderTreeModel, &FolderTreeModel::homeKnown, this, [this](const QString& home) {
+            m_folderTreeModel->reveal(home);
         });
-        connect(m_remoteDirsModel, &FolderTreeModel::revealed, this, [this](const QModelIndex& idx) {
+        connect(m_folderTreeModel, &FolderTreeModel::revealed, this, [this](const QModelIndex& idx) {
             m_sharedDirsTree->scrollTo(idx, QAbstractItemView::PositionAtTop);   // expands the folders above
             m_sharedDirsTree->expand(idx);
         });
-        connect(m_remoteDirsModel, &FolderTreeModel::checksChanged, this, &OptionsDialog::markDirty);
+        connect(m_folderTreeModel, &FolderTreeModel::checksChanged, this, &OptionsDialog::markDirty);
+        // MFC MP_REMOVESHARE: an added UNC root goes with every share below it
+        m_sharedDirsTree->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(m_sharedDirsTree, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+            const QModelIndex idx = m_sharedDirsTree->indexAt(pos);
+            if (!m_folderTreeModel->isAddedRoot(idx))
+                return;
+            const QString root = m_folderTreeModel->filePath(idx);
+            QMenu menu(this);
+            menu.addAction(tr("Remove %1").arg(uncLabel(root)), this, [this, root] {
+                m_folderTreeModel->removeRoot(root);
+            });
+            menu.exec(m_sharedDirsTree->viewport()->mapToGlobal(pos));
+        });
     } else {
         auto* fsModel = new CheckableFileSystemModel(this);
         // Hidden too: the proxy drops them again, all but /Volumes
@@ -2414,36 +2444,26 @@ QWidget* OptionsDialog::createDirectoriesPage()
     sharedLayout->addWidget(m_sharedDirsTree);
     layout->addWidget(sharedGroup, 1);  // stretch factor for the tree
 
-    // --- Add UNC share button (Windows only) ---
+    // --- Add UNC share button: a core on Windows (MFC IDC_UNCADD) ---
     auto* uncBtn = new QPushButton(tr("Add UNC share"), page);
-#ifdef Q_OS_WIN
+    uncBtn->setVisible(m_folderTreeModel && m_folderTreeModel->windowsRoots());
+    if (m_folderTreeModel)
+        connect(m_folderTreeModel, &FolderTreeModel::rootsLoaded, uncBtn,
+                [this, uncBtn] { uncBtn->setVisible(m_folderTreeModel->windowsRoots()); });
     connect(uncBtn, &QPushButton::clicked, this, [this]() {
-        bool ok = false;
-        QString uncPath = QInputDialog::getText(this, tr("Add UNC Share"),
-            tr("Enter UNC path (e.g., \\\\server\\share):"),
-            QLineEdit::Normal, QStringLiteral("\\\\"), &ok);
-        if (!ok || uncPath.isEmpty())
+        const QString path = FolderLister::askUncShare(this);
+        if (path.isEmpty())
             return;
-        uncPath = uncPath.trimmed();
-        if (!uncPath.startsWith(QStringLiteral("\\\\"))) {
-            QMessageBox::warning(this, tr("Invalid Path"),
-                tr("A UNC path must start with \\\\."));
-            return;
-        }
-        // Ensure trailing separator
-        if (!uncPath.endsWith(QLatin1Char('/')) && !uncPath.endsWith(QLatin1Char('\\')))
-            uncPath += QLatin1Char('\\');
         auto paths = sharedDirsChecked();
-        if (paths.contains(uncPath))
-            return;
-        paths.append(uncPath);
-        setSharedDirsChecked(paths);
-        markDirty();   // setCheckedPaths() emits no dataChanged
+        if (!SharedDirState::isSharedDir(paths, path)) {
+            if (!thePrefs.isShareableDirectory(path))
+                return;
+            paths.append(path);
+            setSharedDirsChecked(paths);   // adds its root
+            markDirty();   // setCheckedPaths() emits no dataChanged
+        }
+        m_folderTreeModel->reveal(path);
     });
-#else
-    uncBtn->setEnabled(false);
-    uncBtn->setToolTip(tr("UNC shares are only supported on Windows"));
-#endif
     layout->addWidget(uncBtn, 0, Qt::AlignLeft);
 
     return page;
@@ -7644,6 +7664,7 @@ void OptionsDialog::loadSettings()
     m_showActiveDownloadsBoldCheck->setChecked(thePrefs.showActiveDownloadsBold());
     m_showRatesInTitleCheck->setChecked(thePrefs.showRatesInTitle());
     m_showStatusBarFreeSpaceCheck->setChecked(thePrefs.showStatusBarFreeSpace());
+    m_showStatusBarSessionTotalsCheck->setChecked(thePrefs.showStatusBarSessionTotals());
     m_showCatTabInfosCheck->setChecked(thePrefs.showCatTabInfos());
     m_autoRemoveFinishedCheck->setChecked(thePrefs.autoRemoveFinishedDownloads());
     m_showTransToolbarCheck->setChecked(thePrefs.showTransToolbar());
@@ -7890,6 +7911,7 @@ void OptionsDialog::saveSettings()
     thePrefs.setShowActiveDownloadsBold(m_showActiveDownloadsBoldCheck->isChecked());
     thePrefs.setShowRatesInTitle(m_showRatesInTitleCheck->isChecked());
     thePrefs.setShowStatusBarFreeSpace(m_showStatusBarFreeSpaceCheck->isChecked());
+    thePrefs.setShowStatusBarSessionTotals(m_showStatusBarSessionTotalsCheck->isChecked());
     thePrefs.setShowCatTabInfos(m_showCatTabInfosCheck->isChecked());
     thePrefs.setAutoRemoveFinishedDownloads(m_autoRemoveFinishedCheck->isChecked());
     thePrefs.setShowTransToolbar(m_showTransToolbarCheck->isChecked());
@@ -8633,6 +8655,8 @@ void OptionsDialog::saveSettings()
         req.append(m_showRatesInTitleCheck->isChecked());
         req.append(QStringLiteral("showStatusBarFreeSpace"));
         req.append(m_showStatusBarFreeSpaceCheck->isChecked());
+        req.append(QStringLiteral("showStatusBarSessionTotals"));
+        req.append(m_showStatusBarSessionTotalsCheck->isChecked());
         req.append(QStringLiteral("showCatTabInfos"));
         req.append(m_showCatTabInfosCheck->isChecked());
         req.append(QStringLiteral("autoRemoveFinishedDownloads"));
@@ -10560,16 +10584,18 @@ QStringList OptionsDialog::tempDirsFromEdit() const
 
 QStringList OptionsDialog::sharedDirsChecked() const
 {
-    if (m_remoteDirsModel)
-        return m_remoteDirsModel->checkedPaths();
+    if (m_folderTreeModel)
+        return m_folderTreeModel->checkedPaths();
     return static_cast<const CheckableFileSystemModel*>(m_sharedDirsModel)->checkedPaths();
 }
 
 void OptionsDialog::setSharedDirsChecked(const QStringList& dirs)
 {
-    if (m_remoteDirsModel)
-        m_remoteDirsModel->setCheckedPaths(dirs);
-    else
+    if (m_folderTreeModel) {
+        m_folderTreeModel->setCheckedPaths(dirs);
+        for (const QString& root : uncShareRoots(dirs))
+            m_folderTreeModel->addRoot(root, uncLabel(root));
+    } else
         static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->setCheckedPaths(dirs);
 }
 

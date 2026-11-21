@@ -98,6 +98,7 @@ SOURCES += \
     BtBridge.cpp \
     BtShareGuard.cpp \
     BtCreateBridge.cpp \
+    BtFileIndex.cpp \
     LandedFiles.cpp \
     Ed3kBridge.cpp \
     Ed3kFriendsBridge.cpp \
@@ -151,6 +152,7 @@ HEADERS += \
     BtBridge.h \
     BtShareGuard.h \
     BtCreateBridge.h \
+    BtFileIndex.h \
     LandedFiles.h \
     Ed3kBridge.h \
     Ed3kOffGate.h \

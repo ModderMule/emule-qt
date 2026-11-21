@@ -73,6 +73,8 @@ public:
     [[nodiscard]] bool isOwner() const { return m_row.value(QStringLiteral("owner")).toBool(); }
     [[nodiscard]] bool canModerate() const { return m_row.value(QStringLiteral("moderator")).toBool(); }
     [[nodiscard]] bool isModerator(const QString& key) const { return m_mods.contains(key); }
+    /// The star of a post: its author was a moderator then or is one now.
+    [[nodiscard]] bool marked(const Post& p) const { return p.moderator || isModerator(p.author); }
     [[nodiscard]] QStringList mods() const { return m_mods; }
     /// Admitted by an admit or as moderator (§2.2); known to a moderator of a closed or
     /// moderated room only.

@@ -26,6 +26,8 @@ void setFriends(ed3k::Ed3kFriends* friends);
 /// Answers a friends/chat request through `reply`. False: not one of them.
 bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ipc::IpcMessage&)>& reply);
 
+/// Ends the ed3k friend slot: the eD2K one was set (one slot for both networks).
+void clearFriendSlot();
 /// Broadcasts the pushes of @p friends through @p broadcast for as long as it lives.
 void connectPushes(ed3k::Ed3kFriends& friends, std::function<void(const Ipc::IpcMessage&)> broadcast);
 

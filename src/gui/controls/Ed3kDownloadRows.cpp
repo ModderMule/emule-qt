@@ -26,6 +26,7 @@ DownloadRow ed3kDownloadRow(const QCborMap& m)
     row.completedSize = m.value(QStringLiteral("done")).toInteger();
     row.percentCompleted = row.fileSize > 0 ? 100.0 * double(row.completedSize) / double(row.fileSize) : 0.0;
     row.datarate = m.value(QStringLiteral("rate")).toInteger();
+    row.downTransferred = m.value(QStringLiteral("transferred")).toInteger();   // was: never set, read 0 Bytes
     row.sourceCount = int(m.value(QStringLiteral("sources")).toInteger());
     row.transferringSrcCount = int(m.value(QStringLiteral("transferring")).toInteger());
     row.availableSrcCount = row.sourceCount;
@@ -36,7 +37,9 @@ DownloadRow ed3kDownloadRow(const QCborMap& m)
     row.addedOn = m.value(QStringLiteral("addedOn")).toInteger();
     row.ed3kPath = m.value(QStringLiteral("path")).toString();
     row.ed3kKey = m.value(QStringLiteral("key")).toString();   // batch 15, hops.md §1
+    row.ed3kWebDropped = int(m.value(QStringLiteral("webDropped")).toInteger());
     row.ed3kNetwork = m.value(QStringLiteral("network")).toString();   // single transfer mode
+    row.ed3kJoined = m.value(QStringLiteral("joined")).toBool(true);
     for (const auto& a : m.value(QStringLiteral("aliases")).toArray())
         if (const QString text = ed3kAliasText(a.toMap()); !text.isEmpty())
             row.ed3kAliases << text;

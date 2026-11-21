@@ -262,6 +262,10 @@ struct Preferences::Data {
     uint32 maxUpload = kDefaultMaxUpload;
     uint32 maxDownload = kDefaultMaxDownload;
     uint32 minUpload = 1;
+    // Alternative speed ("turtle"): while on, these limits replace the stored pair
+    bool altSpeed = false;
+    uint32 altSpeedUp = 10;
+    uint32 altSpeedDown = 50;
 
     // Scheduler layer on top of the stored limits. Runtime only, never saved.
     ScheduledLimits scheduled;
@@ -560,6 +564,7 @@ struct Preferences::Data {
     bool ipcListenTemporaryIpv6 = false;   // name listen value: also bind privacy addresses
     QStringList ipcTokens;
     bool ipcTunnel = true;                 // paired phones over the ed3k tunnel
+    bool ipcUPnP = false;                  // map the IPC port (opt-in: it opens the core to the Internet)
     QStringList ipcTunnelPeers;            // "<node id hex> <name>"
 
     // Web Server
@@ -638,7 +643,7 @@ struct Preferences::Data {
     bool chatSound = false;         // a sound on a new message not on screen
     int chatAlert = 0;              // ChatAlert: flash the taskbar / bounce the dock
     bool chatUnreadBadge = true;    // red "!" on the toolbar buttons + status bar icon
-    bool chatWebLinks = false;    // chats: web links clickable too (off: ed2k/ed3k/magnet only)
+    bool chatWebLinks = true;     // chats: web links clickable too (off: ed2k/ed3k/magnet only)
     bool chatModStar = false;       // room moderators: gold star, else "@"
     bool chatRoomMedia = true;      // room images shown (fetched by themselves)
     bool chatRoomVideos = false;    // room videos fetched by themselves too
@@ -689,6 +694,7 @@ struct Preferences::Data {
     bool showActiveDownloadsBold = false;   // MFC ShowActiveDownloadsBold, INI only, off; MorphXT on
     bool showRatesInTitle = false;
     bool showStatusBarFreeSpace = false;   // #165, as qBittorrent: off
+    bool showStatusBarSessionTotals = false;   // #223, session up/down beside free space
     bool showCatTabInfos = false;
     bool autoRemoveFinishedDownloads = false;
     bool showTransToolbar = true;
@@ -820,6 +826,7 @@ struct Preferences::Data {
     QString btDownloadDir;             // empty = incomingDir
     bool btStopAfterMetadata = false;  // new torrents stop once their file list is known
     int btShareMode = 2;               // finished torrents shared on eD2K/Kad (and ed3k): 0 none, 1 public, 2 all
+    bool btRemoveEmptiedTorrent = true; // Shared Files delete of a torrent's last wanted file removes the torrent
     bool btMetaSelectedFileOnly = true; // search file row of a torrent = that file only
     uint32 btMaxDownloadKb = 0;        // 0 = unlimited
     uint32 btMaxUploadKb = 0;
@@ -838,6 +845,7 @@ struct Preferences::Data {
     int btMaxConnections = Preferences::kDefaultBtMaxConnections;
     int btMaxConnectionsPerTorrent = Preferences::kDefaultBtMaxConnectionsPerTorrent;
     bool btPortMapping = true;
+    QStringList btPublicTrackers = Preferences::defaultBtPublicTrackers();   // Torrent Creator drop-down
     int btI2pMode = Preferences::kBtI2pOff;
     QString btI2pHost = QStringLiteral("127.0.0.1");
     uint16 btI2pPort = Preferences::kDefaultBtI2pSamPort;
@@ -887,8 +895,8 @@ struct Preferences::Data {
     bool ed3kAutoIndexNode = false;    // dial eD2K servers' ST_ED3K index nodes
     bool ed3kForceOpen = false;        // operator: node reachable, no NAT tests (§9.2 first nodes)
     bool ed3kHide = false;             // hiding (hops.md §1): new searches, downloads, shares anonymous
-    int ed3kHops = 1;                  // 0 to 3, every use (0: only while hopping, hops.md §2.6)
-    bool ed3kHopping = true;           // forward for others while hiding (§1 "Recommended")
+    bool ed3kAnonHttp = false;         // HTTP sources of anonymous downloads through the report proxy
+    int ed3kHops = 1;                  // 0 to 3, every use (0: deniable, hops.md §2.6)
     int ed3kHopShare = 25;             // % of the upload limit for others' paths (§5)
     // share reports under the anonymous key (subscription.md §5.3): only through this proxy
     int ed3kReportProxyType = 0;       // 0 off, PROXYTYPE_SOCKS5, PROXYTYPE_HTTP11
@@ -1182,6 +1190,8 @@ void Preferences::setServerPreferIPv6(bool val) { set(&Data::serverPreferIPv6, v
 
 uint32 Preferences::maxUpload() const
 {
+    if (altSpeed())
+        return get(&Data::altSpeedUp);
     return getScheduled(&Data::maxUpload, &ScheduledLimits::maxUpload);
 }
 
@@ -1197,8 +1207,17 @@ uint32 Preferences::maxUploadLimit() const
 
 uint32 Preferences::maxDownload() const
 {
+    if (altSpeed())   // the ratio rule holds the turtle pair too
+        return SpeedRules::clampDownForUp(get(&Data::altSpeedUp), get(&Data::altSpeedDown));
     return getScheduled(&Data::maxDownload, &ScheduledLimits::maxDownload);
 }
+
+bool Preferences::altSpeed() const { return get(&Data::altSpeed); }
+void Preferences::setAltSpeed(bool on) { set(&Data::altSpeed, on); }
+uint32 Preferences::altSpeedUp() const { return get(&Data::altSpeedUp); }
+void Preferences::setAltSpeedUp(uint32 kb) { set(&Data::altSpeedUp, kb); }
+uint32 Preferences::altSpeedDown() const { return get(&Data::altSpeedDown); }
+void Preferences::setAltSpeedDown(uint32 kb) { set(&Data::altSpeedDown, kb); }
 
 uint32 Preferences::configuredMaxDownload() const { return get(&Data::maxDownload); }
 
@@ -2633,6 +2652,8 @@ void Preferences::setBtMaxUploadKb(uint32 val) { set(&Data::btMaxUploadKb, val);
 bool Preferences::btStopAfterMetadata() const { return get(&Data::btStopAfterMetadata); }
 void Preferences::setBtStopAfterMetadata(bool val) { set(&Data::btStopAfterMetadata, val); }
 int Preferences::btShareMode() const { return get(&Data::btShareMode); }
+bool Preferences::btRemoveEmptiedTorrent() const { return get(&Data::btRemoveEmptiedTorrent); }
+void Preferences::setBtRemoveEmptiedTorrent(bool val) { set(&Data::btRemoveEmptiedTorrent, val); }
 void Preferences::setBtShareMode(int val) { set(&Data::btShareMode, std::clamp(val, 0, 2)); }
 bool Preferences::btMetaSelectedFileOnly() const { return get(&Data::btMetaSelectedFileOnly); }
 void Preferences::setBtMetaSelectedFileOnly(bool val) { set(&Data::btMetaSelectedFileOnly, val); }
@@ -2732,6 +2753,16 @@ void Preferences::setBtI2pTunnelLength(int val) { set(&Data::btI2pTunnelLength, 
 int Preferences::btI2pTunnelQuantity() const { return get(&Data::btI2pTunnelQuantity); }
 void Preferences::setBtI2pTunnelQuantity(int val) { set(&Data::btI2pTunnelQuantity, std::clamp(val, 1, 16)); }
 
+QStringList Preferences::btPublicTrackers() const { return get(&Data::btPublicTrackers); }
+void Preferences::setBtPublicTrackers(const QStringList& val)
+{
+    QStringList out;
+    for (const QString& u : val)
+        if (const QString t = u.trimmed(); !t.isEmpty() && !out.contains(t))
+            out << t;
+    set(&Data::btPublicTrackers, out);
+}
+
 QStringList Preferences::btI2pTrackers() const { return get(&Data::btI2pTrackers); }
 void Preferences::setBtI2pTrackers(const QStringList& val)
 {
@@ -2771,6 +2802,30 @@ QString Preferences::btI2pStatusPageUser() const { return get(&Data::btI2pStatus
 void Preferences::setBtI2pStatusPageUser(const QString& val) { set(&Data::btI2pStatusPageUser, val.trimmed()); }
 QString Preferences::btI2pStatusPagePassword() const { return get(&Data::btI2pStatusPagePassword); }
 void Preferences::setBtI2pStatusPagePassword(const QString& val) { set(&Data::btI2pStatusPagePassword, val); }
+
+QStringList Preferences::defaultBtPublicTrackers()
+{
+    // ngosang/trackerslist trackers_best.txt as of 2026-11 + discussion #212, best first
+    return {
+        QStringLiteral("udp://tracker.opentrackr.org:1337/announce"),
+        QStringLiteral("udp://open.demonii.com:1337/announce"),
+        QStringLiteral("udp://open.stealth.si:80/announce"),
+        QStringLiteral("udp://tracker.torrent.eu.org:451/announce"),
+        QStringLiteral("udp://open.tracker.cl:1337/announce"),
+        QStringLiteral("udp://exodus.desync.com:6969/announce"),
+        QStringLiteral("udp://explodie.org:6969/announce"),
+        QStringLiteral("udp://tracker.qu.ax:6969/announce"),
+        QStringLiteral("udp://tracker.dler.org:6969/announce"),
+        QStringLiteral("udp://tracker-udp.gbitt.info:80/announce"),
+        QStringLiteral("udp://tracker.bittor.pw:1337/announce"),
+        QStringLiteral("udp://tracker.tryhackx.org:6969/announce"),
+        QStringLiteral("udp://tracker.gmi.gd:6969/announce"),
+        QStringLiteral("udp://tracker.ducks.party:1984/announce"),
+        QStringLiteral("http://tracker.dler.com:6969/announce"),
+        QStringLiteral("http://tracker.renfei.net:8080/announce"),
+        QStringLiteral("https://tracker.gbitt.info:443/announce"),
+    };
+}
 
 QStringList Preferences::defaultBtI2pTrackers()
 {
@@ -2858,10 +2913,10 @@ bool Preferences::ed3kAutoIndexNode() const { return get(&Data::ed3kAutoIndexNod
 void Preferences::setEd3kAutoIndexNode(bool val) { set(&Data::ed3kAutoIndexNode, val); }
 bool Preferences::ed3kHide() const { return get(&Data::ed3kHide); }
 void Preferences::setEd3kHide(bool val) { set(&Data::ed3kHide, val); }
+bool Preferences::ed3kAnonHttp() const { return get(&Data::ed3kAnonHttp); }
+void Preferences::setEd3kAnonHttp(bool val) { set(&Data::ed3kAnonHttp, val); }
 int Preferences::ed3kHops() const { return get(&Data::ed3kHops); }
 void Preferences::setEd3kHops(int val) { set(&Data::ed3kHops, std::clamp(val, 0, 3)); }
-bool Preferences::ed3kHopping() const { return get(&Data::ed3kHopping); }
-void Preferences::setEd3kHopping(bool val) { set(&Data::ed3kHopping, val); }
 int Preferences::ed3kHopShare() const { return get(&Data::ed3kHopShare); }
 void Preferences::setEd3kHopShare(int val) { set(&Data::ed3kHopShare, std::clamp(val, 1, 100)); }
 int Preferences::ed3kReportProxyType() const { return get(&Data::ed3kReportProxyType); }
@@ -3456,6 +3511,44 @@ QString Preferences::ipcDialHostOf(const QString& value)
     return value.trimmed();
 }
 
+bool Preferences::ipcPortReserved(const QString& host, uint16 port)
+{
+    QTcpServer probe;
+    return !probe.listen(ipcBindAddressOf(host), port)
+        && probe.serverError() == QAbstractSocket::SocketAccessError;
+}
+
+uint16 Preferences::freeIpcPort(const QString& host, uint16 from, const QList<uint16>& avoid)
+{
+    const QHostAddress address = ipcBindAddressOf(host);
+    const auto usable = [&](uint16 port) {
+        QTcpServer probe;
+        return port != 0 && !avoid.contains(port) && probe.listen(address, port);
+    };
+    for (uint32 port = from + 1u; port <= 65535u && port <= from + 300u; ++port) {
+        if (usable(static_cast<uint16>(port)))
+            return static_cast<uint16>(port);
+    }
+    for (int tries = 0; tries < 50; ++tries) {
+        if (const uint16 port = randomPort({}); usable(port))
+            return port;
+    }
+    return 0;
+}
+
+uint16 Preferences::savedIpcPort(const QString& filePath)
+{
+    const auto root = readIntactYaml(filePath);
+    if (!root)
+        return 0;
+    try {
+        if (const auto ipc = (*root)["ipc"])
+            return static_cast<uint16>(std::clamp(ipc["port"].as<int>(0), 0, 65535));
+    } catch (const YAML::Exception&) {
+    }
+    return 0;
+}
+
 QString Preferences::ipcDaemonPath() const { return get(&Data::ipcDaemonPath); }
 
 void Preferences::setIpcDaemonPath(const QString& val) { set(&Data::ipcDaemonPath, val); }
@@ -3477,6 +3570,8 @@ QStringList Preferences::ipcTokens() const { return get(&Data::ipcTokens); }
 void Preferences::setIpcTokens(const QStringList& val) { set(&Data::ipcTokens, val); }
 
 bool Preferences::ipcTunnel() const { return get(&Data::ipcTunnel); }
+bool Preferences::ipcUPnP() const { return get(&Data::ipcUPnP); }
+void Preferences::setIpcUPnP(bool val) { set(&Data::ipcUPnP, val); }
 void Preferences::setIpcTunnel(bool val) { set(&Data::ipcTunnel, val); }
 
 QStringList Preferences::ipcTunnelPeers() const { return get(&Data::ipcTunnelPeers); }
@@ -4010,6 +4105,10 @@ bool Preferences::showStatusBarFreeSpace() const { return get(&Data::showStatusB
 
 void Preferences::setShowStatusBarFreeSpace(bool val) { set(&Data::showStatusBarFreeSpace, val); }
 
+bool Preferences::showStatusBarSessionTotals() const { return get(&Data::showStatusBarSessionTotals); }
+
+void Preferences::setShowStatusBarSessionTotals(bool val) { set(&Data::showStatusBarSessionTotals, val); }
+
 bool Preferences::showCatTabInfos() const { return get(&Data::showCatTabInfos); }
 
 void Preferences::setShowCatTabInfos(bool val) { set(&Data::showCatTabInfos, val); }
@@ -4234,6 +4333,12 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("bindAddress"), bindAddress());
     prefs.insert(QStringLiteral("maxUpload"), static_cast<qint64>(configuredMaxUpload()));
     prefs.insert(QStringLiteral("maxDownload"), static_cast<qint64>(configuredMaxDownload()));
+    prefs.insert(QStringLiteral("altSpeed"), altSpeed());
+    prefs.insert(QStringLiteral("altSpeedUp"), static_cast<qint64>(altSpeedUp()));
+    prefs.insert(QStringLiteral("altSpeedDown"), static_cast<qint64>(altSpeedDown()));
+    // read-only: the pair in force (turtle, schedule and ratio rule applied)
+    prefs.insert(QStringLiteral("inForceUpload"), static_cast<qint64>(maxUpload()));
+    prefs.insert(QStringLiteral("inForceDownload"), static_cast<qint64>(maxDownload()));
     prefs.insert(QStringLiteral("maxGraphDownloadRate"), static_cast<qint64>(maxGraphDownloadRate()));
     prefs.insert(QStringLiteral("maxGraphUploadRate"), static_cast<qint64>(maxGraphUploadRate()));
     prefs.insert(QStringLiteral("maxConnections"), static_cast<qint64>(configuredMaxConnections()));
@@ -4437,6 +4542,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btI2pTunnelLength"), static_cast<qint64>(btI2pTunnelLength()));
     prefs.insert(QStringLiteral("btI2pTunnelQuantity"), static_cast<qint64>(btI2pTunnelQuantity()));
     prefs.insert(QStringLiteral("btI2pTrackers"), btI2pTrackers().join(QLatin1Char(' ')));
+    prefs.insert(QStringLiteral("btPublicTrackers"), btPublicTrackers().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("btI2pRouterPort"), static_cast<qint64>(btI2pRouterPort()));
     prefs.insert(QStringLiteral("btI2pShare"), static_cast<qint64>(btI2pShare()));
     prefs.insert(QStringLiteral("btI2pBrowserProxy"), btI2pBrowserProxy());
@@ -4470,8 +4576,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kForceOpen"), ed3kForceOpen());
     prefs.insert(QStringLiteral("ed3kAutoIndexNode"), ed3kAutoIndexNode());
     prefs.insert(QStringLiteral("ed3kHide"), ed3kHide());
+    prefs.insert(QStringLiteral("ed3kAnonHttp"), ed3kAnonHttp());
     prefs.insert(QStringLiteral("ed3kHops"), static_cast<qint64>(ed3kHops()));
-    prefs.insert(QStringLiteral("ed3kHopping"), ed3kHopping());
     prefs.insert(QStringLiteral("ed3kHopShare"), static_cast<qint64>(ed3kHopShare()));
     prefs.insert(QStringLiteral("ed3kReportProxyType"), static_cast<qint64>(ed3kReportProxyType()));
     prefs.insert(QStringLiteral("ed3kReportProxyHost"), ed3kReportProxyHost());
@@ -4628,6 +4734,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("webServerMcpReadOnly"), webServerMcpReadOnly());
     prefs.insert(QStringLiteral("webServerGzipEnabled"), webServerGzipEnabled());
     prefs.insert(QStringLiteral("webServerUPnP"), webServerUPnP());
+    prefs.insert(QStringLiteral("ipcUPnP"), ipcUPnP());
+    prefs.insert(QStringLiteral("ipcListenAddress"), ipcListenAddress());   // read-only here
     prefs.insert(QStringLiteral("webServerTemplatePath"), webServerTemplatePath());
     prefs.insert(QStringLiteral("webServerSessionTimeout"), static_cast<qint64>(webServerSessionTimeout()));
     prefs.insert(QStringLiteral("webServerHttpsEnabled"), webServerHttpsEnabled());
@@ -4656,6 +4764,9 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->bindAddress      = p.value(QStringLiteral("bindAddress")).toString();
     m_data->maxUpload        = static_cast<uint32>(p.value(QStringLiteral("maxUpload")).toInteger());
     m_data->maxDownload      = static_cast<uint32>(p.value(QStringLiteral("maxDownload")).toInteger());
+    m_data->altSpeed         = p.value(QStringLiteral("altSpeed")).toBool();
+    m_data->altSpeedUp       = static_cast<uint32>(p.value(QStringLiteral("altSpeedUp")).toInteger(m_data->altSpeedUp));
+    m_data->altSpeedDown     = static_cast<uint32>(p.value(QStringLiteral("altSpeedDown")).toInteger(m_data->altSpeedDown));
     m_data->maxGraphDownloadRate = static_cast<uint32>(p.value(QStringLiteral("maxGraphDownloadRate")).toInteger());
     m_data->maxGraphUploadRate   = static_cast<uint32>(p.value(QStringLiteral("maxGraphUploadRate")).toInteger());
     m_data->maxConnections   = static_cast<uint16>(p.value(QStringLiteral("maxConnections")).toInteger());
@@ -4852,6 +4963,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
         m_data->btI2pTunnelQuantity = int(num("btI2pTunnelQuantity", 3, 1, 16));
         if (p.contains(QStringLiteral("btI2pTrackers")))
             m_data->btI2pTrackers = rpcUrlList(p.value(QStringLiteral("btI2pTrackers")));
+        if (p.contains(QStringLiteral("btPublicTrackers")))
+            m_data->btPublicTrackers = rpcUrlList(p.value(QStringLiteral("btPublicTrackers")));
         m_data->btI2pRouterPort = static_cast<uint16>(num("btI2pRouterPort", 0, 0, 65535));
         m_data->btI2pShare = int(num("btI2pShare", 50, 0, 100));
         m_data->btI2pBrowserProxy = p.value(QStringLiteral("btI2pBrowserProxy")).toBool(false);
@@ -4893,8 +5006,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kForceOpen = p.value(QStringLiteral("ed3kForceOpen")).toBool(false);
     m_data->ed3kAutoIndexNode = p.value(QStringLiteral("ed3kAutoIndexNode")).toBool(false);
     m_data->ed3kHide = p.value(QStringLiteral("ed3kHide")).toBool(false);
+    m_data->ed3kAnonHttp = p.value(QStringLiteral("ed3kAnonHttp")).toBool(false);
     m_data->ed3kHops = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHops")).toInteger(1), 0, 3));
-    m_data->ed3kHopping = p.value(QStringLiteral("ed3kHopping")).toBool(true);
     m_data->ed3kHopShare = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHopShare")).toInteger(25), 1, 100));
     m_data->ed3kReportProxyType = reportProxyType(static_cast<int>(p.value(QStringLiteral("ed3kReportProxyType")).toInteger(0)));
     m_data->ed3kReportProxyHost = p.value(QStringLiteral("ed3kReportProxyHost")).toString().trimmed();
@@ -5026,6 +5139,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->webServerMcpReadOnly = p.value(QStringLiteral("webServerMcpReadOnly")).toBool();
     m_data->webServerGzipEnabled          = p.value(QStringLiteral("webServerGzipEnabled")).toBool();
     m_data->webServerUPnP                 = p.value(QStringLiteral("webServerUPnP")).toBool();
+    m_data->ipcUPnP                       = p.value(QStringLiteral("ipcUPnP")).toBool();
     m_data->webServerTemplatePath         = p.value(QStringLiteral("webServerTemplatePath")).toString();
     m_data->webServerSessionTimeout       = static_cast<int>(p.value(QStringLiteral("webServerSessionTimeout")).toInteger());
     m_data->webServerHttpsEnabled         = p.value(QStringLiteral("webServerHttpsEnabled")).toBool();
@@ -5382,6 +5496,9 @@ bool Preferences::load(const QString& filePath)
         if (auto b = root["bandwidth"]) {
             m_data->maxUpload = b["maxUpload"].as<uint32>(m_data->maxUpload);
             m_data->maxDownload = b["maxDownload"].as<uint32>(m_data->maxDownload);
+            m_data->altSpeed = b["altSpeed"].as<bool>(m_data->altSpeed);
+            m_data->altSpeedUp = b["altSpeedUp"].as<uint32>(m_data->altSpeedUp);
+            m_data->altSpeedDown = b["altSpeedDown"].as<uint32>(m_data->altSpeedDown);
             m_data->minUpload = b["minUpload"].as<uint32>(m_data->minUpload);
             m_data->maxGraphUploadRate = b["maxGraphUploadRate"].as<uint32>(m_data->maxGraphUploadRate);
             m_data->uploadSlotTargetRate = b["uploadSlotTargetRate"].as<uint32>(m_data->uploadSlotTargetRate);
@@ -5820,6 +5937,7 @@ bool Preferences::load(const QString& filePath)
                     m_data->ipcTokens.append(QString::fromStdString(tok[i].as<std::string>()));
             }
             m_data->ipcTunnel = ipc["tunnel"].as<bool>(m_data->ipcTunnel);
+            m_data->ipcUPnP = ipc["upnp"].as<bool>(m_data->ipcUPnP);
             if (auto peers = ipc["tunnelPeers"]) {
                 m_data->ipcTunnelPeers.clear();
                 for (std::size_t i = 0; i < peers.size(); ++i)
@@ -5888,6 +6006,7 @@ bool Preferences::load(const QString& filePath)
             m_data->showActiveDownloadsBold = d["showActiveDownloadsBold"].as<bool>(m_data->showActiveDownloadsBold);
             m_data->showRatesInTitle = d["showRatesInTitle"].as<bool>(m_data->showRatesInTitle);
             m_data->showStatusBarFreeSpace = d["showStatusBarFreeSpace"].as<bool>(m_data->showStatusBarFreeSpace);
+            m_data->showStatusBarSessionTotals = d["showStatusBarSessionTotals"].as<bool>(m_data->showStatusBarSessionTotals);
             m_data->showCatTabInfos = d["showCatTabInfos"].as<bool>(m_data->showCatTabInfos);
             m_data->autoRemoveFinishedDownloads = d["autoRemoveFinishedDownloads"].as<bool>(m_data->autoRemoveFinishedDownloads);
             m_data->showTransToolbar = d["showTransToolbar"].as<bool>(m_data->showTransToolbar);
@@ -6235,6 +6354,8 @@ bool Preferences::load(const QString& filePath)
                 0, bt["maxUploadKb"].as<long long>(m_data->btMaxUploadKb)));
             m_data->btStopAfterMetadata = bt["stopAfterMetadata"].as<bool>(m_data->btStopAfterMetadata);
             m_data->btShareMode = std::clamp(bt["shareMode"].as<int>(m_data->btShareMode), 0, 2);
+            m_data->btRemoveEmptiedTorrent =
+                bt["removeEmptiedTorrent"].as<bool>(m_data->btRemoveEmptiedTorrent);
             m_data->btMetaSelectedFileOnly =
                 bt["selectedFileOnly"].as<bool>(m_data->btMetaSelectedFileOnly);
             m_data->btDht = bt["dht"].as<bool>(m_data->btDht);
@@ -6264,6 +6385,13 @@ bool Preferences::load(const QString& filePath)
                 bt["maxConnectionsPerTorrent"].as<int>(m_data->btMaxConnectionsPerTorrent),
                 2, kMaxBtConnections);
             m_data->btPortMapping = bt["portMapping"].as<bool>(m_data->btPortMapping);
+            if (auto list = bt["publicTrackers"]; list && list.IsSequence()) {
+                QStringList urls;
+                for (const auto& item : list)
+                    if (const QString u = QString::fromStdString(item.as<std::string>("")).trimmed(); !u.isEmpty())
+                        urls << u;
+                m_data->btPublicTrackers = urls;
+            }
             if (auto i2p = bt["i2p"]) {
                 m_data->btI2pMode = std::clamp(i2p["mode"].as<int>(m_data->btI2pMode), kBtI2pOff, kBtI2pExternal);
                 if (const QString host = QString::fromStdString(i2p["host"].as<std::string>("")).trimmed(); !host.isEmpty())
@@ -6348,8 +6476,8 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kForceOpen = e3["forceOpen"].as<bool>(m_data->ed3kForceOpen);
             m_data->ed3kAutoIndexNode = e3["autoIndexNode"].as<bool>(m_data->ed3kAutoIndexNode);
             m_data->ed3kHide = e3["hide"].as<bool>(m_data->ed3kHide);
+            m_data->ed3kAnonHttp = e3["anonHttp"].as<bool>(m_data->ed3kAnonHttp);
             m_data->ed3kHops = std::clamp(e3["hops"].as<int>(m_data->ed3kHops), 0, 3);
-            m_data->ed3kHopping = e3["hopping"].as<bool>(m_data->ed3kHopping);
             m_data->ed3kHopShare = std::clamp(e3["hopShare"].as<int>(m_data->ed3kHopShare), 1, 100);
             if (auto rp = e3["reportProxy"]) {
                 m_data->ed3kReportProxyType = reportProxyType(rp["type"].as<int>(m_data->ed3kReportProxyType));
@@ -7051,6 +7179,9 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "bandwidth" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "maxUpload" << YAML::Value << m_data->maxUpload;
     out << YAML::Key << "maxDownload" << YAML::Value << m_data->maxDownload;
+    out << YAML::Key << "altSpeed" << YAML::Value << m_data->altSpeed;
+    out << YAML::Key << "altSpeedUp" << YAML::Value << m_data->altSpeedUp;
+    out << YAML::Key << "altSpeedDown" << YAML::Value << m_data->altSpeedDown;
     out << YAML::Key << "minUpload" << YAML::Value << m_data->minUpload;
     out << YAML::Key << "maxGraphUploadRate" << YAML::Value << m_data->maxGraphUploadRate;
     out << YAML::Key << "uploadSlotTargetRate" << YAML::Value << m_data->uploadSlotTargetRate;
@@ -7472,6 +7603,7 @@ QByteArray Preferences::encode() const
         out << t.toStdString();
     out << YAML::EndSeq;
     out << YAML::Key << "tunnel" << YAML::Value << m_data->ipcTunnel;
+    out << YAML::Key << "upnp" << YAML::Value << m_data->ipcUPnP;
     out << YAML::Key << "tunnelPeers" << YAML::Value << YAML::BeginSeq;
     for (const auto& p : m_data->ipcTunnelPeers)
         out << p.toStdString();
@@ -7531,6 +7663,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "showActiveDownloadsBold" << YAML::Value << m_data->showActiveDownloadsBold;
     out << YAML::Key << "showRatesInTitle" << YAML::Value << m_data->showRatesInTitle;
     out << YAML::Key << "showStatusBarFreeSpace" << YAML::Value << m_data->showStatusBarFreeSpace;
+    out << YAML::Key << "showStatusBarSessionTotals" << YAML::Value << m_data->showStatusBarSessionTotals;
     out << YAML::Key << "showCatTabInfos" << YAML::Value << m_data->showCatTabInfos;
     out << YAML::Key << "autoRemoveFinishedDownloads" << YAML::Value << m_data->autoRemoveFinishedDownloads;
     out << YAML::Key << "showTransToolbar" << YAML::Value << m_data->showTransToolbar;
@@ -7797,6 +7930,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "maxUploadKb" << YAML::Value << m_data->btMaxUploadKb;
     out << YAML::Key << "stopAfterMetadata" << YAML::Value << m_data->btStopAfterMetadata;
     out << YAML::Key << "shareMode" << YAML::Value << m_data->btShareMode;
+    out << YAML::Key << "removeEmptiedTorrent" << YAML::Value << m_data->btRemoveEmptiedTorrent;
     out << YAML::Key << "selectedFileOnly" << YAML::Value << m_data->btMetaSelectedFileOnly;
     out << YAML::Key << "dht" << YAML::Value << m_data->btDht;
     out << YAML::Key << "lsd" << YAML::Value << m_data->btLsd;
@@ -7813,6 +7947,10 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "maxConnections" << YAML::Value << m_data->btMaxConnections;
     out << YAML::Key << "maxConnectionsPerTorrent" << YAML::Value << m_data->btMaxConnectionsPerTorrent;
     out << YAML::Key << "portMapping" << YAML::Value << m_data->btPortMapping;
+    out << YAML::Key << "publicTrackers" << YAML::Value << YAML::BeginSeq;
+    for (const QString& u : m_data->btPublicTrackers)
+        out << u.toStdString();
+    out << YAML::EndSeq;
     out << YAML::Key << "i2p" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "mode" << YAML::Value << m_data->btI2pMode;
     out << YAML::Key << "host" << YAML::Value << m_data->btI2pHost.toStdString();
@@ -7863,8 +8001,8 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "forceOpen" << YAML::Value << m_data->ed3kForceOpen;
     out << YAML::Key << "autoIndexNode" << YAML::Value << m_data->ed3kAutoIndexNode;
     out << YAML::Key << "hide" << YAML::Value << m_data->ed3kHide;
+    out << YAML::Key << "anonHttp" << YAML::Value << m_data->ed3kAnonHttp;
     out << YAML::Key << "hops" << YAML::Value << m_data->ed3kHops;
-    out << YAML::Key << "hopping" << YAML::Value << m_data->ed3kHopping;
     out << YAML::Key << "hopShare" << YAML::Value << m_data->ed3kHopShare;
     out << YAML::Key << "reportProxy" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "type" << YAML::Value << m_data->ed3kReportProxyType;

@@ -117,8 +117,9 @@ public:
         QString otherName;
         /// the other downloads of ours waiting for this node (eD2K's A4AF files of the source)
         QStringList otherWants;
-        /// FileStatus.have per 4 MiB piece (missing bits are held); empty: not told
+        /// FileStatus.have per 4 MiB piece (missing bits are held, empty = complete file)
         std::vector<std::uint8_t> have;
+        bool haveKnown = false;   ///< a FileStatus.have came (was: empty read as not told)
         /// per 4 MiB piece: every block of it is ours (what the join still wants is not)
         std::vector<bool> ownPieces;
         /// block offsets asked on its stream, not here yet (in order)
@@ -180,8 +181,28 @@ public:
     /// hops.md §1: this join (not anonCapable) left @p root out, it is under the anonymous key.
     [[nodiscard]] bool skipped(const ffi::Root& root) const { return m_skipped.contains(root); }
 
+    // -- #224 local copies -------------------------------------------------------
+
+    /// A file on disk found under @p root (folder scan, Ed3kLocalScan): every join of
+    /// @p session copies from it like from a shared file, the open downloads of it start now.
+    /// Kept for the session; a read checks @p size and @p mtimeMs (changed: not read).
+    static void addFoundCopy(const Ed3kSession& session, const ffi::Root& root, const QString& path,
+                             std::uint64_t size, qint64 mtimeMs);
+    /// Found copies of @p session (tests, Statistics).
+    [[nodiscard]] static int foundCopies(const Ed3kSession& session);
+    /// Root and size of every open file download of @p session (what a folder scan looks for).
+    [[nodiscard]] static std::vector<std::pair<ffi::Root, std::uint64_t>> wantedFiles(const Ed3kSession& session);
+    /// A whole file of @p root (@p size bytes) here: a shared one all servable, or a found
+    /// copy; empty: none. No disk access (the read checks).
+    [[nodiscard]] static QString localCopyPath(const Ed3kSession& session, const ffi::Root& root, std::uint64_t size);
+    /// Hashes @p path (blocking: a worker); root and size, nullopt: unreadable or cancelled.
+    [[nodiscard]] static std::optional<std::pair<ffi::Root, std::uint64_t>> hashFileRoot(const QString& path,
+                                                                                      const std::atomic<bool>& cancel);
+
 protected:
     static constexpr std::uint64_t kBlock = 256 * 1024;
+    /// #224: blocks of a local copy per background read
+    static constexpr std::size_t kCopyBatch = 16;
     /// member index of a set's manifest fetched into memory (set searches, links)
     static constexpr int kSetManifest = -1;
     /// a complete member whose hash failed is hashed again after this long (and at the next start)
@@ -209,6 +230,10 @@ protected:
         ffi::KeyKind key = ffi::KeyKind::Node;
         /// anonymous key: downloadOpen done (after the first anonFileRequest held the root there)
         bool anonOpened = false;
+        /// #224: blocks read from a local copy (copyLocal); network requests wait meanwhile
+        bool copying = false;
+        bool copied = false;   ///< the local copy was read through once
+        int copiedBlocks = 0;
     };
 
     /// A file read for a worker. size, mtimeMs >= 0: the file must still have them.
@@ -247,6 +272,15 @@ protected:
     virtual void onBlobFetched(const QString& owner, int member, const ffi::Root& root, const QByteArray& data) = 0;
     /// The block values of a download arrived (event::Hashes).
     virtual void onDownloadHashes(const Download& d, const ffi::Bytes& blob) { Q_UNUSED(d) Q_UNUSED(blob) }
+    /// #224: a block of download @p d read from a local copy (copyLocal): taken like a network
+    /// block (written, counted); true: taken. Default: not taken.
+    virtual bool takeLocalBlock(const Download& d, std::uint64_t offset, std::span<const std::byte> data)
+    {
+        Q_UNUSED(d) Q_UNUSED(offset) Q_UNUSED(data) return false;
+    }
+    /// #224: the local copy of @p d was read through, @p blocks taken; the network asks for the
+    /// rest after this (the download may be gone already: complete).
+    virtual void onLocalCopyDone(const Download& d, int blocks) { Q_UNUSED(d) Q_UNUSED(blocks) }
     /// Where the bytes of a shared member to serve are (read on a worker); nullopt: not
     /// servable (not verified, gone).
     [[nodiscard]] virtual std::optional<FileRead> sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const = 0;
@@ -329,6 +363,11 @@ protected:
     /// A source of a download's root: asked for the file.
     void addSource(const ffi::Root& root, const ffi::Source& source);
     void requestBlocks(const ffi::Root& root);
+    /// #224: what wantedBlocks() lists of the open download @p root read from a local copy
+    /// first (hasLocalCopy), batch by batch through takeLocalBlock(); its block requests wait
+    /// meanwhile, onLocalCopyDone() after. false: none here, not open, or read once already.
+    bool copyLocal(const ffi::Root& root);
+    [[nodiscard]] bool copyingLocal(const ffi::Root& root) const;
     /// downloadPriority() of @p root changed: its waits re-ordered, nodes taken from or given
     /// to other downloads by the new order, its depth asked again.
     void priorityChanged(const ffi::Root& root);
@@ -369,6 +408,13 @@ protected:
     /// The mode taken, or the engine's error.
     std::expected<ffi::Publish, ffi::Error> publishShared(const ffi::FileInfo& info);
     [[nodiscard]] bool isShared(const ffi::Root& root) const { return m_shared.contains(root); }
+    /// #224: some join of the session serves a file under @p root here (Shared Files, a
+    /// finished download, another torrent's member), not a member of @p owner of this join.
+    [[nodiscard]] bool hasLocalCopy(const ffi::Root& root, const QString& owner) const;
+    /// #224: where to read [@p offset, +@p len) of @p root from such a local copy; nullopt:
+    /// none, or those bytes not servable there (unverified, changed).
+    [[nodiscard]] std::optional<FileRead> localCopyRead(const ffi::Root& root, std::uint64_t offset, std::uint32_t len,
+                                                        const QString& owner) const;
     /// Takes back what publishShared published (unpublish, or anonUnshare + anonUnpublish
     /// under the anonymous key).
     void unpublishShared(const ffi::Root& root, ffi::Publish mode);
@@ -589,6 +635,8 @@ protected:
 private:
     /// "ed3k <tag>: ", or "<tag>: " in a join's own category
     [[nodiscard]] QString logPrefix() const;
+    /// Options label of this network's anonymous-key switch ("Torrents"); empty: none.
+    [[nodiscard]] QString anonSwitchName() const;
     struct SetTry;
     struct Kept;
     /// Per session: the download holding each source node, and those waiting for it.
@@ -623,6 +671,9 @@ private:
     // was: void onKadFound(const ffi::event::KadFound& found);
     void onKadFound(const ffi::event::KadFound& found, ffi::KeyKind key);
     bool open(const ffi::Root& root, std::uint64_t size, const QString& owner, int member, bool inMemory);
+    /// #224: the next batch of copyLocal from block @p from on; endLocalCopy when none is left.
+    void copyLocalBatch(const ffi::Root& root, std::uint64_t from);
+    void endLocalCopy(const ffi::Root& root);
     void saveDirty();
     /// Kad sources of a download again (when allowed by the gap).
     void searchSourcesAgain(const ffi::Root& root, bool force);
@@ -631,6 +682,13 @@ private:
     /// The next candidate of @p owner's search; another search with roots after the last.
     bool tryNextSet(const QString& owner);
     [[nodiscard]] Kept readKept(const QString& owner) const;
+    /// readKept of the kept dir @p dir; any thread
+    [[nodiscard]] static Kept readKeptIn(const QString& dir);
+    /// shareKeptOwner after the read pool read @p kept and its blobs (@p blobs, one per kept.blobs)
+    void shareKeptRead(const QString& owner, const Kept& kept, const std::vector<QByteArray>& blobs);
+    /// publishKeptRecords after the read pool read the set manifest and the ALIAS records
+    void publishKeptRead(const QString& owner, const Kept& kept, const QByteArray& manifest,
+                         const std::vector<ffi::Bytes>& records);
     void writeKept(const QString& owner, const Kept& kept);
     void shareKeptMember(const QString& owner, int member, const ffi::Root& root, std::uint64_t size, const QString& name,
                          int tries);

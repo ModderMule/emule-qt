@@ -122,10 +122,11 @@ void Ed3kHttp::start(const ::ed3k::event::HttpRequest& req)
         m_answers.failed(id);
         return;
     }
-    // subscription.md §5.3: an anonymous share report goes through the report proxy alone
+    // subscription.md §5.3: an anonymous share report goes through the report proxy alone;
+    // http-source.md §3.2: so does an anonymous download's HTTP source
     if (req.via == ED3K_HTTP_VIA_ANON_REPORT_PROXY) {
         if (!m_reportProxy) {
-            logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: anonymous report without a report proxy").arg(id); });
+            logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: anonymous request without its proxy").arg(id); });
             m_answers.failed(id);
             return;
         }

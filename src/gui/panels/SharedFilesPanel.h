@@ -310,6 +310,8 @@ private:
     // Filesystem tree helpers
     /// The core's folders below @p parentItem (IPC ListFolders for a remote core)
     void populateFilesystemChildren(QTreeWidgetItem* parentItem);
+    /// UNC share roots of the shared list under "All Directories", once the drives are in
+    void syncUncRoots();
     void addFilesystemChild(QTreeWidgetItem* parent, const QString& path,
                             const QString& displayName, bool hasSubfolders);
     /// The loaded "All Directories" item of @p path ("" = that node itself)
@@ -318,8 +320,14 @@ private:
     void resetFilesystemTree();
     /// MoveEd3kFileKey of each file (hops.md §1: asks first).
     void moveEd3kKey(const QStringList& hashes, bool toAnon);
+    /// #212: drop these torrents from the Torrents list, files stay (shared as before)
+    void removeTorrentsKeepFiles(const QList<QPair<QString, QString>>& torrents);
+    void addRemoveTorrentAction(QMenu* menu, const QList<QPair<QString, QString>>& torrents);
+    [[nodiscard]] static QList<QPair<QString, QString>> torrentsOf(const std::vector<const SharedFileRow*>& rows);
+    [[nodiscard]] std::vector<const SharedFileRow*> rowsUnder(const QString& dir) const;
 
     QString m_fsTreeCore;   ///< host:port whose folders "All Directories" holds
+    bool m_coreWindows = false;   ///< drive letters among its roots: UNC shares apply
 };
 
 } // namespace eMule

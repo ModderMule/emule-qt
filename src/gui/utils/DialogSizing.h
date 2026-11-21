@@ -30,12 +30,14 @@ enum class Fit {
     /// The content gives way — lists, text edits, the Options pages. Their preferred
     /// height is a suggestion, so inflating the window to it would only add empty space;
     /// the layout minimum is the honest floor here (and the one Qt would apply itself,
-    /// were the dialog not overriding it).
+    /// were the dialog not overriding it). designedMin only sets the opening size.
     Layout,
 
     /// Opens like Content, but may be dragged down to the layout minimum: every page that
     /// would clip sits in a scroll area. For the tabbed detail dialogs, whose full height
-    /// is taller than a laptop screen less its panels (issue #181).
+    /// is taller than a laptop screen less its panels (issue #181). designedMin only sets
+    /// the opening size. A Content dialog whose whole content sits in a ContentScrollArea
+    /// is treated as Scroll (issue #234).
     Scroll,
 };
 
@@ -55,6 +57,7 @@ enum class Fit {
 ///
 /// @param designedMin      the hand-picked floor the call site used to pass to
 ///                         setMinimumSize(); pass 0 for a dimension the content owns.
+///                         A minimum for Fit::Content only, else just the opening size.
 /// @param designedDefault  the hand-picked default from resize() -- or a size the user
 ///                         left the dialog at; grown to the minimum, cut to the screen.
 /// @param fit              which height the content is entitled to; see Fit.

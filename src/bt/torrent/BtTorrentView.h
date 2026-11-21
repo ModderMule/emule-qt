@@ -27,6 +27,11 @@ public:
     static QString i2pAddressOf(const libtorrent::sha256_hash& destination);
 
     static BtTorrentRow row(const libtorrent::torrent_status& st);
+    /// size / done / totalSize / haveBytes of @p r from the file layout, the pieces of @p st
+    /// and @p priorities (by file index, missing = wanted), pad bytes left out: libtorrent
+    /// counts them once a seed's picker is rebuilt (priority change, recheck)
+    static void exactBytes(BtTorrentRow& r, const libtorrent::torrent_status& st,
+                           const std::vector<libtorrent::download_priority_t>& priorities);
     /// Rows of @p ti's files; progress and priorities by file index, missing = 0 / normal.
     /// @p avail = peers per piece (piece_availability); empty: availability N/A.
     /// Plain data in: the handle's own calls wait for libtorrent's thread (report 27)

@@ -17,6 +17,7 @@
 #include <QApplication>
 #include <QBuffer>
 #include <QComboBox>
+#include <QDateTime>
 #include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
@@ -420,10 +421,16 @@ void BugReportDialog::prefillCrashDump()
         return;
 
     // .stall: the core's main-thread stack when its event loop stopped (StallWatchdog)
-    const QStringList filters{QStringLiteral("*.crash"), QStringLiteral("*.dmp"), QStringLiteral("*.stall")};
-    QFileInfoList entries = crashDir.entryInfoList(filters, QDir::Files, QDir::Time);
-    if (!entries.isEmpty())
-        m_crashDumpEdit->setText(entries.first().absoluteFilePath());
+    // was: the newest of all three; a stall at the restart after a crash hid the crash (report 58)
+    const QFileInfoList crashes = crashDir.entryInfoList({QStringLiteral("*.crash"), QStringLiteral("*.dmp")},
+                                                         QDir::Files, QDir::Time);
+    const QFileInfoList stalls = crashDir.entryInfoList({QStringLiteral("*.stall")}, QDir::Files, QDir::Time);
+    const QDateTime dayAgo = QDateTime::currentDateTime().addDays(-1);
+    if (!crashes.isEmpty() && (stalls.isEmpty() || crashes.first().lastModified() >= dayAgo
+                               || crashes.first().lastModified() >= stalls.first().lastModified()))
+        m_crashDumpEdit->setText(crashes.first().absoluteFilePath());
+    else if (!stalls.isEmpty())
+        m_crashDumpEdit->setText(stalls.first().absoluteFilePath());
 }
 
 /// "eMule Qt v0.7.21, core v0.7.21, macOS 26.1 (arm64)"

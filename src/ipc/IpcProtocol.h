@@ -44,6 +44,8 @@ enum class IpcMsgType : int {
     /// Fields 2-4 optional: a GUI names itself so the auto-updater can restart it.
     Handshake            = 100,
     Ping                 = 101,  ///< [] — keepalive probe; daemon responds with Result(true)
+    /// [slim?: bool] — slim: only name, size, progress, rate, sources, state, priority and
+    /// category fields (no part maps, sources or gaps: phones over a slow link)
     GetDownloads         = 110,
     GetDownload          = 111,  ///< [hash: string]
     PauseDownload        = 112,  ///< [hash: string]
@@ -106,7 +108,7 @@ enum class IpcMsgType : int {
     AddFriend            = 171,  ///< [hash, name, ip, port, addr: string] — addr wins if set
     RemoveFriend         = 172,  ///< [hash, addr: string, port] — addr+port when hash empty
     SendChatMessage      = 173,  ///< [hash: string, message: string]
-    SetFriendSlot        = 174,  ///< [hash: string, enabled: bool]
+    SetFriendSlot        = 174,  ///< [hash: string, enabled: bool, addr: string, port] — addr+port when hash empty
     EndChatSession       = 175,  ///< [hash: string] — the chat window closed, so the
                                 ///<   peer goes back to ChatState::None and a dial we
                                 ///<   started for it is cancelled. MFC does this from
@@ -770,6 +772,18 @@ enum class IpcMsgType : int {
     /// empty entries: everything. Refused once its unpack started. LookupArchiveContents of a
     /// queued download answers kept: [path] per archive and editable: bool.
     SetArchiveEntries       = 747,
+    /// [target: {usenetItem: id} | {hosterPackage: id, hosterItem: id}, archives: [{name, parts?:
+    /// [name], entries: [{root: hex, size, path}]}], folder: string, category: int] -> [ok,
+    /// {added: int, skipped: int, note?: string}] or [false, error]. #224: every entry of the
+    /// archives is on disk here (LookupArchiveContents entry local: true): the entries come by
+    /// root from those files (DownloadArchiveEntries), the archives' volumes are skipped in the
+    /// queued download (Usenet files skipped, hoster items removed).
+    TakeArchiveFromDisk     = 748,
+    /// [folders: [string]] -> [ok, {files, candidates, hashed, matched, paths: [string]}] or
+    /// [false, error]. #224 folder scan (docs/biglybt-locate-files.md): the folders (on the
+    /// core's disk) walked for files of the size of an open ed3k download of any network, those
+    /// hashed; a root that matches is copied from there. The reply when the scan ends.
+    LocateLocalCopies       = 749,
 
     // -- eNode meta search (750-754) -------------------------------------------
     //
@@ -825,7 +839,7 @@ enum class IpcMsgType : int {
 
     /// [] -> [{id, name, savePath, state, size, done, progress, rateDown, rateUp,
     ///         peers, seeds, peersTotal, seedsTotal, downloaded, uploaded,
-    ///         failedBytes, error,
+    ///         sessionUploaded, failedBytes, error,
     ///         hashV1, hashV2, paused, hasMetadata, private, addedAt, completedAt,
     ///         seedingSeconds, queuePosition, pieceMap, pieces, pieceLength,
     ///         numFiles, eta, comment, creator, createdAt, lastActivity,
@@ -939,7 +953,7 @@ enum class IpcMsgType : int {
     // ed3k friends and chat (1001-1009, src/daemon/Ed3kFriendsBridge.cpp). Keys (32 B) and
     // nodes (16 B) as hex; a chat is keyed by node. Failure: [false, {error: ed3k::Error}].
     /// [] -> [ok, {running, friends: [{key, node, name, mutual, asking, heldLink, addr,
-    ///   lastSeen}], requests: [{key, node, text, issued}]}]
+    ///   lastSeen, friendSlot}], requests: [{key, node, text, issued}]}]
     GetEd3kFriends          = 1001,
     /// [link: string, text: string] -> [ok, {key}]; text goes with a request (`r`), <= 96 B
     AddEd3kFriend           = 1002,
@@ -953,6 +967,8 @@ enum class IpcMsgType : int {
     SendEd3kChat            = 1006,
     /// [node] -> [ok] — the chat window closed
     EndEd3kChat             = 1007,
+    /// [key, enabled: bool] -> [ok] — the friend slot (one for both networks: clears the eD2K one)
+    SetEd3kFriendSlot       = 1008,
 
     // ed3k readable names and websites (1010-1019, src/daemon/Ed3kNamesBridge.cpp, name.md).
     // Zones/keys as hex. Failure: [false, {error: ed3k::Error}] (0: no node).
@@ -1186,7 +1202,8 @@ enum class IpcMsgType : int {
     // src/daemon/Ed3kDownloadsBridge.cpp. Roots (32 B) as hex. A download: {root, name, size,
     // done, rate (B/s), sources, transferring, state (0 downloading, 1 paused, 2 verifying,
     // 3 complete, 4 failed), priority (eMule's kPr*: 0 low, 1 normal, 2 high, 3 very high,
-    // 4 very low), category, owner, path, addedOn, completedOn, error}; a local GUI opens
+    // 4 very low), category, owner, path, addedOn, completedOn, error, webDropped (HTTP
+    // sources not used under the anonymous key, absent: none)}; a local GUI opens
     // `path` itself. Failure: [false,
     // {error: string (localized)}]. (1100-1109 were taken by the hoster links: 1140-1149.)
     /// [] -> [ok, {running, downloads: [download]}]

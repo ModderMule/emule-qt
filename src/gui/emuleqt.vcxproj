@@ -349,6 +349,7 @@
     <ClCompile Include="controls\SearchResultsModel.cpp" />
     <ClCompile Include="controls\SearchResultsProxy.cpp" />
     <ClCompile Include="controls\FilterEdit.cpp" />
+    <ClCompile Include="controls\CheckComboBox.cpp" />
     <ClCompile Include="controls\HosterCombo.cpp" />
     <ClCompile Include="utils\HosterIcons.cpp" />
     <ClCompile Include="controls\SpeedLimitPopup.cpp" />
@@ -386,6 +387,7 @@
     <ClCompile Include="utils\IpcFeedback.cpp" />
     <ClCompile Include="utils\MassRenameAction.cpp" />
     <ClCompile Include="utils\MoveDownloadsAction.cpp" />
+    <ClCompile Include="utils\LocateFilesAction.cpp" />
     <ClCompile Include="utils\Ed3kLinkMenu.cpp" />
     <ClCompile Include="utils\FolderLister.cpp" />
     <ClCompile Include="utils\HostnameResolver.cpp" />
@@ -467,6 +469,7 @@
     <ClInclude Include="app\Ed3kLinkActions.h" />
     <ClInclude Include="utils\MassRenameAction.h" />
     <ClInclude Include="utils\MoveDownloadsAction.h" />
+    <ClInclude Include="utils\LocateFilesAction.h" />
     <ClInclude Include="utils\Ed3kLinkMenu.h" />
     <ClInclude Include="utils\FolderLister.h" />
     <ClInclude Include="utils\AsyncMessageBox.h" />
@@ -616,6 +619,7 @@
     <QtMoc Include="controls\SearchResultsModel.h" />
     <QtMoc Include="controls\SearchResultsProxy.h" />
     <QtMoc Include="controls\FilterEdit.h" />
+    <QtMoc Include="controls\CheckComboBox.h" />
     <QtMoc Include="controls\HosterCombo.h" />
     <QtMoc Include="utils\HosterIcons.h" />
     <QtMoc Include="controls\SpeedLimitPopup.h" />

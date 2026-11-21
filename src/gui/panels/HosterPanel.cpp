@@ -438,7 +438,9 @@ HosterPanel::HosterPanel(QWidget* parent)
     connect(CountryFlagsNotifier::instance(), &CountryFlagsNotifier::changed, this, [this] { refreshHosterIcons({}); });
 
     m_addAction = new QAction(menuIcon("Hoster.ico"), tr("Add hoster links..."), this);
-    connect(m_addAction, &QAction::triggered, this, [this] { promptAddLinks(); });
+    // Queued, also in the Tools menu: see UsenetPanel's Add NZB from URL
+    connect(m_addAction, &QAction::triggered, this, [this] { promptAddLinks(); },
+            Qt::QueuedConnection);
     connect(addBtn, &QPushButton::clicked, this, [this] { promptAddLinks(); });
     connect(dlcBtn, &QPushButton::clicked, this, &HosterPanel::promptOpenContainer);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &HosterPanel::showContextMenu);

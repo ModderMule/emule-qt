@@ -12,6 +12,8 @@
 ///   (not a credential). Open links, their text and the state blob are credentials: never
 ///   logged (ffi.md "Friends").
 /// - Presence looks on while the node runs (friendSetPresence).
+/// - The friend slot (eMule's, friend.md §4 local policy): one friend waits ahead of the upload
+///   queue; kept in Config/ed3k/friend-slot.dat and set again at every start.
 
 #include "Ed3kFfi.h"
 
@@ -45,6 +47,7 @@ public:
         bool heldLink = false;  ///< an open link of it is held
         std::optional<::ed3k::Address> addr;   ///< newest known address
         qint64 lastSeen = 0;    ///< Unix s of that address; 0 never
+        bool friendSlot = false;   ///< holds the friend slot
     };
     /// A request shown to the user, each key once (friend.md §3).
     struct Request {
@@ -80,6 +83,11 @@ public:
     /// Adds an `ed3k:friend` link (with `r`: a request carrying @p text). The new key.
     ::ed3k::Result<::ed3k::Key32> add(const QString& link, const QString& text);
     ::ed3k::Result<> remove(const ::ed3k::Key32& key);
+    /// The friend slot to @p key (one at a time), or off when @p on is false.
+    ::ed3k::Result<> setFriendSlot(const ::ed3k::Key32& key, bool on);
+    /// No friend slot (the eD2K one was set: one slot for both networks).
+    void clearFriendSlot();
+    [[nodiscard]] std::optional<::ed3k::Key32> friendSlot() const { return m_slot; }
     /// The user's answer to a request (friend.md §3).
     ::ed3k::Result<> answerRequest(const ::ed3k::Key32& key, bool accept);
     /// This node's friend link, with `r` when @p withRequest; a name as `dn`.
@@ -128,11 +136,16 @@ private:
     void loadNames();
     void saveNames() const;
     [[nodiscard]] QString namesPath() const;
+    /// Hands m_slot to the engine; a friend gone since drops it.
+    void applySlot();
+    void loadSlot();
+    void saveSlot() const;
 
     Ed3kSession& m_session;
     ChatOptions m_options;
     bool m_attached = false;
     std::map<::ed3k::Key32, QString> m_names;
+    std::optional<::ed3k::Key32> m_slot;
     std::map<::ed3k::Key32, Request> m_requests;
     std::map<::ed3k::NodeId, ::ed3k::Address> m_addr;
     std::map<::ed3k::NodeId, qint64> m_seen;

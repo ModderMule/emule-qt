@@ -55,6 +55,7 @@ SOURCES += \
     queue/UsenetWorker.cpp \
     stream/RarReader.cpp \
     stream/UsenetEncryptedPreview.cpp \
+    stream/Mp4Index.cpp \
     stream/UsenetImagePreview.cpp \
     stream/UsenetArticleGrab.cpp \
     stream/UsenetNfoPreview.cpp \
@@ -96,6 +97,7 @@ HEADERS += \
     queue/UsenetWorker.h \
     stream/RarReader.h \
     stream/UsenetEncryptedPreview.h \
+    stream/Mp4Index.h \
     stream/UsenetImagePreview.h \
     stream/UsenetArticleGrab.h \
     stream/UsenetNfoPreview.h \

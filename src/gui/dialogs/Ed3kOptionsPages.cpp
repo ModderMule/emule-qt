@@ -1852,8 +1852,9 @@ QCheckBox* Ed3kOptionsPages::singleTransferCheck(const QString& windowName, QWid
 {
     auto* check = new QCheckBox(tr("Single transfer mode (ed3k only)"), parent);
     check->setToolTip(tr("Hides the %1 window. Its downloads joined with ed3k are listed in the Transfers window "
-                         "and still use this network and its settings there; the others are paused until this is "
-                         "switched off. Needs ed3k.").arg(windowName));
+                         "and still use this network and its settings there.\n\n"
+                         "Downloads not joined with ed3k get paused while this is on and are resumed when it is "
+                         "switched off.\n\nNeeds ed3k.").arg(windowName));
     return check;
 }
 

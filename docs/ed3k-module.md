@@ -28,8 +28,8 @@ joins.
 | `src/ed3k/Ed3kBootstrap.{h,cpp}` | node list sources and the asks of `ed3k:nodes` links (see "Node lists" below) |
 | `tests/tst_Ed3kPlumbing.cpp` | extension names and `extOff` in the engine, base32 and `ed3k:nodes` links, the IPv6 source following the pin, filter and names state across a restart, two nodes finding each other over LAN (sockets by hand), node list links refused without a GUI, asked and answered |
 | `src/ed3k/Ed3kFriends.{h,cpp}` | `eMule::ed3k::Ed3kFriends`: ed3k friends and chat (see "Friends and chat" below) |
-| `src/daemon/Ed3kFriendsBridge.{h,cpp}` | IPC 1001-1007 / pushes 1051-1056 of friends and chat, reached through `Ed3kBridge` |
-| `tests/tst_Ed3kFriends.cpp` | three nodes on loopback: a friend by link and request, accepted, found by its record, chat both ways, the message filter; the IPC messages through CBOR frames |
+| `src/daemon/Ed3kFriendsBridge.{h,cpp}` | IPC 1001-1008 / pushes 1051-1056 of friends and chat, reached through `Ed3kBridge` |
+| `tests/tst_Ed3kFriends.cpp` | three nodes on loopback: a friend by link and request, accepted, found by its record, chat both ways, the message filter; the IPC messages through CBOR frames; the friend slot over IPC and across a restart |
 | `src/ed3k/Ed3kRooms.{h,cpp}` | `eMule::ed3k::Ed3kRooms`: ed3k rooms (see "Rooms" below) |
 | `src/daemon/Ed3kRoomsBridge.{h,cpp}` | IPC 1120-1129, 1044 / pushes 1160-1164 of rooms, reached through `Ed3kBridge` |
 | `tests/tst_Ed3kRooms.cpp` | two nodes on loopback: an open room joined by link with posts both ways, a closed room with the admit round trip, a ban, the rooms across a restart; the IPC through CBOR frames; batch 13: a reply round trip and its quoted line in `Ed3kRoomTab`, a mute kept across a restart, `ROOM_MEMBER` showing the member key; posts stored across a restart with no member online; a private room's posts sealed (no plain text, damaged file or lost key refused) |
@@ -156,6 +156,7 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 | `hops.dat` | `hopsExportState` (the entry hops) | at stop |
 | `bootstrap.dat` | the start of the last first contact from node lists (u64 LE, `BootstrapStarted`) | on `BootstrapStarted` |
 | `friend-names.dat` | `keyhex<TAB>name` lines: `dn` of the added links (`Ed3kFriends`); not a credential | when a named link is added or a friend removed |
+| `friend-slot.dat` | key hex of the friend holding the friend slot (`Ed3kFriends`), set again at every start; empty: none | when the slot is set, ended or its friend removed |
 | `rooms/joined.cbor` | the joined rooms: room, link (a credential with `s`), nick, last info, muted member IDs (`Ed3kRooms`); 0600 | on create, join, leave, nick, mute |
 | `rooms/<room>.member`, `rooms/owner-<room key>.key` | 32-byte seeds: the member key of a room, the room key of an owned room (kept on leave); 0600, never logged | on create or join |
 | `rooms/<room>.posts` | last `ed3k.roomHistoryMax` (5000) posts of a room, CBOR; private (`s`) and closed rooms sealed: nonce 12 ‖ ChaCha20-Poly1305 ‖ tag 16, key HKDF-SHA256(`rooms/posts.key`, "ed3k room posts v1" ‖ room id), AAD = room id; not readable (key lost, damaged, old plain file): forgotten, next write overwrites; 0600; shown at start before neighbours' 24 h history (since 0); off (`ed3k.roomHistoryStore`) deletes them and `posts.key`; removed on leave | 5 s after a post, at stop |
@@ -429,6 +430,15 @@ it before either session.
   Blocks whose pieces libtorrent has already (`havePieces` at the start of the downloads and
   after its resume check, `torrentChecked`; then its verdicts) are not asked for, and a member
   libtorrent has whole gets no ed3k download.
+- **Local copies (#224):** once a member's root is known (set or link), a file another join of
+  the session serves under that root (Shared Files, a finished ed3k download, an eD2K part
+  file's verified blocks, another torrent's member) is read first (`Ed3kJoinBase::localCopyRead`,
+  the sharer's own `sharedRead`: verified bytes, size and date as hashed), 16 blocks per
+  batch on the read pool, and taken like ed3k blocks (`takeLocalBlock` → `takeBlock`). A
+  piece libtorrent fails gives its local blocks back to the network. Only roots this node
+  has hashed count: without ed3k on, or before the set is found, nothing matches.
+  Was torrent-only (`copyLocal`/`endCopy` here); now the base's, for every join — see
+  "Local copies" below. BiglyBT's folder scan by size + piece hash: biglybt-locate-files.md.
 - **Completion:** `TORRENT_COMPLETE` waits until every member is hashed (`complete()` needs
   it), then shares the manifest and the info dictionary from memory, `setPublish` and
   `publishAlias` (not while holding back). Verified members are shared and published at once.
@@ -821,14 +831,12 @@ ToDo (credits):
 - **Prefs:** `ed3kHide` (off), `ed3kHops` 0–3 (1): one hop count for every use, handed as
   `Ed3kHide::hideCfg(hops)`: out, in and every per-use count (lookup, download, share, publish,
   room, paid) set to it, `nodeKeyUses` 0, gates at the core default. Off = hiding off, no
-  `anonStart` (`ED3K_HOPS_OFF` is never sent). `ed3kHopping` (on, forward for others),
-  `ed3kHopShare` 25 %.
+  `anonStart` (`ED3K_HOPS_OFF` is never sent). `ed3kHopShare` 25 %.
+- **Forwarding for others** (§1, §5): always on while hiding (`hopsSetHopping(on)`), no pref
+  and no GUI switch; packmule keeps its own `hopsSetHopping` for other clients.
 - **0 hops** (hops.md §2.6): deniable, not hidden: the node is its own last hop and gate.
-  Offered only while "Forward traffic for others" is on (the spin's minimum is 0 then, else 1,
-  with the hint "0 = deniable, not hidden"); turning forwarding off at 0 gives 1
-  (`Ed3kHide::normalized`, also in the daemon). A core without 0 hops refuses it (`Config`):
-  hiding then starts with 1 (logged). Hopping is on by default and is switched on again when
-  the user turns hiding on (§1 "a client turns HOP on by default").
+  The spin goes 0 to 3, with the hint "0 = deniable, not hidden". A core without 0 hops
+  refuses it (`Config`): hiding then starts with 1 (logged).
 - **Key per use** (§1): `Ed3kHide::keyForUse()` = anonymous key while hiding runs, else node
   key, taken when a use starts and remembered with it: searches, live streams and channel
   searches, followed sets, rooms, paid scopes. Files keep `keyFor(root)` (recorded in
@@ -1194,7 +1202,7 @@ ToDo (sets and live):
 `Ed3kFriends` (DaemonApp, after `Ed3kShared`) takes the `Friend*` and `Chat*` events
 (friend.md, chat.md) and answers the IPC of `Ed3kFriendsBridge`:
 
-- **Requests** (1001-1007): `GetEd3kFriends` (friends with key, node, name, mutual, asking,
+- **Requests** (1001-1008): `GetEd3kFriends` (friends with key, node, name, mutual, asking,
   heldLink, addr, lastSeen; and the requests waiting), `AddEd3kFriend` (link, request text),
   `RemoveEd3kFriend`, `AnswerEd3kFriendRequest` (accept/decline), `GetEd3kMyFriendLink`
   (with `r`, `dn` = nick), `SendEd3kChat` (node, text), `EndEd3kChat`. A failure is
@@ -1210,6 +1218,12 @@ ToDo (sets and live):
   "Advanced spam filter" → the 20 a minute rate limit (off: none), "Filter messages
   containing" → such messages dropped. Captchas and "secure" do not apply (the sender is an
   authenticated key, chat.md §2).
+- **Friend slot** (`SetEd3kFriendSlot` 1008, friend.md §4: a friend's upload queue rights are
+  local policy): packmule's `ed3k_friend_slot_set` puts the friend ahead of the auto queue,
+  after a bid-ended turn and a failed offer (credit.md §5.3, §12.5). Unlike eMule its turn
+  still ends at 16 MiB / 1 h when others wait (§12.5 SHOULD); one other waiter then goes
+  first. One slot for both networks: setting it clears the eD2K one and back. Kept in
+  `friend-slot.dat`, ends with the friend.
 - **GUI**: the Messages panel shows both networks (`ChatNetwork`: `Ed2kChatNetwork` /
   `Ed3kChatNetwork`, one chat-tab code). ed3k rows are marked "(ed3k)" and keyed
   `ed3k:<node>`; "Add..." takes an `ed3k:friend` link; a request asks Accept / Decline / Later
@@ -1397,3 +1411,56 @@ on ed3k search rows (done: batch 13, "Publishing", "Search rows" above).
 - was: An owner-only DACL for `node.key` on Windows (done, batch 14: `Ed3kKeyFile` `ownerOnly`, a protected DACL
   for the current user, used by `Ed3kStore` for every secret file and state blob; not compiled here, read only).
 - `tests/vs` projects: every ed3k test has one (`Tests\Ed3k`, `tst_Ed3kTorrentJoin` in `Tests\BitTorrent`). A new test: add a `TEST_EXTRAS` entry in `scripts/generate_test_vcxprojs.py` if it needs more than the core libs and run it with `--only`, which leaves `specialdlp` and `emuleqt-mcp` in the `.sln` (a run without `--only` drops them).
+
+## Local copies (#224)
+
+A download of a root this node already has on disk is read from there first, in every join.
+
+- **Base (`Ed3kJoinBase`):** `copyLocal(root)` on an open file download: when
+  `hasLocalCopy` (a join of the session serves the root, not the download's own owner, or a
+  found copy), the blocks `wantedBlocks()` lists are read in batches of `kCopyBatch` (16) on
+  the read pool through `localCopyRead` and handed to `takeLocalBlock()`. `requestBlocks`
+  sends nothing while `Download::copying`; `endLocalCopy` → `onLocalCopyDone()` → the network
+  asks for the rest. A block the sharer will not serve (unverified, changed) is skipped; an
+  unreadable one ends the copy. Once per open download (`Download::copied`).
+- **Torrent:** members at `startDownloads`; blocks remembered (`Member::local`) for a failed piece.
+- **Hoster:** after the §4 ALIAS lookup gave the root (`startRooted`): the link is opened only
+  in `onLocalCopyDone` — a whole local copy completes the item with no hoster wait, puzzle or
+  quota. Local bytes count neither as hoster nor as peer bytes.
+- **Usenet:** at `startDownload`; blocks go through `writeBlock` → `ed3kBlock` → ACCEPT_RANGE →
+  `acceptExternalRange`, so their articles are not fetched. The temp file is made when the
+  first article is not there yet. Ranges accepted before the queue knew its part size are
+  offered again at the next decoded article (`Post::reaccept`). Under a §4.2 claim (no post
+  set) blocks are held until an article was compared, as for peers' blocks.
+- **Plain ed3k downloads (`Ed3kDownloads`):** at `startDownload`; the whole file is hashed at
+  the end as always. Archive entries downloaded by root (DownloadArchiveEntries) come from disk
+  this way.
+- **Found copies (folder scan):** `Ed3kJoinBase::addFoundCopy(session, root, path, size, mtime)`
+  registers a file per session (`NodeTurns::found`); `hasLocalCopy`/`localCopyRead` take it
+  (reads check size and date), and every open download of the root starts copying.
+  `Ed3kLocalScan` (IPC 749 LocateLocalCopies, Transfers › "Locate Files...") walks folders for
+  files the size of `wantedFiles()` (open file downloads of any join), skips part files, hashes
+  only those (folder with most candidates first) and registers matches. BiglyBT's way, with
+  the BLAKE3 root as proof instead of piece hashes: biglybt-locate-files.md.
+- **Archives:** `Ed3kArchiveContents::markLocal` fills `Found::localPaths` (`localCopyPath`: a
+  whole servable file or a found copy); LookupArchiveContents entries carry `local`, archives
+  `allLocal`. Details › Archive shows "On disk"; for a queued download "Take From Disk" (IPC 748
+  TakeArchiveFromDisk) downloads every entry by root (from disk) into incoming/<folder>/ and
+  skips the archive's volumes (Usenet `setFilesSkipped`, hoster items removed). All entries or
+  nothing: a compressed archive cannot be rebuilt from its files.
+- **Stored archives (Usenet):** `ArchiveFill` (daemon, with ed3kArchiveContents) looks up a new
+  item's archives by NZB file ids; entries on disk become par2 extra files once the index
+  .par2 is there. `Par2Verifier::locate` (par2's rolling scan; base = the extras' common
+  folder, par2 drops extras outside it) finds the volumes' blocks inside them,
+  `Par2LocalFill::fill` writes them into the part files, `acceptExternalRange` drops their
+  articles. Headers come from Usenet or recovery blocks; verify/repair as always. A
+  compressed archive finds nothing.
+  - The index is read at its sealed `tempPath` (`finalPath` is set only on publish).
+  - Ranges wait until the volume has an article of its own: without one the queue borrows
+    the part size of another file (a lone small .par2's), and the wrong articles would be
+    marked done.
+  - It pays off only when the index comes before the payload: the queue hoists it while
+    "unrepairable: pause/fail" is set (the default) or names look obfuscated; with "keep
+    going" the index comes last and the fill saves nothing.
+  - Test: tst_ArchiveFill (fake NNTP server, stored volume, entry elsewhere on disk).
+

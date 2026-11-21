@@ -1966,6 +1966,12 @@ QString IrcPanel::askIrcNick(const QString& start)
 
 void IrcPanel::noteMessage(const QString& key, bool mention)
 {
+    if (!markUnread(key) || !window()->isActiveWindow())
+        emit messageArrived(mention);
+}
+
+bool IrcPanel::markUnread(const QString& key)
+{
     const int idx = findTab(key);
     const bool onScreen = isVisible() && idx >= 0 && idx == m_tabWidget->currentIndex();
     if (!onScreen && !m_unread.contains(key)) {
@@ -1976,14 +1982,14 @@ void IrcPanel::noteMessage(const QString& key, bool mention)
     // red tab = unread, like the toolbar "!"
     if (idx >= 0 && idx != m_tabWidget->currentIndex())
         m_tabWidget->tabBar()->setTabTextColor(idx, roleColor(TextRole::Error));
-    if (!onScreen || !window()->isActiveWindow())
-        emit messageArrived(mention);
+    return onScreen;
 }
 
 void IrcPanel::markRead(const QString& key)
 {
     if (m_unread.remove(key) && m_unread.isEmpty())
         emit unreadChanged(false);
+    rememberRoomRead(key);
 }
 
 } // namespace eMule

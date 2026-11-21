@@ -22,6 +22,7 @@
 #include "ScheduleNetworkBridge.h"
 #include "BandwidthCoordinator.h"
 #include "BtBridge.h"
+#include "BtFileIndex.h"
 #include "BtCreateBridge.h"
 #include "Ed3kBridge.h"
 #include "Ed3kCreditBridge.h"
@@ -101,6 +102,7 @@
 #include "Ed3kEd2kJoin.h"
 #include "Ed3kHosterJoin.h"
 #include "Ed3kArchiveContents.h"
+#include "ArchiveFill.h"
 #include "Ed3kHosterCatalog.h"
 #include "Ed3kLinkGrabber.h"
 #ifdef EMULE_HAVE_HOSTER_JD
@@ -850,6 +852,11 @@ bool DaemonApp::start()
         });
     });
     ArchiveContentsBridge::setTargets(m_archiveContents.get(), m_ed3kDownloads.get(), m_hosterJoin.get(), nullptr);
+    // #224: entries of a Usenet download's archives on disk here fill its stored volumes
+    if (auto* queue = m_usenetSession ? m_usenetSession->queue() : nullptr) {
+        m_archiveFill = std::make_unique<ArchiveFill>(*m_archiveContents, *queue);
+        m_archiveFill->setEnabled(thePrefs.ed3kArchiveContents());
+    }
     // hops.md §1 SHOULD: an ed3k download under the anonymous key of a file in the eD2K queue
     // or a hoster download: the user is told (once, Ed3kShared::tellExposed)
     if (m_ed3kShared)
@@ -1071,6 +1078,46 @@ bool DaemonApp::start()
         connect(m_btSession.get(), &bt::BtSession::metadataReceived, this, guard);
         connect(m_btSession.get(), &bt::BtSession::torrentChecked, this, guard);
     }
+    {
+        // #212: which torrents cover a shared file (torrent mark, Remove Torrent keeping files)
+        const auto refreshRows = [](const QSet<QString>& keys) {
+            if (keys.isEmpty() || !theApp.sharedFileList)
+                return;
+            // collected under the list's lock, told after it (lock re-entry)
+            std::vector<MD4Key> hashes;
+            theApp.sharedFileList->forEachFile([&](KnownFile* kf) {
+                if (keys.contains(SharedFileList::pathKey(kf->filePath())))
+                    hashes.emplace_back(kf->fileHash());
+            });
+            for (const MD4Key& h : hashes)
+                theApp.sharedFileList->noteFileChanged(h.data.data());
+        };
+        const auto index = [this, refreshRows](const QString& id) {
+            if (!m_btSession)
+                return;
+            const auto row = m_btSession->torrent(id);
+            if (!row || row->name.isEmpty() || row->totalSize <= 0)
+                return;   // no metadata yet
+            const QString root = QDir::cleanPath(row->savePath + u'/' + row->name);
+            auto& idx = BtFileIndex::instance();
+            if (idx.isCurrent(id, root))
+                return;
+            // first ask may be empty: the next torrentChanged has the list
+            const QList<bt::BtFileRow> files = m_btSession->files(id);
+            if (files.isEmpty())
+                return;
+            QStringList paths;
+            for (const bt::BtFileRow& f : files)
+                if (!f.pad)
+                    paths.append(QDir::cleanPath(row->savePath + u'/' + f.path));
+            refreshRows(idx.update(id, row->name, root, paths));
+        };
+        connect(m_btSession.get(), &bt::BtSession::torrentAdded, this, index);
+        connect(m_btSession.get(), &bt::BtSession::torrentChanged, this, index);
+        connect(m_btSession.get(), &bt::BtSession::metadataReceived, this, index);
+        connect(m_btSession.get(), &bt::BtSession::torrentRemoved, this,
+                [refreshRows](const QString& id) { refreshRows(BtFileIndex::instance().remove(id)); });
+    }
     m_i2pRouter = std::make_unique<I2pRouter>();
     BtBridge::setI2pRouter(m_i2pRouter.get());
     // Ready hands libtorrent the SAM bridge, a crash takes it away
@@ -1149,11 +1196,12 @@ bool DaemonApp::start()
     if (theApp.scheduler)
         theApp.scheduler->setNetworkActions(m_scheduleNetwork.get());
 #ifdef EMULE_HAVE_ED3K
-    // the graphs' ed3k lines: the coordinator's wire rates (B/s → KB/s), cleared before it goes
+    // the graphs' ed3k lines: the coordinator's file rates (B/s → KB/s), cleared before it goes
+    // was: wire rates (ed3kDownRate/ed3kUpRate), overhead drawn as a download
     if (theApp.statsHistory)
         theApp.statsHistory->setEd3kRateSource([bw = m_bandwidth.get()] {
             const auto& s = bw->snapshot();
-            return EngineRates{static_cast<float>(s.ed3kDownRate) / 1024.0f, static_cast<float>(s.ed3kUpRate) / 1024.0f};
+            return EngineRates{static_cast<float>(s.ed3kFileDownRate) / 1024.0f, static_cast<float>(s.ed3kFileUpRate) / 1024.0f};
         });
     m_ed3kStatsTimer = new QTimer(this);
     m_ed3kStatsTimer->setInterval(std::chrono::seconds(1));
@@ -1259,6 +1307,7 @@ void DaemonApp::stop()
     m_archiveCancel->store(true);
     setArchiveContentsHook({});
     ArchiveContentsBridge::setTargets(nullptr, nullptr, nullptr, nullptr);
+    m_archiveFill.reset();   // before the contents service it looks up with
     if (m_archiveContents)
         m_archiveContents->stop();
     m_archiveContents.reset();
@@ -1762,14 +1811,14 @@ void DaemonApp::applyEd3kConfig()
     if (!m_ed3kSession)
         return;
     // hiding (hops.md §1): live, no restart; applied at start too
-    // §2.6: 0 hops only while forwarding for others; hopping off at 0 gives 1
-    if (thePrefs.ed3kHops() == 0 && !thePrefs.ed3kHopping())
-        thePrefs.setEd3kHops(1);
-    ed3k::Ed3kHideSettings hide{thePrefs.ed3kHide(), thePrefs.ed3kHops(), thePrefs.ed3kHopping(), thePrefs.ed3kHopShare()};
+    // forwarding for others is always on while hiding (§1, §5): no pref
+    ed3k::Ed3kHideSettings hide{thePrefs.ed3kHide(), thePrefs.ed3kHops(), thePrefs.ed3kHopShare()};
     // subscription.md §5.3: anonymous share reports only through the report proxy (off: none)
     if (const ProxySettings rp = thePrefs.ed3kReportProxy(); rp.useProxy)
         if (const QNetworkProxy p = toNetworkProxy(rp); p.type() != QNetworkProxy::NoProxy)
             hide.reportProxy = p;
+    // hops.md §1: anonymous downloads' HTTP sources only through that proxy
+    hide.anonHttp = thePrefs.ed3kAnonHttp();
     m_ed3kSession->setHideSettings(hide);
     // a server's index node: on is live; off keeps a connection made (no restart)
     m_ed3kSession->setAutoIndexNodes(thePrefs.ed3kAutoIndexNode());
@@ -1879,6 +1928,8 @@ void DaemonApp::applyEd3kConfig()
     // ed3kArchiveContents: off withdraws the published contents records
     if (m_archiveContents)
         m_archiveContents->setPublish(thePrefs.ed3kArchiveContents());
+    if (m_archiveFill)
+        m_archiveFill->setEnabled(thePrefs.ed3kArchiveContents());
     applyTorrentArchiveContents();
     // ed3kOwnSetsWatch: no restart
     if (m_ed3kOwnSets)

@@ -99,6 +99,9 @@
     <ClCompile Include="BtCreateBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="BtFileIndex.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="LandedFiles.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -252,6 +255,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="BtCreateBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="BtFileIndex.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="LandedFiles.h">

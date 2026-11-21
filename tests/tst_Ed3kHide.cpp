@@ -126,14 +126,17 @@ private slots:
     void cleanup();
     void prefStartsAndStopsTheAnonymousNode();
     void oneHopCountForEveryUse();
-    void zeroHopsOnlyWhileHopping();
+    void zeroHops();
     void newUsesFollowTheSwitch();
     void keyedEventsReachOnlyAnonCapableJoins();
     void newSharesGoAnonymousOldOnesKeepTheirKey();
     void movingAFileClosesItUnderTheOtherKey();
     void aNodeKeyJoinNeverTakesTheSharedFilesKey();
+    void anAnonymousShareIsNotToldOnEd2kWhileEd2kIsOff();
     void aJoinsAnonSwitchTakesItsFilesAndSetAlong();
     void downloadsFollowTheSwitch();
+    void aDownloadBeforeTheAnonymousNodeRunsFollowsThePref();
+    void anonymousHttpSourcesNeedTheProxy();
     void anonymousCreditKeyAfterEachStart();
     void newAnonymousKeyRestartsTheNode();
     void statusOverIpc();
@@ -209,7 +212,7 @@ void tst_Ed3kHide::oneHopCountForEveryUse()
     // out of range: 0 to 3 only
     s.setHideSettings(hidden(7));
     QCOMPARE(s.hide().settings().hops, 3);
-    // was: hidden(0) gave 1 (now 0 while hopping, zeroHopsOnlyWhileHopping)
+    // was: hidden(0) gave 1 (now 0, zeroHops)
     s.stop();
 
     // what anonStart is given: every use at the one count (0 inherits), nothing under the node key
@@ -223,18 +226,12 @@ void tst_Ed3kHide::oneHopCountForEveryUse()
     QVERIFY(Ed3kHide::hideCfg(9).hopsOut != ::ed3k::HideCfg::kHopsOff);
 }
 
-// hops.md §2.6: 0 = deniable, not hidden; offered only while forwarding for others
-void tst_Ed3kHide::zeroHopsOnlyWhileHopping()
+// hops.md §2.6: 0 = deniable, not hidden; forwarding for others is always on while hiding
+void tst_Ed3kHide::zeroHops()
 {
-    // hopping defaults on with hiding (§1)
-    QVERIFY(Ed3kHideSettings{}.hopping);
     Ed3kHideSettings h = hidden(0);
     QCOMPARE(Ed3kHide::normalized(h).hops, 0);
-    h.hopping = false;
-    QCOMPARE(Ed3kHide::normalized(h).hops, 1);   // hopping off at 0: 1
     h.hops = -3;
-    QCOMPARE(Ed3kHide::normalized(h).hops, 1);
-    h.hopping = true;
     QCOMPARE(Ed3kHide::normalized(h).hops, 0);
     const auto zero = Ed3kHide::hideCfg(0);
     QCOMPARE(int(zero.hopsOut), 0);
@@ -246,11 +243,6 @@ void tst_Ed3kHide::zeroHopsOnlyWhileHopping()
     s.setHideSettings(hidden(0));
     QCOMPARE(s.hide().settings().hops, 0);
     // hiding runs (a core without 0 hops yet takes 1)
-    QVERIFY(s.hide().hiding());
-    Ed3kHideSettings noHop = hidden(0);
-    noHop.hopping = false;
-    s.setHideSettings(noHop);
-    QCOMPARE(s.hide().settings().hops, 1);
     QVERIFY(s.hide().hiding());
     s.stop();
 }
@@ -509,6 +501,34 @@ void tst_Ed3kHide::aNodeKeyJoinNeverTakesTheSharedFilesKey()
     s.stop();
 }
 
+// #232: a file of the anonymous key is in eD2K's share list too: told, unless eD2K is off
+void tst_Ed3kHide::anAnonymousShareIsNotToldOnEd2kWhileEd2kIsOff()
+{
+    for (const bool ed2kOff : {true, false}) {
+        QTemporaryDir dir;
+        Ed3kSession s;
+        QVERIFY(s.start(loopback(dir.path())));
+        s.setHideSettings(hidden());
+        const QByteArray data = payload(260 * 1024, ed2kOff ? 11 : 12);
+        const QString path = QDir(dir.path()).filePath(QStringLiteral("x.bin"));
+        QVERIFY(writeFile(path, data));
+        FakeSource src;
+        src.entries.push_back(SharedEntry{md4Of('x'), path, QStringLiteral("x.bin"), std::uint64_t(data.size())});
+        Ed3kShared shared(s, src, dir.path());
+        shared.setEd2kHashing(!ed2kOff);   // DaemonApp: !thePrefs.disableEd2k()
+        QSignalSpy told(&shared, &Ed3kShared::anonExposed);
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+        QCOMPARE(shared.keyOfFile(md4Of('x')), std::optional(::ed3k::KeyKind::Anon));
+        QCOMPARE(told.count(), ed2kOff ? 0 : 1);
+        if (!ed2kOff)
+            QCOMPARE(told.at(0).at(1).toString(), QStringLiteral("eD2K/Kad"));
+        shared.stop();
+        s.stop();
+    }
+}
+
 // Options › ed3k › Extended › Kad publishing: a network's join with its switch on holds its
 // files and set under the anonymous key while hiding (hops.md §1: a set under its files' key);
 // switched off again, a file of the anonymous key is left out as before.
@@ -604,6 +624,88 @@ void tst_Ed3kHide::downloadsFollowTheSwitch()
     QVERIFY(!d.moveKey(node.root, ::ed3k::KeyKind::Anon));
     QVERIFY(d.moveKey(anon.root, ::ed3k::KeyKind::Node));
     QCOMPARE(*s.engine()->fileKey(anon.root), std::optional(::ed3k::KeyKind::Node));
+    d.stop();
+    s.stop();
+}
+
+// hops.md §1: hiding on, its node not yet running (no connect, a link at start-up): a new
+// download still goes under the anonymous key, never the node key for good
+void tst_Ed3kHide::aDownloadBeforeTheAnonymousNodeRunsFollowsThePref()
+{
+    QTemporaryDir dir;
+    Ed3kSession s;
+    s.setHideSettings(hidden());
+    QVERIFY(!s.hide().hiding());
+    QVERIFY(s.hide().hidingWanted());
+    QCOMPARE(s.hide().keyForUse(), ::ed3k::KeyKind::Anon);
+    Ed3kDownloads d(s, dir.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(dir.path()).filePath(QStringLiteral("temp")), QDir(dir.path()).filePath(QStringLiteral("incoming")));
+    Ed3kDownloadSpec spec;
+    spec.root.bytes.fill(0x33);
+    spec.size = 600 * 1024;
+    spec.name = QStringLiteral("early.bin");
+    QVERIFY(d.add(spec));
+    QCOMPARE(d.keyOfRoot(spec.root), ::ed3k::KeyKind::Anon);
+    QVERIFY(s.start(loopback(dir.path())));
+    d.start();
+    QCOMPARE(d.keyOfRoot(spec.root), ::ed3k::KeyKind::Anon);   // kept once it runs
+    d.stop();
+    s.stop();
+}
+
+// hops.md §1: ws= of an anonymous download is dropped (and shown so) without the anonymous
+// proxy and its switch; a node-key download shows nothing
+void tst_Ed3kHide::anonymousHttpSourcesNeedTheProxy()
+{
+    QTemporaryDir dir;
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    Ed3kDownloads d(s, dir.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(dir.path()).filePath(QStringLiteral("temp")), QDir(dir.path()).filePath(QStringLiteral("incoming")));
+    d.start();
+    const QString url = QStringLiteral("https://ws.example/file.bin");
+    Ed3kDownloadSpec node;
+    node.root.bytes.fill(0x44);
+    node.size = 600 * 1024;
+    node.name = QStringLiteral("node.bin");
+    node.webUrls = {url + QStringLiteral("?node")};
+    QVERIFY(d.add(node));
+    QCOMPARE(d.info(node.root)->webDropped, 0);
+
+    Ed3kHideSettings hide = hidden();
+    s.setHideSettings(hide);
+    Ed3kDownloadSpec anon = node;
+    anon.root.bytes.fill(0x55);
+    anon.name = QStringLiteral("anon.bin");
+    anon.webUrls = {url};
+    Ed3kDownloadSpec plain = anon;   // no ws=: nothing to tell
+    plain.root.bytes.fill(0x66);
+    plain.webUrls.clear();
+    QVERIFY(d.add(anon));
+    QVERIFY(d.add(plain));
+    QCOMPARE(d.keyOfRoot(anon.root), ::ed3k::KeyKind::Anon);
+    QCOMPARE(d.info(anon.root)->webDropped, 1);
+    QCOMPARE(d.info(plain.root)->webDropped, 0);
+    QCOMPARE(d.info(node.root)->webDropped, 0);
+    QVERIFY(!d.webSourceOf(anon.root));
+
+    // the switch alone is not enough: no proxy
+    hide.anonHttp = true;
+    s.setHideSettings(hide);
+    QCOMPARE(d.info(anon.root)->webDropped, 1);
+    QVERIFY(!d.webSourceOf(anon.root));
+    // with the proxy: the anonymous node's fetcher takes it (its requests: via ANON_REPORT_PROXY)
+    hide.reportProxy = QNetworkProxy(QNetworkProxy::Socks5Proxy, QStringLiteral("127.0.0.1"), 9);
+    s.setHideSettings(hide);
+    QCOMPARE(d.info(anon.root)->webDropped, 0);
+    QTRY_VERIFY(d.webSourceOf(anon.root));
+    // the proxy gone: the source is dropped again, never fetched another way
+    hide.reportProxy.reset();
+    s.setHideSettings(hide);
+    QTRY_VERIFY(!d.webSourceOf(anon.root));
+    QCOMPARE(d.info(anon.root)->webDropped, 1);
     d.stop();
     s.stop();
 }

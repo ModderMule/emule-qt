@@ -13,6 +13,7 @@
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
+#include "utils/OwnerOnly.h"
 
 #include <QCborMap>
 #include <QCoreApplication>
@@ -172,6 +173,100 @@ private slots:
         Preferences p2;
         p2.load(file);
         QCOMPARE(p2.configDir(), realDir);
+    }
+
+    // The GUI reads the port a core moved to off a reserved one
+    void savedIpcPort_readsFile()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        QCOMPARE(Preferences::savedIpcPort(file), uint16(0));   // missing
+        Preferences p;
+        p.load(file);
+        p.setIpcPort(4799);
+        QVERIFY(p.save());
+        QCOMPARE(Preferences::savedIpcPort(file), uint16(4799));
+    }
+
+    // Skips a held port and the avoided ones; a free port is no reserved one
+    void freeIpcPort_skipsHeldAndAvoided()
+    {
+        QTcpServer held;
+        QVERIFY(held.listen(QHostAddress::LocalHost, 0));
+        const uint16 from = held.serverPort();
+        QVERIFY(from < 65000);
+        QTcpServer next;
+        const bool nextHeld = next.listen(QHostAddress::LocalHost, from + 1);
+        const uint16 got = Preferences::freeIpcPort(QString(), from - 1, {uint16(from + 2)});
+        QVERIFY(got != 0);
+        QVERIFY(got != from && got != from + 2);
+        if (nextHeld)
+            QVERIFY(got != from + 1);
+        QVERIFY(!Preferences::ipcPortReserved(QString(), got));
+        QVERIFY(!Preferences::ipcPortReserved(QString(), from));   // in use, not reserved
+    }
+
+    // Turtle (alternative speed): its pair replaces the stored limits and a schedule while on,
+    // the stored pair stays as it was; saved
+    void altSpeed_overridesLimitsAndRoundTrip()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        Preferences p;
+        p.load(file);
+        QVERIFY(!p.altSpeed());
+        p.setMaxUpload(100);
+        p.setMaxDownload(400);
+        p.setScheduledLimits({.maxUpload = 80, .maxDownload = 300});
+        p.setAltSpeedUp(10);
+        p.setAltSpeedDown(30);
+        QCOMPARE(p.maxUpload(), 80u);   // schedule over stored
+        p.setAltSpeed(true);
+        QCOMPARE(p.maxUpload(), 10u);
+        QCOMPARE(p.maxDownload(), 30u);
+        QCOMPARE(p.configuredMaxUpload(), 100u);   // untouched
+        QCOMPARE(p.configuredMaxDownload(), 400u);
+        // the UL:DL ratio holds the turtle pair too (3 KiB/s up: at most 9 down)
+        p.setAltSpeedUp(3);
+        QCOMPARE(p.maxDownload(), 9u);
+        p.save();
+
+        Preferences p2;
+        p2.load(file);
+        QVERIFY(p2.altSpeed());
+        QCOMPARE(p2.altSpeedUp(), 3u);
+        QCOMPARE(p2.altSpeedDown(), 30u);
+        QCOMPARE(p2.toIpcMap().value(QStringLiteral("altSpeed")).toBool(), true);
+        // GUIs show the pair in force, not the stored one
+        QCOMPARE(p2.toIpcMap().value(QStringLiteral("inForceUpload")).toInteger(), 3);
+        QCOMPARE(p2.toIpcMap().value(QStringLiteral("inForceDownload")).toInteger(), 9);
+        QCOMPARE(p2.toIpcMap().value(QStringLiteral("maxUpload")).toInteger(), 100);
+        p2.setAltSpeed(false);
+        QCOMPARE(p2.maxUpload(), 100u);
+        QCOMPARE(p2.toIpcMap().value(QStringLiteral("inForceUpload")).toInteger(), 100);
+    }
+
+    // ipc.upnp: off by default, YAML and IPC round trip; the listen address is shown read-only
+    void ipcUPnP_defaultOffAndRoundTrip()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        Preferences p;
+        p.load(file);
+        QVERIFY(!p.ipcUPnP());
+        p.setIpcUPnP(true);
+        p.save();
+
+        Preferences p2;
+        p2.load(file);
+        QVERIFY(p2.ipcUPnP());
+        const QCborMap map = p2.toIpcMap();
+        QCOMPARE(map.value(QStringLiteral("ipcUPnP")).toBool(), true);
+        QCOMPARE(map.value(QStringLiteral("ipcListenAddress")).toString(), p2.ipcListenAddress());
+
+        Preferences mirror;
+        mirror.updateFromCbor(map);
+        QVERIFY(mirror.ipcUPnP());
     }
 
     // Tray icon + close-to-tray: defaults (icon on, close quits as MFC) and round trip
@@ -642,6 +737,7 @@ private slots:
             prefs.setBtI2pEd3kJoin(false);
             prefs.setBtI2pTunnelLength(2);
             prefs.setBtI2pTunnelQuantity(5);
+            prefs.setBtPublicTrackers({QStringLiteral("udp://t.example:1337/announce"), QStringLiteral(" udp://t.example:1337/announce ")});
             prefs.setBtI2pTrackers({QStringLiteral("http://a.i2p/a"), QStringLiteral(" http://b.i2p/a "),
                                     QStringLiteral("http://a.i2p/a")});
             prefs.setBtI2pRouterPort(23456);
@@ -687,6 +783,7 @@ private slots:
             QCOMPARE(p.btI2pTunnelQuantity(), 5);
             // trimmed, duplicates dropped
             QCOMPARE(p.btI2pTrackers(), (QStringList{QStringLiteral("http://a.i2p/a"), QStringLiteral("http://b.i2p/a")}));
+            QCOMPARE(p.btPublicTrackers(), QStringList{QStringLiteral("udp://t.example:1337/announce")});
             QCOMPARE(p.btI2pRouterPort(), uint16{23456});
             QCOMPARE(p.btI2pShare(), 10);
             QCOMPARE(p.btI2pBrowserProxy(), true);
@@ -722,6 +819,7 @@ private slots:
         QCOMPARE(gui.btI2pMode(), Preferences::kBtI2pOff);
         QCOMPARE(gui.btI2pEd3kJoin(), true);
         QCOMPARE(gui.btI2pTrackers(), Preferences::defaultBtI2pTrackers());
+        QCOMPARE(gui.btPublicTrackers(), Preferences::defaultBtPublicTrackers());
     }
 
     // single transfer mode (ed3k only): per network, through YAML and IPC; in effect only with ed3k
@@ -1160,6 +1258,8 @@ private slots:
             p1.setStatsLastReset(1700000000);
             QVERIFY(!p1.showStatusBarFreeSpace());   // #165: off by default, as qBittorrent
             p1.setShowStatusBarFreeSpace(true);
+            QVERIFY(!p1.showStatusBarSessionTotals());   // #223: off by default
+            p1.setShowStatusBarSessionTotals(true);
             p1.setIncomingDir(QStringLiteral("/tmp/incoming"));
             p1.setTempDirs({QStringLiteral("/tmp/t1"), QStringLiteral("/tmp/t2")});
             p1.setBindAddress(QStringLiteral("192.168.1.100"));
@@ -1205,6 +1305,7 @@ private slots:
         QCOMPARE(p2.statsSaveInterval(), 120u);
         QCOMPARE(p2.statsLastReset(), uint64{1700000000});
         QCOMPARE(p2.showStatusBarFreeSpace(), true);
+        QCOMPARE(p2.showStatusBarSessionTotals(), true);
         QCOMPARE(p2.incomingDir(), QStringLiteral("/tmp/incoming"));
         QCOMPARE(p2.tempDirs(), QStringList({QStringLiteral("/tmp/t1"), QStringLiteral("/tmp/t2")}));
         QCOMPARE(p2.bindAddress(), QStringLiteral("192.168.1.100"));
@@ -2353,9 +2454,6 @@ private slots:
     // account secrets: saved file, an older world-readable one after load and the backup
     void save_fileIsOwnerOnly()
     {
-#ifdef Q_OS_WIN
-        QNtfsPermissionCheckGuard ntfs;   // permissions() from the ACL
-#endif
         TempDir tmp;
         const QString file = tmp.filePath(QStringLiteral("preferences.yml"));
         Preferences p;
@@ -2382,10 +2480,7 @@ private slots:
 private:
     static bool ownerOnly(const QString& path)
     {
-        constexpr auto others = QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ReadOther
-                                | QFileDevice::WriteOther;
-        const auto perms = QFile::permissions(path);
-        return (perms & QFileDevice::ReadOwner) && !(perms & others);
+        return eMule::isOwnerOnly(path);   // Windows: the DACL, permissions() can't tell
     }
 
     static void writeRaw(const QString& path, const QByteArray& data)

@@ -35,6 +35,16 @@ namespace eMule::ed3k {
 
 namespace {
 
+/// What comes of a source of Ed3kDownloadsWeb (a fetch, its blocks, its end): the anonymous
+/// node's too (http-source.md §3.2)
+bool isHttpSourceEvent(const ffi::Event& event)
+{
+    namespace ev = ffi::event;
+    return std::holds_alternative<ev::HttpBlock>(event) || std::holds_alternative<ev::HttpUnverified>(event)
+           || std::holds_alternative<ev::HttpWhole>(event) || std::holds_alternative<ev::HttpFetched>(event)
+           || std::holds_alternative<ev::HttpDropped>(event);
+}
+
 constexpr int kSaveDelayMs = 5000;
 /// queued priority switches at one node at least this far apart (Protocol.md §12.5, 30 min)
 constexpr auto kQueuedSwitchGap = std::chrono::minutes(30);
@@ -299,6 +309,13 @@ struct Ed3kJoinBase::NodeTurns {
     /// last priority switch while queued, per node: §12.5 counts it in the uploader's 30 min
     /// budget, a 2nd one within it is BUSY and the uploader keeps the old stream
     std::map<TurnNode, std::chrono::steady_clock::time_point> queuedSwitch;
+    /// #224: files found on disk by root (addFoundCopy)
+    struct Found {
+        QString path;
+        std::uint64_t size = 0;
+        qint64 mtimeMs = -1;
+    };
+    std::map<ffi::Root, Found> found;
 };
 
 Ed3kJoinBase::Ed3kJoinBase(Ed3kSession& session, const QString& configDir, QString tag, QObject* parent)
@@ -486,6 +503,9 @@ void Ed3kJoinBase::requestBlocks(const ffi::Root& root)
     if (!e || it == m_downloads.end())
         return;
     Download& d = *it->second;
+    // #224: a local copy is read first; the network gets what it lacks after (endLocalCopy)
+    if (d.copying)
+        return;
 
     std::vector<std::uint64_t> wanted;
     if (d.inMemory) {
@@ -956,6 +976,120 @@ void Ed3kJoinBase::unshareOwner(const QString& owner)
             ++it;
         }
     }
+}
+
+bool Ed3kJoinBase::hasLocalCopy(const ffi::Root& root, const QString& owner) const
+{
+    for (const Ed3kJoinBase* join : turnsOf(m_session).joins) {
+        const auto s = join->m_shared.find(root);
+        // a blob is in memory (manifest), no file; our own member is what is missing
+        if (s != join->m_shared.end() && s->second.blob.isEmpty() && !(join == this && s->second.owner == owner))
+            return true;
+    }
+    return turnsOf(m_session).found.contains(root);
+}
+
+std::optional<Ed3kJoinBase::FileRead> Ed3kJoinBase::localCopyRead(const ffi::Root& root, std::uint64_t offset, std::uint32_t len,
+                                                                  const QString& owner) const
+{
+    for (const Ed3kJoinBase* join : turnsOf(m_session).joins) {
+        const auto s = join->m_shared.find(root);
+        if (s == join->m_shared.end() || !s->second.blob.isEmpty() || (join == this && s->second.owner == owner))
+            continue;
+        // the sharer's own rule: verified bytes only, size and date as hashed
+        if (auto r = join->sharedRead(s->second, offset, len); r && !r->path.isEmpty())
+            return r;
+    }
+    // a file a folder scan found (size and date checked by the read)
+    const auto& found = turnsOf(m_session).found;
+    if (const auto f = found.find(root); f != found.end() && offset + len <= f->second.size)
+        return FileRead{f->second.path, offset, len, qint64(f->second.size), f->second.mtimeMs};
+    return std::nullopt;
+}
+
+bool Ed3kJoinBase::copyLocal(const ffi::Root& root)
+{
+    const auto it = m_downloads.find(root);
+    if (it == m_downloads.end() || it->second->inMemory)
+        return false;
+    Download& d = *it->second;
+    if (d.copying || d.copied || !hasLocalCopy(root, d.owner))
+        return false;
+    d.copying = true;
+    d.copiedBlocks = 0;
+    logInfo(QStringLiteral("\"%1\" read from a local copy of %2 first").arg(downloadName(root, d), hexOf(root.bytes)));
+    copyLocalBatch(root, 0);
+    return true;
+}
+
+bool Ed3kJoinBase::copyingLocal(const ffi::Root& root) const
+{
+    const auto it = m_downloads.find(root);
+    return it != m_downloads.end() && it->second->copying;
+}
+
+void Ed3kJoinBase::addFoundCopy(const Ed3kSession& session, const ffi::Root& root, const QString& path,
+                                std::uint64_t size, qint64 mtimeMs)
+{
+    auto& t = turnsOf(session);
+    t.found[root] = NodeTurns::Found{path, size, mtimeMs};
+    // the open downloads of it: from this file now (again, if an earlier copy ended)
+    for (Ed3kJoinBase* join : std::vector<Ed3kJoinBase*>(t.joins.begin(), t.joins.end())) {
+        const auto it = join->m_downloads.find(root);
+        if (it == join->m_downloads.end() || it->second->inMemory || it->second->copying)
+            continue;
+        it->second->copied = false;
+        (void)join->copyLocal(root);
+    }
+}
+
+int Ed3kJoinBase::foundCopies(const Ed3kSession& session)
+{
+    return int(turnsOf(session).found.size());
+}
+
+std::vector<std::pair<ffi::Root, std::uint64_t>> Ed3kJoinBase::wantedFiles(const Ed3kSession& session)
+{
+    std::map<ffi::Root, std::uint64_t> out;
+    for (const Ed3kJoinBase* join : turnsOf(session).joins)
+        for (const auto& [root, d] : join->m_downloads)
+            if (!d->inMemory && d->size > 0)
+                out.emplace(root, d->size);
+    return {out.begin(), out.end()};
+}
+
+QString Ed3kJoinBase::localCopyPath(const Ed3kSession& session, const ffi::Root& root, std::uint64_t size)
+{
+    const auto& t = turnsOf(session);
+    for (const Ed3kJoinBase* join : t.joins) {
+        const auto s = join->m_shared.find(root);
+        if (s == join->m_shared.end() || !s->second.blob.isEmpty() || s->second.size != size)
+            continue;
+        // the whole of it servable there (len is 32 bit: in steps)
+        QString path;
+        bool whole = size > 0;
+        for (std::uint64_t off = 0; whole && off < size;) {
+            const auto len = std::uint32_t(std::min<std::uint64_t>(size - off, 0x80000000ULL));
+            const auto r = join->sharedRead(s->second, off, len);
+            whole = r && !r->path.isEmpty() && (path.isEmpty() || path == r->path);
+            if (whole)
+                path = r->path;
+            off += len;
+        }
+        if (whole)
+            return path;
+    }
+    if (const auto f = t.found.find(root); f != t.found.end() && f->second.size == size)
+        return f->second.path;
+    return {};
+}
+
+std::optional<std::pair<ffi::Root, std::uint64_t>> Ed3kJoinBase::hashFileRoot(const QString& path, const std::atomic<bool>& cancel)
+{
+    auto hashed = hashFile(path, cancel);
+    if (!hashed)
+        return std::nullopt;
+    return std::pair{hashed->first.root, hashed->first.size};
 }
 
 void Ed3kJoinBase::withdrawOwner(const QString& owner)
@@ -1734,14 +1868,45 @@ void Ed3kJoinBase::shareKept()
 
 void Ed3kJoinBase::shareKeptOwner(const QString& owner)
 {
-    if (!sharesKeptOwner(owner) || !QFileInfo::exists(keptDir(owner)))
+    if (!sharesKeptOwner(owner))
         return;
-    const Kept kept = readKept(owner);
-    if (shareKeptBlobs()) {
+    // was: kept.tsv and the .blob files read here, on the daemon thread: a busy disk
+    // stalled the core 8 s at start (report 58, a torrent's .blob); now on the read pool
+    const QString dir = keptDir(owner);
+    const bool withBlobs = shareKeptBlobs();
+    QPointer<Ed3kJoinBase> self(this);
+    const auto cancel = m_cancel;
+    m_session.readPool().start([self, cancel, owner, dir, withBlobs] {
+        if (!QFileInfo::exists(dir))
+            return;
+        Kept kept = readKeptIn(dir);
+        std::vector<QByteArray> blobs;
+        if (withBlobs)
+            for (const auto& b : kept.blobs)
+                blobs.push_back(readBlob(QDir(dir).filePath(blobFile(b.root))));
+        if (cancel->load())
+            return;
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, cancel, owner, kept = std::move(kept), blobs = std::move(blobs)] {
+                if (self && !cancel->load())
+                    self->shareKeptRead(owner, kept, blobs);
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void Ed3kJoinBase::shareKeptRead(const QString& owner, const Kept& kept, const std::vector<QByteArray>& blobs)
+{
+    // dropped or switched off while the pool read
+    if (!sharesKeptOwner(owner))
+        return;
+    if (shareKeptBlobs() && blobs.size() == kept.blobs.size()) {
         // hops.md §1: under the key of its members (blobKeyOf)
         const ffi::KeyKind blobKey = blobKeyOf(owner);
-        for (const auto& b : kept.blobs) {
-            const QByteArray data = readBlob(QDir(keptDir(owner)).filePath(blobFile(b.root)));
+        for (std::size_t i = 0; i < kept.blobs.size(); ++i) {
+            const auto& b = kept.blobs[i];
+            const QByteArray& data = blobs[i];
             if (data.isEmpty())
                 logDebug([&]() -> QString { return QStringLiteral("kept \"%1\" of %2 is gone").arg(b.name, owner); });
             else
@@ -2019,8 +2184,9 @@ void Ed3kJoinBase::onEventPolled(const ffi::Event& event, ffi::KeyKind key, bool
     } else if (const auto* hl = std::get_if<ev::HashesLost>(&event)) {
         if (m_shared.contains(hl->root))
             onHashesLost(hl->root);
-    } else if (!anon) {
-        // the joins' own events are of the node key (sets, aliases, ...)
+    } else if (!anon || isHttpSourceEvent(event)) {
+        // the joins' own events are of the node key (sets, aliases, ...); HTTP sources of an
+        // anonymous download come from the anonymous node (http-source.md §3.2)
         onOtherEvent(event);
     }
 }
@@ -2269,6 +2435,72 @@ bool Ed3kJoinBase::open(const ffi::Root& root, std::uint64_t size, const QString
     return true;
 }
 
+void Ed3kJoinBase::copyLocalBatch(const ffi::Root& root, std::uint64_t from)
+{
+    const auto it = m_downloads.find(root);
+    if (it == m_downloads.end() || !it->second->copying)
+        return;
+    Download& d = *it->second;
+    auto wanted = wantedBlocks(d);
+    std::ranges::sort(wanted);
+    std::vector<FileRead> reads;
+    std::vector<std::uint64_t> offsets;
+    std::uint64_t next = d.size;
+    for (const std::uint64_t off : wanted) {
+        if (off < from || off >= d.size)
+            continue;
+        if (reads.size() >= kCopyBatch) {
+            next = off;
+            break;
+        }
+        const auto len = std::uint32_t(std::min(kBlock, d.size - off));
+        // not servable there (unverified, changed): the network gets it
+        if (auto r = localCopyRead(root, off, len, d.owner)) {
+            reads.push_back(*r);
+            offsets.push_back(off);
+        }
+    }
+    if (reads.empty()) {
+        endLocalCopy(root);
+        return;
+    }
+    readInBackground(d.owner, std::move(reads), [this, root, offsets = std::move(offsets), next](ReadResults bytes) {
+        for (std::size_t i = 0; i < offsets.size(); ++i) {
+            const auto at = m_downloads.find(root);
+            if (at == m_downloads.end() || !at->second->copying)
+                return;   // stopped, or done (the handler may stop it)
+            if (i >= bytes.size() || !bytes[i]) {
+                logWarning(QStringLiteral("local copy of %1 not readable at %2; downloaded instead").arg(hexOf(root.bytes)).arg(offsets[i]));
+                endLocalCopy(root);
+                return;
+            }
+            const QByteArray& b = *bytes[i];
+            const bool taken = takeLocalBlock(*at->second, offsets[i],
+                                              std::span{reinterpret_cast<const std::byte*>(b.constData()), std::size_t(b.size())});
+            if (const auto again = m_downloads.find(root); taken && again != m_downloads.end())
+                ++again->second->copiedBlocks;
+        }
+        copyLocalBatch(root, next);
+        pumpSession();
+    });
+}
+
+void Ed3kJoinBase::endLocalCopy(const ffi::Root& root)
+{
+    const auto it = m_downloads.find(root);
+    if (it == m_downloads.end() || !it->second->copying)
+        return;
+    Download& d = *it->second;
+    d.copying = false;
+    d.copied = true;
+    logDebug([&]() -> QString { return QStringLiteral("local copy of %1 read: %2 block(s)").arg(hexOf(root.bytes)).arg(d.copiedBlocks); });
+    onLocalCopyDone(d, d.copiedBlocks);
+    // the blocks still missing: from the network now
+    if (downloading(root))
+        requestBlocks(root);
+    pumpSession();
+}
+
 void Ed3kJoinBase::saveDirty()
 {
     const auto dirty = m_dirty;
@@ -2379,8 +2611,13 @@ bool Ed3kJoinBase::tryNextSet(const QString& owner)
 
 Ed3kJoinBase::Kept Ed3kJoinBase::readKept(const QString& owner) const
 {
+    return readKeptIn(keptDir(owner));
+}
+
+Ed3kJoinBase::Kept Ed3kJoinBase::readKeptIn(const QString& dir)
+{
     Kept kept;
-    const QByteArray raw = readBlob(QDir(keptDir(owner)).filePath(kKeptIndex));
+    const QByteArray raw = readBlob(QDir(dir).filePath(kKeptIndex));
     for (const QString& line : QString::fromUtf8(raw).split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
         const QStringList f = line.split(QLatin1Char('\t'));
         if (f.size() >= 3 && f.at(0) == QLatin1String("b")) {
@@ -2542,11 +2779,39 @@ void Ed3kJoinBase::keptMemberDone(const QString& owner)
 void Ed3kJoinBase::publishKeptRecords(const QString& owner)
 {
     m_keptPending.erase(owner);
+    if (!m_session.engine())
+        return;
+    // was: kept.tsv, the set manifest (.blob) and the records read here, on the daemon
+    // thread (report 58: 8 s stall on a busy disk); now on the read pool
+    const QString dir = keptDir(owner);
+    const bool withSet = shareKeptBlobs();
+    QPointer<Ed3kJoinBase> self(this);
+    const auto cancel = m_cancel;
+    m_session.readPool().start([self, cancel, owner, dir, withSet] {
+        Kept kept = readKeptIn(dir);
+        QByteArray manifest;
+        if (kept.set && withSet)
+            manifest = readBlob(QDir(dir).filePath(blobFile(kept.set->root)));
+        auto records = readRecords(QDir(dir).filePath(kKeptRecords));
+        if (cancel->load())
+            return;
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, cancel, owner, kept = std::move(kept), manifest = std::move(manifest), records = std::move(records)] {
+                if (self && !cancel->load())
+                    self->publishKeptRead(owner, kept, manifest, records);
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void Ed3kJoinBase::publishKeptRead(const QString& owner, const Kept& kept, const QByteArray& manifest,
+                                   const std::vector<ffi::Bytes>& records)
+{
     auto* e = m_session.engine();
     if (!e)
         return;
     const auto t = m_session.now();
-    const Kept kept = readKept(owner);
     // §6: the set is not shared while holding back (its manifest names the article list)
     std::vector<ffi::Root> memberRoots;
     for (const auto& m : kept.members)
@@ -2557,7 +2822,6 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
     if (kept.set && shareKeptBlobs() && !setKey)
         logDebug([&]() -> QString { return QStringLiteral("kept set of %1 not published: its members are not under one key it may use").arg(owner); });
     else if (kept.set && shareKeptBlobs()) {
-        const QByteArray manifest = readBlob(QDir(keptDir(owner)).filePath(blobFile(kept.set->root)));
         const QByteArray n = kept.set->name.toUtf8();
         if (manifest.isEmpty())
             logDebug([&]() -> QString { return QStringLiteral("kept set of %1 is gone: not published").arg(owner); });
@@ -2567,7 +2831,6 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
                  !ok)
             logDebug([&]() -> QString { return QStringLiteral("kept set of %1 not published (error %2)").arg(owner, errorName(ok.error())); });
     }
-    const auto records = readRecords(QDir(keptDir(owner)).filePath(kKeptRecords));
     int published = 0;
     // §6: no ALIAS records while holding back
     int unshared = 0;
@@ -2949,8 +3212,10 @@ std::optional<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::holderInfo(const TurnNode&
         s.endpoint = source.ep4 ? source.ep4 : source.ep6;
     if (const auto st = d.streams.find(stream); st != d.streams.end())
         s.holding = st->second;
-    if (const auto have = d.sourceHave.find(stream); have != d.sourceHave.end())
+    if (const auto have = d.sourceHave.find(stream); have != d.sourceHave.end()) {
         s.have = have->second;
+        s.haveKnown = true;
+    }
     // our pieces: all but those with a block still wanted
     constexpr std::uint64_t kPiece = 16 * kBlock;
     if (d.size > 0) {
@@ -2989,9 +3254,30 @@ void Ed3kJoinBase::skipRoot(const ffi::Root& root, Skipped s)
     const auto [it, added] = m_skipped.insert_or_assign(root, std::move(s));
     if (!added)
         return;
-    logInfo(QStringLiteral("%1 of %2 not joined on ed3k: its file is under the anonymous key and this network is not "
-                           "anonymous (hops.md §1)").arg(it->second.member >= 0 ? QStringLiteral("member %1").arg(it->second.member)
-                                                                                : QStringLiteral("a file")).arg(it->second.owner));
+    // was: "%1 of %2 not joined on ed3k: its file is under the anonymous key and this network is not anonymous (hops.md §1)"
+    // hops.md §1: no error, the user's hiding wins; the switch to keep it joined is named (#232)
+    const QString what = it->second.member >= 0 ? QStringLiteral("file %1 of %2").arg(it->second.member).arg(it->second.owner)
+                                                : QStringLiteral("a file of %1").arg(it->second.owner);
+    const QString sw = anonSwitchName();
+    logInfo(sw.isEmpty()
+                ? QStringLiteral("%1 left out of this join: hiding shares it under the anonymous key").arg(what)
+                : QStringLiteral("%1 left out of this join: hiding shares it under the anonymous key, %2 stay under the "
+                                 "node key. To keep them joined, check \"%2 under the anonymous key\" in Options › ed3k › "
+                                 "Extended › Kad publishing.").arg(what, sw));
+}
+
+QString Ed3kJoinBase::anonSwitchName() const
+{
+    // the per-network switches of Options › ed3k › Extended › Kad publishing
+    if (m_tag == QLatin1String("torrent"))
+        return QStringLiteral("Torrents");
+    if (m_tag == QLatin1String("usenet"))
+        return QStringLiteral("Usenet downloads");
+    if (m_tag == QLatin1String("hoster"))
+        return QStringLiteral("Hoster downloads");
+    if (m_tag == QLatin1String("ed2k"))
+        return QStringLiteral("eD2K downloads");
+    return {};
 }
 
 void Ed3kJoinBase::takeFromNodeJoins(const ffi::Root& root)
@@ -3075,7 +3361,9 @@ void Ed3kJoinBase::withdrawSet(const QString& owner)
         return;
     if (const Kept kept = readKept(owner); kept.set)
         if (auto ok = e->setUnpublish(m_session.now(), kept.set->root); ok)
-            logInfo(QStringLiteral("set of %1 withdrawn: a member went to the anonymous key (hops.md §1)").arg(owner));
+            // was: logInfo(... "set of %1 withdrawn: a member went to the anonymous key (hops.md §1)")
+            // skipRoot told the user already
+            logDebug([&]() -> QString { return QStringLiteral("set of %1 withdrawn: a file of it went to the anonymous key").arg(owner); });
 }
 
 } // namespace eMule::ed3k

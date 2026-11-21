@@ -9,8 +9,11 @@
 
 #include <libtorrent/i2p_stream.hpp>
 #include <libtorrent/load_torrent.hpp>
+#include <libtorrent/read_resume_data.hpp>
 #include <libtorrent/version.hpp>
 
+#include <QDir>
+#include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -40,6 +43,7 @@ private slots:
     void i2pTrackerErrorText();
     void i2pTorrentIsFlagged();
     void i2pModeSwitchesAfterAdd();
+    void i2pOnlyStrictInMixedSession();
     void peerFlagsChokeDirection();
     void addDoesNotWait();
     void stopRightAfterAddKeepsIt();
@@ -508,7 +512,7 @@ void tst_BtSmoke::i2pTorrentIsFlagged()
     session.stop();
 }
 
-// Options: flag and I2P trackers follow the mode; mixed sessions have no "I2P only"
+// Options: flag and I2P trackers follow the mode; I2P only sets the clearnet tracker aside
 void tst_BtSmoke::i2pModeSwitchesAfterAdd()
 {
     QTemporaryDir dir;
@@ -536,15 +540,28 @@ void tst_BtSmoke::i2pModeSwitchesAfterAdd()
     };
     setMode(BtI2pMode::I2pOnly);
     QVERIFY(session.torrent(added.id)->i2p);
-    QCOMPARE(session.trackers(added.id).size(), 2);
+    QCOMPARE(session.trackers(added.id).size(), 1);
     QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::I2pOnly);
 
     setMode(BtI2pMode::Mixed);
     QVERIFY(!session.torrent(added.id)->i2p);
+    QCOMPARE(session.trackers(added.id).size(), 2);
     QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::Mixed);
+
+    // #241: the .i2p tracker made libtorrent set the flag again on load → "I2P only"
+    session.stop();
+    session.start(s);
+    QTRY_VERIFY(session.options(added.id).has_value());
+    QVERIFY(!session.torrent(added.id)->i2p);
+    QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::Mixed);
+    QCOMPARE(session.trackers(added.id).size(), 2);
 
     setMode(BtI2pMode::Direct);
     QCOMPARE(session.trackers(added.id).size(), 1);
+    QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::Direct);
+    session.stop();
+    session.start(s);
+    QTRY_VERIFY(session.options(added.id).has_value());
     QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::Direct);
 
     // nullopt leaves the mode alone
@@ -555,6 +572,103 @@ void tst_BtSmoke::i2pModeSwitchesAfterAdd()
     QVERIFY(session.setOptions(added.id, keep));
     QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::I2pOnly);
     session.stop();
+}
+
+namespace {
+
+/// the one torrent's flags as its resume file has them
+lt::torrent_flags_t resumedFlags(const QString& stateDir)
+{
+    const QDir resume(QDir(stateDir).filePath(QStringLiteral("resume")));
+    const QStringList files = resume.entryList({QStringLiteral("*.fastresume")}, QDir::Files);
+    if (files.size() != 1)
+        return {};
+    QFile f(resume.filePath(files.front()));
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    const QByteArray data = f.readAll();
+    lt::error_code ec;
+    const lt::add_torrent_params atp = lt::read_resume_data({data.constData(), static_cast<std::ptrdiff_t>(data.size())}, ec);
+    return ec ? lt::torrent_flags_t{} : atp.flags;
+}
+
+} // namespace
+
+// Mixed session: I2P only per torrent still drops clearnet trackers, web seeds, DHT/PEX/LSD,
+// across a restart; another mode brings all of it back
+void tst_BtSmoke::i2pOnlyStrictInMixedSession()
+{
+    QTemporaryDir dir;
+    BtSettings s;
+    s.listenPort = 0;
+    s.dht = false;
+    s.lsd = false;
+    s.stateDir = dir.filePath(QStringLiteral("BT"));
+    s.downloadDir = dir.filePath(QStringLiteral("Incoming"));
+    s.i2pEnabled = true;
+    s.i2pMixed = true;
+    s.i2pTrackers = {QStringLiteral("http://tracker.example.i2p/a")};
+    const QString aside = QDir(s.stateDir).filePath(QStringLiteral("i2p-only.json"));
+    const lt::torrent_flags_t off = lt::torrent_flags::disable_dht | lt::torrent_flags::disable_pex
+                                  | lt::torrent_flags::disable_lsd;
+    BtSession session;
+    session.start(s);
+    const auto added = session.addMagnet(
+        QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=http%3A%2F%2Ftracker.example.org%2Fa"),
+        {}, true, false);
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY(session.options(added.id).has_value());
+    // mixed: the I2P trackers come with it
+    QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::Mixed);
+
+    BtTorrentOptions o = *session.options(added.id);
+    o.i2pMode = BtI2pMode::I2pOnly;
+    QVERIFY(session.setOptions(added.id, o));
+    QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::I2pOnly);
+    QCOMPARE(session.trackers(added.id).size(), 1);
+    QVERIFY(session.trackers(added.id).front().url.endsWith(QLatin1StringView(".i2p/a")));
+    QTRY_VERIFY(QFile::exists(aside));
+
+    // a clearnet tracker added meanwhile waits too
+    session.addTrackers(added.id, {QStringLiteral("http://tracker2.example.org/a")});
+    QCOMPARE(session.trackers(added.id).size(), 1);
+
+    session.stop();
+    QCOMPARE(resumedFlags(s.stateDir) & off, off);
+    session.start(s);
+    QTRY_VERIFY(session.options(added.id).has_value());
+    QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::I2pOnly);
+    QCOMPARE(session.trackers(added.id).size(), 1);
+
+    o = *session.options(added.id);
+    o.i2pMode = BtI2pMode::Mixed;
+    QVERIFY(session.setOptions(added.id, o));
+    QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::Mixed);
+    QCOMPARE(session.trackers(added.id).size(), 3);
+    QVERIFY(!QFile::exists(aside));
+    session.stop();
+    QCOMPARE(resumedFlags(s.stateDir) & off, lt::torrent_flags_t{});
+
+    // asked for at add: strict from the start
+    session.start(s);
+    QTRY_VERIFY(session.options(added.id).has_value());
+    QVERIFY(session.remove(added.id, false));
+    const auto strict = session.addMagnet(
+        QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=http%3A%2F%2Ftracker.example.org%2Fa"
+                       "&ws=http%3A%2F%2Fseed.example.org%2Ff"),
+        {}, true, true);
+    QCOMPARE(strict.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY(session.options(strict.id).has_value());
+    QCOMPARE(session.options(strict.id)->i2pMode, BtI2pMode::I2pOnly);
+    QCOMPARE(session.trackers(strict.id).size(), 1);
+    o = *session.options(strict.id);
+    o.i2pMode = BtI2pMode::Direct;
+    QVERIFY(session.setOptions(strict.id, o));
+    QCOMPARE(session.options(strict.id)->i2pMode, BtI2pMode::Direct);
+    QCOMPARE(session.trackers(strict.id).size(), 1);
+    QVERIFY(session.trackers(strict.id).front().url.contains(QLatin1StringView("example.org")));
+    session.stop();
+    QCOMPARE(resumedFlags(s.stateDir) & off, lt::torrent_flags_t{});
 }
 
 void tst_BtSmoke::peerFlagsChokeDirection()

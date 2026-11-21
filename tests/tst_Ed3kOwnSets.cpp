@@ -603,7 +603,7 @@ void tst_Ed3kOwnSets::aHidingNodePublishesUnderTheAnonymousKey()
 {
     QVERIFY(m_dd.isValid());
     Ed3kSession d;
-    d.setHideSettings(Ed3kHideSettings{true, 1, true, 25});
+    d.setHideSettings(Ed3kHideSettings{true, 1, 25});
     QVERIFY(d.start(loopback(m_dd.path())));
     QVERIFY(d.hide().hiding());
     Ed3kOwnSets own(d, m_dd.path());
@@ -624,7 +624,7 @@ void tst_Ed3kOwnSets::aHidingNodePublishesUnderTheAnonymousKey()
     QCOMPARE(d.engine()->fileKey(rootOf(z)).value_or(std::nullopt), std::optional(::ed3k::KeyKind::Anon));
     QCOMPARE(d.hide().recorded(rootOf(z)), std::optional(::ed3k::KeyKind::Anon));
     // hiding off: the anonymous node took the set's shares along; nothing under the node key
-    d.setHideSettings(Ed3kHideSettings{false, 1, true, 25});
+    d.setHideSettings(Ed3kHideSettings{false, 1, 25});
     QVERIFY(!own.manifestOf(*id));
     QVERIFY(!d.engine()->fileKey(rootOf(z)).value_or(std::nullopt));
     own.stop();
@@ -650,7 +650,7 @@ void tst_Ed3kOwnSets::shareUnderKeyMovesTheFilesAlong()
     QCOMPARE(own.info(*id)->key, QStringLiteral("Node"));
     QCOMPARE(e.hide().recorded(rootOf(x)), std::optional(::ed3k::KeyKind::Node));
     // hiding; a file of the anonymous key added: refused, that key offered
-    e.setHideSettings(Ed3kHideSettings{true, 1, true, 25});
+    e.setHideSettings(Ed3kHideSettings{true, 1, 25});
     QVERIFY(e.hide().hiding());
     const QByteArray y = payload(30 * 1024 + 9, 22);
     QVERIFY(writeFile(QDir(folder).filePath(QStringLiteral("y.bin")), y));

@@ -115,6 +115,8 @@ public:
         std::uint32_t keepPosts = 1000;
         /// other small files besides media (§2.6 `files`)
         bool files = false;
+        /// owner joined with a new member key (old one lost): put it back into the mods
+        bool reModSelf = false;
 
         [[nodiscard]] bool isModerator(const ::ed3k::Key32& member) const;
         /// This member may admit, ban and start generations.
@@ -232,6 +234,8 @@ private:
     /// The saved info (title, about, closed, moderated, mods) into @p r while it has none.
     static void applySavedInfo(Room& r, const Saved& s);
     void onPost(const ::ed3k::event::RoomPost& p);
+    /// Owner with a new member key not in the mods yet: adds it (a plain room info update).
+    void reModSelf(const ::ed3k::Room& room);
     /// The limits of @p r's held room info (§2.1) into it.
     void readLimits(Room& r);
     /// Posts kept per room: ed3k.roomHistoryMax while stored, else kHistory.

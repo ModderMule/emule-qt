@@ -858,6 +858,23 @@ QString ed2kVideoCodec(uint32 compression)
 
 void KnownFile::updateMetaDataTags()
 {
+    applyMetaData(thePrefs.extractMetaData() == 0 ? MetaDataRead{} : readMetaData(filePath()));
+}
+
+KnownFile::MetaDataRead KnownFile::readMetaData(const QString& path)
+{
+    MetaDataRead out;
+    out.readable = QFileInfo(path).isReadable();
+    if (!out.readable)
+        return out;
+    auto info = std::make_shared<MediaInfo>();
+    if (extractSharedMediaInfo(path, *info))
+        out.info = std::move(info);
+    return out;
+}
+
+void KnownFile::applyMetaData(const MetaDataRead& read)
+{
     if (thePrefs.extractMetaData() == 0) {
         removeMetaDataTags();
         return;
@@ -868,14 +885,13 @@ void KnownFile::updateMetaDataTags()
 
     // Stamped before the result is known: "read, nothing found" is an answer too.
     // A file that cannot be opened right now keeps its old stamp and is tried again.
-    MediaInfo info;
-    const bool readable = QFileInfo(filePath()).isReadable();
-    if (readable)
+    if (read.readable)
         m_mediaExtractVer = kMediaExtractVersion;
-    if (!readable || !extractSharedMediaInfo(filePath(), info)) {
+    if (!read.readable || !read.info) {
         noteChanged();
         return;
     }
+    const MediaInfo& info = *read.info;
 
     // FT_MEDIA_LENGTH — duration in seconds (as integer)
     if (info.lengthSec > 0.0) {

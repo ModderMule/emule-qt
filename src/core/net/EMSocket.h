@@ -168,6 +168,10 @@ protected:
     /// Override in subclasses to reset timeout timers, etc.
     virtual void onSendProgress() {}
 
+    /// Called after bytes were read from the socket, before any packet completes.
+    /// MFC CClientReqSocket::OnReceive resets the timeout here (ListenSocket.cpp:1869).
+    virtual void onReceiveProgress() {}
+
     uint32 m_timeOut = CONNECTION_TIMEOUT;
     std::atomic<EMSState> m_conState{EMSState::NotConnected};
     bool m_proxyConnectFailed = false;

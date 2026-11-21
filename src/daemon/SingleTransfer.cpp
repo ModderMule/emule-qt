@@ -142,7 +142,7 @@ bool isKey(const QString& key)
     return !owner.isEmpty() && (tag == kTorrent || tag == kUsenet || tag == kHoster);
 }
 
-QCborMap transferRow(const QString& tag, const QString& owner, const Job& j)
+QCborMap transferRow(const QString& tag, const QString& owner, const Job& j, bool joined)
 {
     return QCborMap{
         {QStringLiteral("root"), keyOf(tag, owner)},
@@ -160,6 +160,7 @@ QCborMap transferRow(const QString& tag, const QString& owner, const Job& j)
         {QStringLiteral("path"), j.path},
         {QStringLiteral("addedOn"), j.addedOn},
         {QStringLiteral("error"), j.error},
+        {QStringLiteral("joined"), joined},
     };
 }
 
@@ -183,6 +184,12 @@ void appendRows(QCborArray& downloads)
         for (const QString& owner : std::as_const(owners))
             if (const auto j = jobOf(tag, owner))
                 downloads.append(transferRow(tag, owner, *j));
+        // unjoined torrents done: not paused, they seed; listed so they show somewhere
+        if (tag == kTorrent)
+            for (const QString& owner : jobsOf(tag, false))
+                if (!owners.contains(owner))
+                    if (const auto j = jobOf(tag, owner); j && j->state == RowState::Complete)
+                        downloads.append(transferRow(tag, owner, *j, false));
     }
     if (modeOn(kHoster))
         for (const QString& owner : Ed3kHosterBridge::owners())
@@ -236,8 +243,10 @@ void enforce()
             it = paused.erase(it);
             continue;
         }
-        if (job && (!modeOn(tag) || joined(tag, owner) == true)) {
-            if (job->state == RowState::Paused)
+        // a torrent done after all (paused mid-check) seeds like any done torrent
+        const bool doneTorrent = tag == kTorrent && job && job->state == RowState::Complete;
+        if (job && (!modeOn(tag) || joined(tag, owner) == true || doneTorrent)) {
+            if (job->state == RowState::Paused || doneTorrent)   // done: state reads Complete while paused
                 (void)controlOf(tag, owner, 1, 0);
             logInfo(QStringLiteral("Single transfer mode: resumed %1 \"%2\"").arg(tag, job->name));
             it = paused.erase(it);

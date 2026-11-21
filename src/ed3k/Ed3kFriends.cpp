@@ -23,6 +23,7 @@ namespace ffi = ::ed3k;
 namespace {
 
 const QString kNamesFile = QStringLiteral("friend-names.dat");
+const QString kSlotFile = QStringLiteral("friend-slot.dat");
 
 QString hexOf(std::span<const std::uint8_t> bytes)
 {
@@ -110,6 +111,7 @@ std::vector<Ed3kFriends::Friend> Ed3kFriends::friends()
             row.addr = a->second;
         if (const auto s = m_seen.find(f.node); s != m_seen.end())
             row.lastSeen = s->second;
+        row.friendSlot = m_slot == f.key;
         out.push_back(std::move(row));
     }
     return out;
@@ -186,8 +188,38 @@ ffi::Result<> Ed3kFriends::remove(const ffi::Key32& key)
         return ok;
     if (m_names.erase(key) > 0)
         saveNames();
+    // the engine ended its slot with it
+    if (m_slot == key) {
+        m_slot.reset();
+        saveSlot();
+    }
     emit friendsChanged();
     return {};
+}
+
+ffi::Result<> Ed3kFriends::setFriendSlot(const ffi::Key32& key, bool on)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return std::unexpected(ffi::Error::State);
+    if (!on && m_slot != key)
+        return {};
+    auto ok = e->friendSlotSet(m_session.now(), on ? std::optional(key) : std::nullopt);
+    m_session.pump();
+    if (!ok)
+        return ok;
+    m_slot = on ? std::optional(key) : std::nullopt;
+    saveSlot();
+    logEd3k(on ? QStringLiteral("ed3k: friend slot to %1").arg(hexOf(key).left(16))
+               : QStringLiteral("ed3k: friend slot ended"));
+    emit friendsChanged();
+    return {};
+}
+
+void Ed3kFriends::clearFriendSlot()
+{
+    if (m_slot)
+        (void)setFriendSlot(*m_slot, false);
 }
 
 ffi::Result<> Ed3kFriends::answerRequest(const ffi::Key32& key, bool accept)
@@ -339,6 +371,8 @@ void Ed3kFriends::attach()
 {
     m_attached = true;
     loadNames();
+    loadSlot();
+    applySlot();
     applyChatOptions();
     if (auto* e = m_session.engine()) {
         // presence looks: a friend's address is known before a chat needs it
@@ -499,6 +533,32 @@ void Ed3kFriends::saveNames() const
 QString Ed3kFriends::namesPath() const
 {
     return QDir(m_session.stateDir()).filePath(kNamesFile);
+}
+
+void Ed3kFriends::applySlot()
+{
+    auto* e = m_session.engine();
+    if (!e || !m_slot)
+        return;
+    if (auto ok = e->friendSlotSet(m_session.now(), m_slot); !ok) {
+        logEd3kWarning(QStringLiteral("ed3k: friend slot dropped (error %1)").arg(int(ok.error())));
+        m_slot.reset();
+        saveSlot();
+    }
+}
+
+void Ed3kFriends::loadSlot()
+{
+    m_slot = keyFrom(QByteArray::fromHex(readBlob(QDir(m_session.stateDir()).filePath(kSlotFile)).trimmed()));
+}
+
+void Ed3kFriends::saveSlot() const
+{
+    if (m_session.stateDir().isEmpty())
+        return;
+    const QByteArray blob = m_slot ? toBytes(*m_slot).toHex() + '\n' : QByteArray();
+    writeBlobLater(QDir(m_session.stateDir()).filePath(kSlotFile),
+                   {reinterpret_cast<const std::byte*>(blob.constData()), std::size_t(blob.size())});
 }
 
 } // namespace eMule::ed3k

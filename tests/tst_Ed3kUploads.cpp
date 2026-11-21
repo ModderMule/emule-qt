@@ -153,6 +153,12 @@ void tst_Ed3kUploads::eventsBecomeRowsAndStayUnhandled()
     QCOMPARE(up.uploading().front().bytes, std::uint64_t(300'000));
     QCOMPARE(up.waiting().size(), std::size_t(1));
     QCOMPARE(up.waiting().front().place, 1);
+    // the Speed column: the turn's bytes over time (0 until two samples 0.5 s apart)
+    QCOMPARE(up.uploading().front().rate, std::uint64_t(0));
+    QTest::qWait(600);
+    QVERIFY(!send(e::SlotUsed{node(1), 600'000, false}));
+    const std::uint64_t rate = up.uploading().front().rate;
+    QVERIFY2(rate > 300'000 && rate <= 500'000, qPrintable(QString::number(rate)));
     // a failed offer leaves node 2 waiting; its queue entry ends: gone
     QVERIFY(!send(e::SlotOfferResult{node(2), false}));
     QCOMPARE(up.waiting().size(), std::size_t(1));
@@ -177,6 +183,21 @@ void tst_Ed3kUploads::eventsBecomeRowsAndStayUnhandled()
     QCOMPARE(row.value(QStringLiteral("uploadFileName")).toString(), QStringLiteral("film.mkv"));
     QCOMPARE(row.value(QStringLiteral("queueRank")).toInteger(), 1);
     QVERIFY(row.value(QStringLiteral("lan")).toBool());
+    QVERIFY(!row.contains(QStringLiteral("upStatus")));   // have not told: no bar
+    // a later FileRequest tells have: the bar; one without it leaves it
+    const auto barOf = [&]() {
+        QCborArray u, w;
+        Ed3kUploadsBridge::appendRows(u, w);
+        return w.at(0).toMap();
+    };
+    QVERIFY(!send(e::FileRequested{node(3), root, std::vector<std::uint8_t>{0x01}, false, true, false}));
+    QVERIFY(!send(e::FileRequested{node(3), root, std::nullopt, false, true, false}));
+    const QCborMap told = barOf();
+    QCOMPARE(told.value(QStringLiteral("upPartCount")).toInteger(), 1);
+    const QCborMap bar = told.value(QStringLiteral("upStatus")).toMap();
+    QCOMPARE(bar.value(QStringLiteral("partSize")).toInteger(), 4 * 1024 * 1024);
+    QCOMPARE(bar.value(QStringLiteral("fileSize")).toInteger(), 1234);
+    QCOMPARE(bar.value(QStringLiteral("parts")).toByteArray(), QByteArray(1, '\x01'));
 
     // GetClientDetails: "ed3k:<node>" finds the row, keyed back; other keys and nodes don't
     const QString key = QStringLiteral("ed3k:") + QStringLiteral("03").repeated(16);
@@ -191,6 +212,11 @@ void tst_Ed3kUploads::eventsBecomeRowsAndStayUnhandled()
     QVERIFY(!Ed3kUploadsBridge::details(QStringLiteral("ed3k:anon:") + QStringLiteral("03").repeated(16)));
     QVERIFY(!Ed3kUploadsBridge::details(QStringLiteral("ed3k:") + QStringLiteral("04").repeated(16)));
     QVERIFY(!Ed3kUploadsBridge::details(QStringLiteral("ed3k:zz")));
+    // a node byte >= 0x80 (most real IDs): was compared as signed char, never found
+    QVERIFY(!send(e::FileRequested{node(0xe2), root, std::nullopt, true, true, true}));
+    const auto high = Ed3kUploadsBridge::details(QStringLiteral("ed3k:") + QStringLiteral("e2").repeated(16));
+    QVERIFY(high);
+    QCOMPARE(high->value(QStringLiteral("nodeId")).toString(), QStringLiteral("e2").repeated(16));
 }
 
 void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
@@ -229,6 +255,7 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     bool rankedWithAddress = false;   // the engine's queueList: rank and endpoint
     bool holderWithAddress = false;
     bool sawNick = false;   // Hello.nick of b
+    bool sawSentBar = false;   // a holder's Upload Status bar: blocks sent, as eD2K draws them
     QCborMap waitingRow;
     connect(&up, &Ed3kUploads::changed, this, [&] {
         const auto h = up.uploading();
@@ -239,6 +266,17 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
             sawNick = sawNick || r.nick == QStringLiteral("bob");
             named = named || (r.fileName == QStringLiteral("q.bin") && r.fileSize == std::uint64_t(data.size()));
             holderWithAddress = holderWithAddress || (r.address == QStringLiteral("127.0.0.1") && r.port != 0);
+            if (!sawSentBar && !r.sent.empty()) {
+                Ed3kUploadsBridge::setUploads(&up);
+                QCborArray uploading, waiting;
+                Ed3kUploadsBridge::appendRows(uploading, waiting);
+                for (const auto& u : uploading) {
+                    const QCborMap bar = u.toMap().value(QStringLiteral("upStatus")).toMap();
+                    const QCborArray sent = bar.value(QStringLiteral("sent")).toArray();
+                    sawSentBar = sawSentBar || (!sent.isEmpty() && !bar.value(QStringLiteral("next")).toArray().isEmpty()
+                                                && sent.at(0).toArray().at(1).toInteger() >= sent.at(0).toArray().at(0).toInteger());
+                }
+            }
         }
         for (const auto& r : w)
             sawNick = sawNick || r.nick == QStringLiteral("bob");
@@ -262,6 +300,7 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     bool sawSource = false;
     bool sawHello = false;
     bool sawDownloading = false;   // the Downloading list: a holding, our pieces counted
+    bool sawComplete = false;      // a's FileStatus.have: every piece (was: empty bitmap read as not told)
     const std::size_t pieces = (std::size_t(data.size()) + 4 * 1024 * 1024 - 1) / (4 * 1024 * 1024);
     QTimer sourcePoll;
     connect(&sourcePoll, &QTimer::timeout, this, [&] {
@@ -273,8 +312,13 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
             if (const auto h = e->peerHello(sourceOf(a).id); h && h->agent.starts_with("eMuleQt") && h->remote)
                 sawHello = true;
         for (const auto& s : Ed3kJoinBase::downloadingAt(b))
-            if (s.node == sourceOf(a).id && s.holding && s.ownPieces.size() == pieces)
+            if (s.node == sourceOf(a).id && s.holding && s.ownPieces.size() == pieces) {
                 sawDownloading = true;
+                bool all = s.haveKnown;
+                for (std::size_t p = 0; all && p < pieces; ++p)
+                    all = p / 8 >= s.have.size() || ((s.have[p / 8] >> (p % 8)) & 1u) != 0;
+                sawComplete = sawComplete || all;
+            }
     });
     sourcePoll.start(1);
     QVERIFY(fb.fetch(root, std::uint64_t(data.size()), sourceOf(a)));
@@ -286,11 +330,13 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     QVERIFY(sawSource);
     QVERIFY(sawHello);
     QVERIFY(sawDownloading);
+    QVERIFY(sawComplete);
     QVERIFY(mostHolding >= 1);
     QVERIFY(mostHolding <= 2);   // the two slots
     QVERIFY(sawWaiting);         // three nodes, two slots: one waited
     QVERIFY(named);
     QVERIFY(holderWithAddress);
+    QVERIFY(sawSentBar);
     QVERIFY(rankedWithAddress);
     QCOMPARE(waitingRow.value(QStringLiteral("addr")).toString(), QStringLiteral("127.0.0.1"));
     QVERIFY(waitingRow.value(QStringLiteral("port")).toInteger() > 0);

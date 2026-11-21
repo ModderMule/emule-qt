@@ -67,6 +67,8 @@ private slots:
     void uploadUnlimitedOrBtIdleHasNoBudget();
     void uploadSaturatedHoldsTheShare();
     void uploadBtBorrowsIdleLine();
+    void ed3kUploadSharesSlotsWithEd2k();
+    void ed2kFloorStaysOutOfEd3kCap();
 };
 
 void tst_BandwidthSplit::unlimitedDividesNothing()
@@ -169,6 +171,37 @@ void tst_BandwidthSplit::uploadBtBorrowsIdleLine()
 {
     const UploadPlan p = planUpload(1000, 25, idle(), busy(10));
     QCOMPARE(p.btCapKb, 1000);
+}
+
+void tst_BandwidthSplit::ed3kUploadSharesSlotsWithEd2k()
+{
+    QCOMPARE(ed3kUploadCapKb(0, 3, 2, 100), 0);       // unlimited stays so
+    QCOMPARE(ed3kUploadCapKb(300, 0, 1, 0), 300);     // no eD2K slot: all of it
+    QCOMPARE(ed3kUploadCapKb(300, 1, 1, 150), 150);   // one slot each: half (the live 2-node rig)
+    QCOMPARE(ed3kUploadCapKb(300, 1, 0, 150), 150);   // ed3k counts as one before its first holder
+    QCOMPARE(ed3kUploadCapKb(400, 3, 1, 300), 100);   // a slot's part
+    QCOMPARE(ed3kUploadCapKb(300, 1, 1, 40), 185);    // what a slow eD2K slot leaves
+    QCOMPARE(ed3kUploadCapKb(300, 1, 1, 0), 225);     // a starved eD2K slot keeps room to grow
+    QCOMPARE(ed3kUploadCapKb(1, 5, 1, 0), 1);         // never 0 (= none)
+}
+
+// eD2K's floor (half its slot part) is what the throttler keeps from ed3k's debt; ed3k's
+// cap must leave it, or the debt piles up and the line overshoots
+void tst_BandwidthSplit::ed2kFloorStaysOutOfEd3kCap()
+{
+    QCOMPARE(ed2kUploadFloorKb(0, 6, 10), 0);      // unlimited
+    QCOMPARE(ed2kUploadFloorKb(300, 0, 10), 0);    // no eD2K slot
+    QCOMPARE(ed2kUploadFloorKb(300, 1, 1), 75);    // half of a half
+    QCOMPARE(ed2kUploadFloorKb(400, 6, 10), 75);   // 6 of 16 slots = 150, half of it
+    for (const int ed2kSlots : {1, 3, 6, 20}) {
+        for (const int holders : {0, 1, 10, 145}) {
+            for (const qint64 own : {0, 5, 40, 150, 400}) {
+                const qint64 share = 424;
+                QVERIFY(ed3kUploadCapKb(share, ed2kSlots, holders, own)
+                        <= share - ed2kUploadFloorKb(share, ed2kSlots, holders));
+            }
+        }
+    }
 }
 
 QTEST_GUILESS_MAIN(tst_BandwidthSplit)

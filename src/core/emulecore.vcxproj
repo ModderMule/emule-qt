@@ -485,6 +485,7 @@
     <ClInclude Include="files\CollectionFile.h" />
     <ClInclude Include="files\CollectionKeys.h" />
     <ClInclude Include="utils\ContainerUtils.h" />
+    <ClInclude Include="utils\ShareRatio.h" />
     <ClInclude Include="utils\CorroborationTally.h" />
     <QtMoc Include="app\CoreSession.h" />
     <ClInclude Include="client\CorruptionBlackBox.h" />

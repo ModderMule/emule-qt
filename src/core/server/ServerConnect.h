@@ -213,6 +213,17 @@ public:
     /// The TCP port the login advertises: the router's mapped port, else ours.
     [[nodiscard]] uint16 loginTcpPort() const;
 
+    // -- OP_IPV6_UPDATE (ed2k-server#34/#60) ----------------------------------
+
+    /// Tell the live server our IPv6 changed (OP_IPV6_UPDATE; zeros withdraw it), when it
+    /// takes the opcode and holds another address than the one we would log in with now.
+    /// @return true when an update was sent
+    bool syncServerIPv6();
+    /// An IPv6 pinhole opened for our address: if the server's probe of it failed, ask
+    /// once for another dial-back by repeating the address.
+    /// @return true when the repeat was sent
+    bool ipv6PinholeOpened();
+
     /// True if the active connection uses obfuscation.
     [[nodiscard]] bool isConnectedObfuscated() const;
 
@@ -263,6 +274,10 @@ private slots:
     void onRetryTimer();
 
 private:
+    /// The live server's copy when it takes OP_IPV6_UPDATE over an IPv4 session, else null
+    /// (an IPv6 session's server keeps the address it sees us on).
+    [[nodiscard]] Server* ipv6UpdateTarget() const;
+    bool sendIPv6Update(const Address& addr, const QString& why);
     // -- Internal connection handlers -----------------------------------------
     void onConnectionStateChanged(ServerSocket* socket, ServerConnState newState);
     void onConnectionFailed(ServerSocket* socket, ServerConnState reason);

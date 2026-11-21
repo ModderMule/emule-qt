@@ -5,6 +5,7 @@
 #include "controls/TorrentListModel.h"
 
 #include "utils/FileTypeIcons.h"
+#include "utils/ShareRatio.h"
 #include "utils/StringUtils.h"
 #include "app/SkinIcons.h"
 
@@ -104,9 +105,7 @@ QString torrentFilePriorityName(int priority)
 
 double TorrentRow::ratio() const
 {
-    if (downloaded <= 0)
-        return uploaded > 0 ? -2 : -1;   // -2 = seeded only (infinite)
-    return double(uploaded) / double(downloaded);
+    return shareRatio(uploaded, downloaded, haveBytes);
 }
 
 bool TorrentRow::isComplete() const
@@ -139,6 +138,7 @@ TorrentRow torrentRowFromCbor(const QCborMap& m)
     r.seedsTotal = i32("seedsTotal", -1);
     r.downloaded = i64("downloaded");
     r.uploaded = i64("uploaded");
+    r.sessionUploaded = i64("sessionUploaded");
     r.failedBytes = i64("failedBytes");
     r.error = str("error");
     r.hashV1 = str("hashV1");
@@ -267,6 +267,7 @@ QVariant TorrentListModel::data(const QModelIndex& index, int role) const
         switch (index.column()) {
         case ColSize: case ColDone: case ColDownSpeed: case ColUpSpeed:
         case ColSeeds: case ColPeers: case ColRatio: case ColEta:
+        case ColUploaded: case ColSessionUploaded: case ColDownloaded:
             return int(Qt::AlignRight | Qt::AlignVCenter);
         default:
             return {};
@@ -319,6 +320,9 @@ QVariant TorrentListModel::headerData(int section, Qt::Orientation orientation, 
     case ColRatio:     return tr("Ratio");
     case ColEta:       return tr("Remaining Time");
     case ColAdded:     return tr("Added");
+    case ColUploaded:  return tr("Uploaded");
+    case ColSessionUploaded: return tr("Uploaded (Session)");
+    case ColDownloaded: return tr("Downloaded");
     default:           return {};
     }
 }
@@ -508,7 +512,7 @@ QVariant TorrentListModel::displayData(const TorrentRow& r, int column) const
     case ColPeers:     return countWithTotal(r.peers, r.peersTotal);
     case ColRatio: {
         const double ratio = r.ratio();
-        if (ratio == -2)
+        if (ratio == kShareRatioInfinite)
             return QStringLiteral("∞");
         return ratio < 0 ? QStringLiteral("—") : QLocale().toString(ratio, 'f', 2);
     }
@@ -520,6 +524,9 @@ QVariant TorrentListModel::displayData(const TorrentRow& r, int column) const
         return r.addedAt > 0
                    ? QLocale().toString(QDateTime::fromSecsSinceEpoch(r.addedAt), QLocale::ShortFormat)
                    : QString();
+    case ColUploaded:        return formatByteSize(r.uploaded);
+    case ColSessionUploaded: return formatByteSize(r.sessionUploaded);
+    case ColDownloaded:      return formatByteSize(r.downloaded);
     default:
         return {};
     }
@@ -541,13 +548,16 @@ QVariant TorrentListModel::sortData(const TorrentRow& r, int column) const
     case ColPeers:     return r.peers;
     case ColRatio: {
         const double ratio = r.ratio();
-        return ratio == -2 ? 1e12 : ratio;
+        return ratio == kShareRatioInfinite ? 1e12 : ratio;
     }
     case ColEta:
         // unknown sorts after every known time
         return QVariant::fromValue(r.eta < 0 || r.isComplete() ? std::numeric_limits<qint64>::max()
                                                                : r.eta);
     case ColAdded:     return QVariant::fromValue(r.addedAt);
+    case ColUploaded:        return QVariant::fromValue(r.uploaded);
+    case ColSessionUploaded: return QVariant::fromValue(r.sessionUploaded);
+    case ColDownloaded:      return QVariant::fromValue(r.downloaded);
     default:           return {};
     }
 }

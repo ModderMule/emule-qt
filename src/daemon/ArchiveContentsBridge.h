@@ -41,6 +41,12 @@ void lookup(const QString& kind, const QCborMap& payload, Reply reply);
 void setEntries(const QCborMap& target, const QCborMap& entries, Reply reply);
 /// DownloadArchiveEntries.
 void downloadEntries(const QCborArray& entries, const QString& folder, int category, Reply reply);
+/// TakeArchiveFromDisk (#224): every entry of @p archives is on disk here; they come by root
+/// from there into incoming/<@p folder>/, the archives' volumes in @p target are skipped.
+void takeFromDisk(const QCborMap& target, const QCborArray& archives, const QString& folder, int category, Reply reply);
+/// LocateLocalCopies (#224): a folder scan for the open ed3k downloads; @p reply when it ends.
+/// One at a time.
+void locateLocalCopies(const QStringList& folders, Reply reply);
 
 } // namespace ArchiveContentsBridge
 

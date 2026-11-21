@@ -64,6 +64,16 @@ constexpr uint32 makeClientVersion(uint32 major, uint32 minor, uint32 update)
     return ((major * 100 + minor) * 10 + update) * 100;
 }
 
+/// Inverse of the CT_EMULE_VERSION decode: makeClientVersion() value back to the
+/// (major << 17) | (minor << 10) | (update << 7) bitfield, compat byte left 0.
+constexpr uint32 emuleVersionBitfield(uint32 clientVersion)
+{
+    const uint32 major  = clientVersion / 100000;
+    const uint32 minor  = (clientVersion / 1000) % 100;
+    const uint32 update = (clientVersion / 100) % 10;
+    return ((major & 0x7f) << 17) | ((minor & 0x7f) << 10) | ((update & 0x07) << 7);
+}
+
 /// Anti-leecher hit, the DLP subset of eMule Xtreme's BanLeecher categories
 /// (srchybrid/UploadClient.cpp:1938-1958); values kept for comparison.
 enum class LeecherCategory : uint8 {
@@ -453,6 +463,10 @@ public:
     /// Detect client software type and build version string.
     /// Full port from MFC InitClientSoftwareVersion().
     void initClientSoftwareVersion();
+
+    /// Rebuild the software string from a stored, already decoded clientVersion()
+    /// (upload queue restore). initClientSoftwareVersion() alone would decode it twice.
+    void restoreClientSoftwareVersion(uint32 clientVersion, uint8 emuleVersion, uint8 compatibleClient);
 
     /// Compare this client with another for duplicate detection.
     /// Full port from MFC CUpDownClient::Compare().

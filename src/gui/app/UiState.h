@@ -421,6 +421,22 @@ public:
         scheduleSave();
     }
 
+    /// ed3k room @p room (hex): sent time of the newest post read; 0 none recorded yet.
+    /// Posts after it count as unread at start (toolbar "!").
+    [[nodiscard]] qint64 roomReadUpTo(const QString& room) const { return m_roomReadUpTo.value(room); }
+    void setRoomReadUpTo(const QString& room, qint64 sent)
+    {
+        if (m_roomReadUpTo.value(room, -1) == sent)
+            return;
+        m_roomReadUpTo[room] = sent;
+        scheduleSave();
+    }
+    void forgetRoomRead(const QString& room)
+    {
+        if (m_roomReadUpTo.remove(room) > 0)
+            scheduleSave();
+    }
+
     /// Where the last .torrent/.nzb from a search result was saved (empty = Downloads).
     [[nodiscard]] const QString& metaFileSaveDir() const { return m_metaFileSaveDir; }
     void setMetaFileSaveDir(const QString& dir)
@@ -622,6 +638,7 @@ private:
     QMap<QString, bool> m_sortValues;
     QMap<QString, QSize> m_dialogSizes;
     QMap<QString, QString> m_torrentCreator;
+    QMap<QString, qint64> m_roomReadUpTo;   ///< ed3k room hex → newest read post sent
     QSet<QString> m_statsTreeExpanded;
     QString m_configDir;   ///< Remembered by load() so save() can run without it.
     std::unique_ptr<QTimer> m_saveTimer;   ///< Debounce for scheduleSave().

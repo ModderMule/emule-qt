@@ -43,6 +43,10 @@ void setSession(bt::BtSession* session);
 /// (BtSession::streamFrom). found = false: no such torrent/file, or no BitTorrent.
 [[nodiscard]] UsenetStreamSource streamFrom(const QString& id, int fileIndex, qint64 offset, bool fetch);
 
+/// Shared file @p path was deleted: torrents holding it skip it (no download again); one
+/// left with no wanted file is removed when btRemoveEmptiedTorrent is on.
+void fileDeleted(const QString& path);
+
 /// The bundled I2P router (btI2pMode 1); set by DaemonApp, null when absent.
 void setI2pRouter(I2pRouter* router);
 
@@ -64,6 +68,8 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 
 /// The peers torrent @p id gets bytes from now, as GetDownloadClients rows (network "bt").
 void appendDownloading(QCborArray& out, const QString& id);
+/// The peers torrent @p id sends bytes to now, as GetUploads "uploading" rows (network "bt").
+void appendUploading(QCborArray& out, const QString& id);
 
 /// Torrent @p id as a Transfers row in single transfer mode (SingleTransfer); nullopt: none.
 [[nodiscard]] std::optional<SingleTransfer::Job> transferJob(const QString& id);

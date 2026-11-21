@@ -24,6 +24,7 @@ class QPushButton;
 
 namespace eMule {
 
+class CheckComboBox;
 class IpcClient;
 
 class TorrentCreatorDialog : public RememberedSizeDialog {
@@ -56,6 +57,10 @@ private:
     void saveSettings() const;
     void saveTorrent(const QByteArray& data, const QString& name);
     [[nodiscard]] QCborMap params() const;
+    [[nodiscard]] QString trackerText() const;
+    void rememberCustomTrackers();
+    void resetTrackerList();
+    void storeTrackerList() const;
 
     IpcClient* m_ipc;
     QStringList m_onlyFiles;
@@ -72,7 +77,8 @@ private:
     QCheckBox* m_ignoreDotfiles;
     QCheckBox* m_startSeeding;
     QLabel* m_ed3kNote;
-    QPlainTextEdit* m_trackers;
+    CheckComboBox* m_publicTrackers;
+    QPlainTextEdit* m_trackers;   // custom ones, below the public picks
     QPlainTextEdit* m_webSeeds;
     QPlainTextEdit* m_comment;
     QLineEdit* m_source;

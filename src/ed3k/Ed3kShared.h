@@ -33,8 +33,10 @@
 
 #include <atomic>
 #include <cstdint>
+#include <ctime>
 #include <deque>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -72,6 +74,8 @@ struct SharedEntry {
     QString codec;
     /// hashed while eD2K was disabled (KnownFile::isEd3kOnly): no ed2k name, no ALIAS
     bool ed3kOnly = false;
+    /// the share list's date of it (secs, stat'ed off the main thread); 0 = unknown
+    time_t fileDate = 0;
 
     [[nodiscard]] bool hasNote() const { return rating != 0 || !comment.isEmpty(); }
 };
@@ -270,7 +274,7 @@ private:
     struct File {
         SharedEntry entry;
         int member = -1;
-        qint64 mtimeMs = 0;   ///< of the file when it was taken
+        qint64 mtimeMs = 0;   ///< of the file when it was taken; kMtimeUnknown: stat'ed when hashed
         bool queued = false;  ///< waits for a hash
         bool shared = false;  ///< open on the engine, published
         ::ed3k::Bytes alias;  ///< the ALIAS record published; empty: none
@@ -284,8 +288,16 @@ private:
         int aliasTries = 0;        ///< alias-only: refused for that; the first retry is soon
     };
 
+    /// File::mtimeMs not read yet: hashNext stats it (no disk on add, #200)
+    static constexpr qint64 kMtimeUnknown = std::numeric_limits<qint64>::min();
+
     /// @p aliasOnly: setAliasOnlyFiles (not served, its `ed2k` ALIAS only)
     void add(const SharedEntry& entry, bool aliasOnly = false);
+    /// The cached ms date of @p entry when the share list's date says it is that file
+    /// (same size, same second): no stat needed. nullopt: unknown, or a date to stat.
+    [[nodiscard]] std::optional<qint64> listedDateMs(const SharedEntry& entry, bool byPath, bool aliasOnly) const;
+    /// a cache entry add() would take for @p entry (by MD4, or by path before)
+    [[nodiscard]] bool hasCacheFor(const SharedEntry& entry, bool byPath) const;
     void remove(const QByteArray& md4);
     /// Shares @p f; values from disk when not in RAM. An unreadable entry is dropped and
     /// @p f hashed again (@p h is gone then).

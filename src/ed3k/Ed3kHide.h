@@ -8,9 +8,10 @@
 ///   anonymous key; files held before keep their key (keys.json, Config/ed3k). A file is
 ///   never under both keys (packmule refuses it) and moves only after the user was asked (§1).
 /// - One hop count for every use (lookups, downloads, shares, publish, rooms, paid), 0 to 3;
-///   gates at the core default; nodeKeyUses 0. 0 = deniable, not hidden (§2.6): only while
-///   hopping, else 1 is taken. packmule takes per-use counts too (HideCfg), not offered here.
-/// - Key per use (§1): keyForUse() = anonymous while hiding runs, else node key; a file keeps
+///   gates at the core default; nodeKeyUses 0. 0 = deniable, not hidden (§2.6). packmule takes
+///   per-use counts too (HideCfg), not offered here.
+/// - Forwarding for others (§5) is always on while hiding: no switch here (packmule keeps one).
+/// - Key per use (§1): keyForUse() = anonymous while hiding is wanted, else node key; a file keeps
 ///   keyFor(root). Hiding off: nothing under the anonymous key, nothing falls back.
 /// - The seed is Config/ed3k/anon.key (owner-only, a secret, never logged).
 /// - Files of the anonymous key are not served while hiding is off: nothing of them goes
@@ -42,15 +43,17 @@ namespace eMule::ed3k {
 
 class Ed3kSession;
 
-/// The prefs of hiding (ed3kHide, ed3kHops, ed3kHopping, ed3kHopShare, ed3kReportProxy*).
+/// The prefs of hiding (ed3kHide, ed3kHops, ed3kHopShare, ed3kReportProxy*).
 struct Ed3kHideSettings {
     bool on = false;
-    int hops = 1;             ///< 0 to 3, every use; 0 only with hopping (§2.6), else 1
-    bool hopping = true;      ///< forward for others while hiding (§1 "Recommended", §5)
+    int hops = 1;             ///< 0 to 3, every use; 0 = deniable (§2.6)
     int sharePercent = 25;    ///< of the upload limit for others' paths (§5)
     /// share reports under the anonymous key (subscription.md §5.3) go through this proxy
     /// alone; nullopt: none are sent (anonReports off)
     std::optional<QNetworkProxy> reportProxy;
+    /// HTTP sources (ws=/wh=) of anonymous downloads through reportProxy alone (never direct);
+    /// off or no proxy: they are not used (hops.md §1)
+    bool anonHttp = false;
 
     friend bool operator==(const Ed3kHideSettings&, const Ed3kHideSettings&) = default;
 };
@@ -96,15 +99,18 @@ public:
 
     /// The anonymous node runs.
     [[nodiscard]] bool hiding() const;
+    /// Hiding is wanted (the pref) or runs: what is new goes under the anonymous key, also
+    /// before its node started (no auto-connect, a link at start-up).
+    [[nodiscard]] bool hidingWanted() const;
     [[nodiscard]] std::optional<::ed3k::NodeId> anonId() const;
 
     // -- which key a file is under -------------------------------------------
 
     /// The key a new use goes under (search, live, followed set, room, paid, §1): the
-    /// anonymous key while hiding runs, else the node key.
+    /// anonymous key while hiding is wanted (hidingWanted), else the node key.
     [[nodiscard]] ::ed3k::KeyKind keyForUse() const;
     /// The key a file of an anon-capable join goes under: its recorded one; a new one under
-    /// the anonymous key while hiding, else the node key.
+    /// the anonymous key while hiding is wanted (hidingWanted), else the node key.
     [[nodiscard]] ::ed3k::KeyKind keyFor(const ::ed3k::Root& root) const;
     /// The key recorded for @p root; nullopt: never held.
     [[nodiscard]] std::optional<::ed3k::KeyKind> recorded(const ::ed3k::Root& root) const;
@@ -124,7 +130,7 @@ public:
 
     /// "Node" / "Anonymous" for the GUI (not localized: an IPC value).
     [[nodiscard]] static QString keyName(::ed3k::KeyKind key);
-    /// @p s as applied: hops 0 to 3, 0 only with hopping (§2.6: else 1), share 1 to 100.
+    /// @p s as applied: hops 0 to 3, share 1 to 100.
     [[nodiscard]] static Ed3kHideSettings normalized(Ed3kHideSettings s);
     /// The HideCfg of @p hops: every use at that count, nothing under the node key.
     [[nodiscard]] static ::ed3k::HideCfg hideCfg(int hops);
@@ -145,6 +151,8 @@ private:
     void applyNode();
     /// anonReports on only while a report proxy is set and hiding runs.
     void applyReports();
+    /// http-source.md §3.2: the engine's switch for anonymous downloads' HTTP sources.
+    void applyHttp();
     void load();
     void save();
     void scheduleSave();
@@ -156,6 +164,7 @@ private:
     std::optional<bool> m_appliedHopping;
     int m_appliedShare = -1;
     std::optional<bool> m_appliedReports;
+    std::optional<bool> m_appliedHttp;
     std::map<::ed3k::Root, ::ed3k::KeyKind> m_keys;
     QString m_dir;
     bool m_loaded = false;

@@ -1,9 +1,11 @@
 /// @file tst_TorrentListModel.cpp
 /// @brief The Torrents tab's row model: decode, upsert/remove, sort, state names.
 
+#include "controls/FolderTreeModel.h"
 #include "controls/SortableItems.h"
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentProgressDelegate.h"
+#include "utils/ShareRatio.h"
 
 #include <QAbstractItemModelTester>
 #include <QCborArray>
@@ -54,10 +56,16 @@ private slots:
     void upsertAndRemove();
     void setRowsMergesByKey();
     void sortsByValueNotText();
+    // #219: lifetime / session upload and download columns
+    void transferColumns();
+    // #218: qBittorrent's ratio rule, not infinite for files that were on disk
+    void shareRatioRule();
     void stateNames();
     void barRoles();
     void bucketColours();
     void filesAsChildren();
+    // FolderTreeModel (built here for the Torrent Creator's picker): UNC roots (#213)
+    void folderTreeAddedRoots();
 };
 
 void tst_TorrentListModel::decodesRow()
@@ -157,6 +165,64 @@ void tst_TorrentListModel::sortsByValueNotText()
              QStringLiteral("Alpha,Bravo,Charlie"));
     QCOMPARE(sortedColumn(proxy, TorrentListModel::ColName, Qt::DescendingOrder),
              QStringLiteral("Charlie,Bravo,Alpha"));
+}
+
+void tst_TorrentListModel::transferColumns()
+{
+    QCborMap a = row(QStringLiteral("a"), QStringLiteral("Alpha"), 1000, 1.0, 5);
+    a.insert(QStringLiteral("uploaded"), qint64(9'000'000));
+    a.insert(QStringLiteral("sessionUploaded"), qint64(2'000));
+    a.insert(QStringLiteral("downloaded"), qint64(1'000));
+    QCborMap b = row(QStringLiteral("b"), QStringLiteral("Bravo"), 1000, 1.0, 5);
+    b.insert(QStringLiteral("uploaded"), qint64(500));
+    b.insert(QStringLiteral("sessionUploaded"), qint64(500));
+    b.insert(QStringLiteral("downloaded"), qint64(1'048'576));
+
+    const TorrentRow ra = torrentRowFromCbor(a);
+    QCOMPARE(ra.sessionUploaded, 2'000);
+    // absent = 0, not unknown
+    QCOMPARE(torrentRowFromCbor(row(QStringLiteral("c"), QStringLiteral("C"), 1, 1.0, 5)).sessionUploaded, 0);
+
+    TorrentListModel model;
+    model.setRows({ra, torrentRowFromCbor(b)});
+    QCOMPARE(model.headerData(TorrentListModel::ColUploaded, Qt::Horizontal).toString(),
+             QStringLiteral("Uploaded"));
+    QVERIFY(!model.index(0, TorrentListModel::ColSessionUploaded).data().toString().isEmpty());
+
+    SortValueProxy proxy;
+    proxy.setSourceModel(&model);
+    proxy.setSortRole(Qt::UserRole);
+    QCOMPARE(sortedColumn(proxy, TorrentListModel::ColUploaded, Qt::DescendingOrder),
+             QStringLiteral("Alpha,Bravo"));
+    QCOMPARE(sortedColumn(proxy, TorrentListModel::ColSessionUploaded, Qt::DescendingOrder),
+             QStringLiteral("Alpha,Bravo"));
+    QCOMPARE(sortedColumn(proxy, TorrentListModel::ColDownloaded, Qt::DescendingOrder),
+             QStringLiteral("Bravo,Alpha"));
+}
+
+void tst_TorrentListModel::shareRatioRule()
+{
+    constexpr qint64 GB = 1'000'000'000;
+    // seeded from files already on disk: base = what we have
+    QCOMPARE(shareRatio(GB / 2, 0, GB), 0.5);
+    // downloaded under 1 % of have: lost stats, base = have
+    QCOMPARE(shareRatio(GB, GB / 200, GB), 1.0);
+    // a real download
+    QCOMPARE(shareRatio(GB, GB / 2, GB), 2.0);
+    QCOMPARE(shareRatio(0, 0, 0), kShareRatioNone);
+    QCOMPARE(shareRatio(0, 0, GB), 0.0);
+    QCOMPARE(shareRatio(1, 0, 0), kShareRatioInfinite);
+    QCOMPARE(shareRatio(qint64(kMaxShareRatio) * 10, 10, 10), kShareRatioInfinite);
+
+    QCborMap m = row(QStringLiteral("a"), QStringLiteral("Alpha"), GB, 1.0, 5);
+    m.insert(QStringLiteral("uploaded"), GB / 2);
+    m.insert(QStringLiteral("downloaded"), qint64(0));
+    m.insert(QStringLiteral("haveBytes"), GB);
+    TorrentListModel model;
+    model.setRows({torrentRowFromCbor(m)});
+    const QString shown = model.index(0, TorrentListModel::ColRatio).data().toString();
+    QVERIFY2(shown != QStringLiteral("∞"), qPrintable(shown));
+    QCOMPARE(model.index(0, TorrentListModel::ColRatio).data(Qt::UserRole).toDouble(), 0.5);
 }
 
 void tst_TorrentListModel::stateNames()
@@ -269,6 +335,40 @@ void tst_TorrentListModel::filesAsChildren()
     QCOMPARE(model.rowCount(m2), 2);
     model.removeRow(QStringLiteral("m"));
     QCOMPARE(model.rowCount(), 0);
+}
+
+void tst_TorrentListModel::folderTreeAddedRoots()
+{
+    using eMule::FolderTreeModel;
+    // local: drives read off the GUI thread. No model tester: it would fetch the real disk
+    FolderTreeModel model(nullptr, true);
+    QSignalSpy loaded(&model, &FolderTreeModel::rootsLoaded);
+    QCOMPARE(model.rowCount(), 0);   // nothing read on the GUI thread
+    model.addRoot(QStringLiteral("//nas/zeta"), QStringLiteral("\\\\nas\\zeta"));   // held until the drives
+    QCOMPARE(model.rowCount(), 0);
+    // sleeping external disks wake in seconds: hasSubfolders() reads each volume
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.count(), 1, 60000);
+    const int drives = model.rowCount() - 1;
+    QVERIFY(drives > 0);
+
+    QSignalSpy checks(&model, &FolderTreeModel::checksChanged);
+    model.addRoot(QStringLiteral("//nas/alpha"), QStringLiteral("\\\\nas\\alpha"));
+    model.addRoot(QStringLiteral("//NAS/Alpha"), QStringLiteral("dup"));   // same share
+    QCOMPARE(model.rowCount(), drives + 2);
+    // after the drives, by name
+    QCOMPARE(model.index(drives, 0).data().toString(), QStringLiteral("\\\\nas\\alpha"));
+    QCOMPARE(model.filePath(model.index(drives + 1, 0)), QStringLiteral("//nas/zeta"));
+    QVERIFY(model.isAddedRoot(model.index(drives, 0)));
+    QVERIFY(!model.isAddedRoot(model.index(0, 0)));
+
+    model.setCheckedPaths({QStringLiteral("//nas/alpha/movies"), QStringLiteral("//nas/zeta")});
+    model.removeRoot(QStringLiteral("//nas/alpha"));
+    QCOMPARE(model.rowCount(), drives + 1);
+    QCOMPARE(model.checkedPaths(), QStringList{QStringLiteral("//nas/zeta")});
+    QCOMPARE(checks.count(), 1);
+
+    model.removeRoot(QStringLiteral("/"));   // a drive is never removed
+    QCOMPARE(model.rowCount(), drives + 1);
 }
 
 QTEST_MAIN(tst_TorrentListModel)

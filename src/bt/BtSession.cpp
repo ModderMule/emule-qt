@@ -11,9 +11,11 @@
 #include "stats/Statistics.h"
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
+#include "utils/ShareRatio.h"
 
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/announce_entry.hpp>
+#include <libtorrent/bdecode.hpp>
 #include <libtorrent/bencode.hpp>
 #include <libtorrent/extensions.hpp>
 #include <libtorrent/extensions/smart_ban.hpp>
@@ -37,6 +39,8 @@
 #include <QJsonObject>
 #include <QSaveFile>
 #include <QSet>
+#include <QTcpServer>
+#include <QUdpSocket>
 
 #include <algorithm>
 #include <QTimer>
@@ -55,6 +59,22 @@ namespace lt = libtorrent;
 namespace eMule::bt {
 
 namespace {
+
+/// A port free for TCP and UDP alike; 0: none found. libtorrent's port 0 takes an
+/// ephemeral TCP port and binds uTP to the same number, which fails inside a UDP-only
+/// excluded range (Windows Hyper-V/WinNAT reserve those): no listen socket at all.
+quint16 freeTcpUdpPort()
+{
+    for (int tries = 0; tries < 32; ++tries) {
+        QUdpSocket udp;
+        if (!udp.bind(QHostAddress::Any, 0))
+            continue;
+        QTcpServer tcp;
+        if (tcp.listen(QHostAddress::Any, udp.localPort()))
+            return udp.localPort();
+    }
+    return 0;
+}
 
 constexpr int kTickMs = 1000;
 /// resume data of changed torrents every 5 min
@@ -86,6 +106,11 @@ const QString kOptionsFile = QStringLiteral("torrent-options.json");
 const QString kLinksFile = QStringLiteral("ed3k-links.json");
 /// magnets to stop once their metadata is in (BtAddSource::applyStopAfterMetadata)
 const QString kStopsFile = QStringLiteral("stop-after-metadata.json");
+/// strict I2P only torrents: the clearnet trackers and web seeds set aside (BtSession::Impl::I2pOnly)
+const QString kI2pOnlyFile = QStringLiteral("i2p-only.json");
+/// what a strict I2P only torrent switches off: peers it would find in the clear
+constexpr lt::torrent_flags_t kI2pOnlyOff = lt::torrent_flags::disable_dht | lt::torrent_flags::disable_pex
+                                          | lt::torrent_flags::disable_lsd;
 
 /// A torrent plugin of libtorrent as a session plugin: the explicit list of extensions.
 struct TorrentPlugin final : lt::plugin {
@@ -109,6 +134,25 @@ std::vector<std::shared_ptr<lt::plugin>> extensions(const BtSettings& s)
 QByteArray readAll(const QString& path)
 {
     return BackgroundFileWriter::readFile(path).value_or(QByteArray());
+}
+
+/// lt::read_resume_data, but the saved "i2p" key wins: libtorrent sets the flag again for
+/// any .i2p tracker, which turned "I2P and direct" into "I2P only" on every restart (#241)
+lt::add_torrent_params readResume(const QByteArray& data, lt::error_code& ec)
+{
+    const lt::span<char const> buf(data.constData(), static_cast<std::ptrdiff_t>(data.size()));
+    lt::add_torrent_params atp = lt::read_resume_data(buf, ec);
+    if (ec)
+        return atp;
+    lt::error_code dec;
+    const lt::bdecode_node rd = lt::bdecode(buf, dec);
+    if (!dec && rd.type() == lt::bdecode_node::dict_t && rd.dict_find_int(lt::string_view("i2p"))) {
+        if (rd.dict_find_int_value(lt::string_view("i2p"), 0) != 0)
+            atp.flags |= lt::torrent_flags::i2p_torrent;
+        else
+            atp.flags &= ~lt::torrent_flags::i2p_torrent;
+    }
+    return atp;
 }
 
 /// Synced, now: for the stop only, every other save is writeQueued.
@@ -304,10 +348,23 @@ struct BtSession::Impl {
     QTimer* timer = nullptr;
     std::map<QString, lt::torrent_handle> handles;
     std::map<QString, BtTorrentRow> rows;
+    /// all_time_upload when first seen this core run: session upload = now - base.
+    /// Kept over a BT stop/start, dropped on remove.
+    std::map<QString, qint64> sessionUpBase;
     /// stopped by a seed limit, and resumed by the user since: the limit stays off
     QSet<QString> limitOverride;
     /// seed limits that differ from the global ones
     std::map<QString, BtTorrentOptions> seedLimits;
+    /// I2P only, also while the session mixes: no clearnet tracker, web seed, DHT, PEX or
+    /// LSD; the peer gate refuses direct peers. Back as they were when it leaves (kI2pOnlyFile)
+    struct I2pOnly {
+        std::vector<std::pair<std::string, int>> trackers;   ///< url, tier
+        std::vector<std::string> webSeeds;
+        lt::torrent_flags_t flagsSet;   ///< of kI2pOnlyOff, the ones it switched on
+    };
+    std::map<QString, I2pOnly> i2pOnly;
+    /// added I2P only: web seeds of the metadata swept out when libtorrent has it
+    QSet<QString> i2pOnlySweep;
     int ticks = 0;
     int outstandingResume = 0;
     /// setRateLimits() caps in bytes/s; nullopt = the ones in settings
@@ -332,6 +389,8 @@ struct BtSession::Impl {
     int redundantIdx = lt::find_metric_idx("net.recv_redundant_bytes");
     int peersIdx = lt::find_metric_idx("peer.num_peers_connected");
     bool listening = false;
+    /// listenPort 0 (random): the port picked at start, kept until stop
+    mutable quint16 randomPort = 0;
     int dhtNodes = 0;
     /// one DHT node per listen socket (v4 + v6): routing table size per local endpoint
     std::map<lt::udp::endpoint, int> dhtNodesBySocket;
@@ -347,9 +406,11 @@ struct BtSession::Impl {
     std::map<QString, std::shared_ptr<BtJoinSink>> joins;
     /// ed3k:file links by id (kLinksFile)
     std::map<QString, QString> links;
-    /// flag on = I2P only, unless the session mixes; else any .i2p tracker = mixed
+    /// strict = I2P only; flag on = I2P only, unless the session mixes; else any .i2p tracker = mixed
     BtI2pMode i2pModeOf(const QString& id)
     {
+        if (i2pOnly.contains(id))
+            return BtI2pMode::I2pOnly;
         const auto r = rows.find(id);
         if (r != rows.end() && r->second.i2p)
             return settings.i2pMixed ? BtI2pMode::Mixed : BtI2pMode::I2pOnly;
@@ -422,6 +483,8 @@ struct BtSession::Impl {
         QElapsedTimer since;
     };
     std::map<QString, PendingPriorities> pendingPriorities;
+    /// torrents a file was deleted from (skipDeletedFile): rechecked together after a pause
+    QSet<QString> recheckDue;
     void prioritizeFiles(const lt::torrent_handle& h, const QString& id, std::vector<lt::download_priority_t> prio)
     {
         h.prioritize_files(prio);
@@ -596,6 +659,15 @@ struct BtSession::Impl {
     [[nodiscard]] QString optionsPath() const { return QDir(settings.stateDir).filePath(kOptionsFile); }
     void loadSeedLimits();
     void saveSeedLimits() const;
+    [[nodiscard]] QString i2pOnlyPath() const { return QDir(settings.stateDir).filePath(kI2pOnlyFile); }
+    void loadI2pOnly();
+    void saveI2pOnly() const;
+    /// a new torrent I2P only: clearnet trackers and web seeds out of @p atp into @p s
+    static void stripForI2pOnly(lt::add_torrent_params& atp, I2pOnly& s);
+    /// @p id (listed) becomes strict I2P only, or sets aside what came since. Sync calls
+    void enterI2pOnly(const QString& id, const lt::torrent_handle& h);
+    /// @p id back to what it had before it was strict; no-op when it is not
+    void leaveI2pOnly(const QString& id, const lt::torrent_handle& h);
     BtAddResult add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused,
                     std::optional<bool> i2pOnly, std::optional<bool> stopAfterMetadata,
                     const QString& link = {}, const QList<int>& wanted = {});
@@ -627,8 +699,8 @@ struct BtSession::Impl {
             meta[id] = {QString::fromStdString(p.comment), QString::fromStdString(p.created_by),
                         static_cast<qint64>(p.creation_date)};
     }
-    /// BtTorrentView::row() plus what torrent_info no longer has
-    [[nodiscard]] BtTorrentRow row(const lt::torrent_status& st) const
+    /// BtTorrentView::row() plus what torrent_info no longer has, and the session upload
+    [[nodiscard]] BtTorrentRow row(const lt::torrent_status& st)
     {
         BtTorrentRow r = BtTorrentView::row(st);
         if (auto it = meta.find(r.id); it != meta.end()) {
@@ -636,6 +708,14 @@ struct BtSession::Impl {
             r.creator = it->second.creator;
             r.createdAt = it->second.createdAt;
         }
+        static const std::vector<lt::download_priority_t> kAllWanted;
+        const auto pending = pendingPriorities.find(r.id);
+        const auto dt = details.find(r.id);
+        BtTorrentView::exactBytes(r, st, pending != pendingPriorities.end() ? pending->second.priorities
+                                         : dt != details.end()            ? dt->second.priorities
+                                                                          : kAllWanted);
+        const qint64 base = sessionUpBase.try_emplace(r.id, r.uploaded).first->second;
+        r.sessionUploaded = std::max<qint64>(0, r.uploaded - base);
         return r;
     }
     /// unset or unlimited per-torrent connections → the configured default; IP filter on
@@ -711,6 +791,7 @@ void BtSession::start(const BtSettings& settings)
     d->ses->set_alert_notify([this] { QMetaObject::invokeMethod(this, &BtSession::drainAlerts, Qt::QueuedConnection); });
 
     d->loadSeedLimits();
+    d->loadI2pOnly();
     d->loadLinks();
     d->loadStops();
     const qsizetype stopsAtLoad = d->stopAtMeta.size();
@@ -721,7 +802,7 @@ void BtSession::start(const BtSettings& settings)
     for (const QString& file : resumeDir.entryList({QStringLiteral("*") + kResumeSuffix}, QDir::Files)) {
         const QByteArray data = readAll(resumeDir.filePath(file));
         lt::error_code ec;
-        lt::add_torrent_params atp = lt::read_resume_data(lt::span<char const>(data.constData(), static_cast<std::ptrdiff_t>(data.size())), ec);
+        lt::add_torrent_params atp = readResume(data, ec);
         if (ec) {
             logWarning(QStringLiteral("BitTorrent: resume data %1 unreadable: %2").arg(file, QString::fromStdString(ec.message())));
             continue;
@@ -743,7 +824,10 @@ void BtSession::start(const BtSettings& settings)
         // older runs put all I2P trackers in one tier: only the first one was asked
         BtAddSource::spreadI2pTiers(atp.trackers, atp.tracker_tiers);
         d->defaultConnections(atp);
-        d->resuming.insert(BtTorrentView::idOf(atp.ti ? atp.ti->info_hashes() : atp.info_hashes));
+        const lt::info_hash_t resumed = atp.ti ? atp.ti->info_hashes() : atp.info_hashes;
+        if (d->i2pOnly.contains(BtTorrentView::idOf(resumed)))
+            d->peerGate.setStrict(resumed, true);
+        d->resuming.insert(BtTorrentView::idOf(resumed));
         d->ses->async_add_torrent(std::move(atp));
         ++loaded;
     }
@@ -825,6 +909,7 @@ void BtSession::stop()
     d->i2pNameMisses.clear();
     d->outstandingResume = 0;
     d->listening = false;
+    d->randomPort = 0;
     d->dhtNodes = 0;
     d->dhtNodesBySocket.clear();
     d->externalIPv4.clear();
@@ -1060,6 +1145,7 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
         pending->second.removed = flags;   // removed when libtorrent has added it
     d->handles.erase(id);
     d->rows.erase(id);
+    d->sessionUpBase.erase(id);
     d->limitOverride.remove(id);
     d->metaStopped.remove(id);
     d->finishFlush.remove(id);
@@ -1081,6 +1167,11 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->joins.erase(id);
     if (d->seedLimits.erase(id) > 0)
         d->saveSeedLimits();
+    d->i2pOnlySweep.remove(id);
+    if (d->i2pOnly.erase(id) > 0) {
+        d->peerGate.setStrict(hashes, false);
+        d->saveI2pOnly();
+    }
     BackgroundFileWriter::instance().discard(d->resumePath(id));
     QFile::remove(d->resumePath(id));
     emit torrentRemoved(id);
@@ -1121,6 +1212,78 @@ bool BtSession::recheck(const QString& id)
         return false;
     h.force_recheck();
     return true;
+}
+
+QStringList BtSession::skipDeletedFile(const QString& path)
+{
+    QStringList emptied;
+    if (!d->ses)
+        return emptied;
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+    constexpr Qt::CaseSensitivity kPathCase = Qt::CaseInsensitive;
+#else
+    constexpr Qt::CaseSensitivity kPathCase = Qt::CaseSensitive;
+#endif
+    const QString target = QDir::cleanPath(QDir::fromNativeSeparators(path));
+    for (const auto& [id, h] : d->handles) {
+        const auto row = d->rows.find(id);
+        if (!h.is_valid() || row == d->rows.end())
+            continue;
+        const QString savePath = QDir::cleanPath(QDir::fromNativeSeparators(row->second.savePath));
+        if (savePath.isEmpty() || !target.startsWith(savePath + u'/', kPathCase))
+            continue;
+        const auto ti = d->torrentFile(id);
+        if (!ti || !ti->is_valid())
+            continue;
+        const QString relative = target.mid(savePath.size() + 1);
+        const lt::file_storage& fs = ti->layout();
+        std::optional<lt::file_index_t> hit;
+        for (const lt::file_index_t f : fs.file_range()) {
+            if (!fs.pad_file_at(f)
+                && QDir::fromNativeSeparators(QString::fromStdString(fs.file_path(f))).compare(relative, kPathCase) == 0) {
+                hit = f;
+                break;
+            }
+        }
+        if (!hit)
+            continue;
+
+        // a change still on its way counts: libtorrent updates its list only once the disk job is done
+        const auto pending = d->pendingPriorities.find(id);
+        std::vector<lt::download_priority_t> prio =
+            pending != d->pendingPriorities.end() ? pending->second.priorities : h.get_file_priorities();
+        prio.resize(static_cast<std::size_t>(fs.num_files()), lt::default_priority);
+        prio[static_cast<std::size_t>(static_cast<int>(*hit))] = lt::dont_download;
+        d->prioritizeFiles(h, id, prio);
+        logInfo(QStringLiteral("BitTorrent: \"%1\" deleted, skipped in %2").arg(relative, row->second.name));
+
+        bool wantsMore = false;
+        for (const lt::file_index_t f : fs.file_range()) {
+            if (!fs.pad_file_at(f) && fs.file_size(f) > 0
+                && prio[static_cast<std::size_t>(static_cast<int>(f))] != lt::dont_download) {
+                wantsMore = true;
+                break;
+            }
+        }
+        if (!wantsMore)
+            emptied << id;
+
+        // a skipped file's pieces stay "have" (served, and a read of the gone file errors
+        // the torrent) until a recheck drops them; skipped, they are never fetched again
+        d->recheckDue.insert(id);
+        if (d->recheckDue.size() == 1) {
+            constexpr int kRecheckDelayMs = 2000;   // a batch delete: one recheck per torrent
+            QTimer::singleShot(kRecheckDelayMs, this, [this] {
+                for (const QString& due : std::exchange(d->recheckDue, {})) {
+                    if (const auto dh = d->handle(due); dh.is_valid()) {
+                        dh.clear_error();
+                        dh.force_recheck();
+                    }
+                }
+            });
+        }
+    }
+    return emptied;
 }
 
 bool BtSession::moveStorage(const QString& id, const QString& dir)
@@ -1225,6 +1388,9 @@ void BtSession::setI2pMode(const QString& id, BtI2pMode mode)
     h.set_flags(flag ? lt::torrent_flags::i2p_torrent : lt::torrent_flags_t{}, lt::torrent_flags::i2p_torrent);
     if (auto r = d->rows.find(id); r != d->rows.end())
         r->second.i2p = flag;
+    // first: the clearnet trackers come back before Direct edits the list
+    if (!flag)
+        d->leaveI2pOnly(id, h);
     if (mode == BtI2pMode::Direct) {
         QStringList i2pUrls;
         for (const auto& a : d->ask(id, Impl::Ask::Trackers).trackers)
@@ -1236,8 +1402,10 @@ void BtSession::setI2pMode(const QString& id, BtI2pMode mode)
         // private torrents keep their own trackers (as BtAddSource::applyI2p)
         if (const auto ti = d->torrentFile(id); !ti || !ti->priv())
             addTrackers(id, d->settings.i2pTrackers);
-        if (flag && !d->settings.i2pMixed)
+        if (flag) {
+            d->enterI2pOnly(id, h);
             d->peerGate.drop(h.info_hashes(), BtPeerGate::Drop::Direct);
+        }
     }
     d->saveResume(h);
     logInfo(QStringLiteral("BitTorrent: %1 now %2").arg(d->rows.contains(id) ? d->rows[id].name : id,
@@ -1267,6 +1435,22 @@ std::optional<bool> BtSession::editTrackers(const QString& id, const BtTrackerEd
     for (const auto& a : current)
         before.append({QString::fromStdString(a.url), static_cast<int>(a.tier)});
     QList<BtTrackerEntry> after = editTrackerList(before, edit);
+    if (const auto strict = d->i2pOnly.find(id); strict != d->i2pOnly.end()) {
+        // I2P only: a clearnet tracker waits until the torrent leaves it
+        auto& aside = strict->second.trackers;
+        bool setAside = false;
+        for (const BtTrackerEntry& e : after) {
+            if (BtAddSource::isI2pTracker(e.url.toStdString()))
+                continue;
+            const std::string url = e.url.toStdString();
+            if (std::ranges::find(aside, url, &std::pair<std::string, int>::first) == aside.end())
+                aside.emplace_back(url, e.tier);
+            setAside = true;
+        }
+        after.removeIf([](const BtTrackerEntry& e) { return !BtAddSource::isI2pTracker(e.url.toStdString()); });
+        if (setAside)
+            d->saveI2pOnly();
+    }
     {
         std::vector<std::string> urls;
         std::vector<int> tiers;
@@ -1351,7 +1535,7 @@ QList<BtSavedTorrent> BtSession::savedTorrents(const QString& stateDir, const QS
     for (const QString& file : resumeDir.entryList({QStringLiteral("*") + kResumeSuffix}, QDir::Files)) {
         const QByteArray data = readAll(resumeDir.filePath(file));
         lt::error_code ec;
-        const lt::add_torrent_params atp = lt::read_resume_data(lt::span<char const>(data.constData(), static_cast<std::ptrdiff_t>(data.size())), ec);
+        const lt::add_torrent_params atp = readResume(data, ec);
         if (ec || !atp.ti || !atp.ti->is_valid())
             continue;
         const lt::torrent_info& ti = *atp.ti;
@@ -1712,11 +1896,17 @@ void BtSession::drainAlerts()
                 // the row add() put up goes again
                 if (!pending.empty() && !pending.mapped().removed && !d->handles.contains(id)) {
                     d->rows.erase(id);
+                    d->sessionUpBase.erase(id);
                     d->details.erase(id);
                     if (d->links.erase(id) > 0)
                         d->saveLinks();
                     if (d->stopAtMeta.remove(id))
                         d->saveStops();
+                    d->i2pOnlySweep.remove(id);
+                    if (d->i2pOnly.erase(id) > 0) {
+                        d->peerGate.setStrict(pending.mapped().hashes, false);
+                        d->saveI2pOnly();
+                    }
                     emit torrentRemoved(id);
                 }
                 continue;
@@ -1737,6 +1927,8 @@ void BtSession::drainAlerts()
             d->rows[id] = d->row(addedStatus(p, at->handle, at->handle.info_hashes()));
             at->handle.post_status();
             d->attachSink(id);
+            if (d->i2pOnlySweep.remove(id) && d->i2pOnly.contains(id))
+                d->enterI2pOnly(id, at->handle);
             // added by add(): kept across a restart from now on
             if (!pending.empty())
                 d->saveResume(at->handle);
@@ -1969,6 +2161,13 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
     }
     defaultConnections(atp);
     const bool i2p = BtAddSource::applyI2p(atp, settings, i2pOnly);
+    // asked for I2P only (not just an .i2p tracker): strict, also while the session mixes
+    const bool strict = i2p && i2pOnly.value_or(settings.i2pEnabled && settings.i2pOnlyNew);
+    std::optional<I2pOnly> strictOf;
+    if (strict) {
+        strictOf.emplace();
+        stripForI2pOnly(atp, *strictOf);
+    }
     const bool stopAtMetaPending = BtAddSource::applyStopAfterMetadata(atp, settings, stopAfterMetadata);
     const lt::add_torrent_params metaOf = [&atp] {
         lt::add_torrent_params p;
@@ -1997,11 +2196,17 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
         stopAtMeta.insert(id);
         saveStops();
     }
+    if (strictOf) {
+        this->i2pOnly[id] = std::move(*strictOf);   // the member, not the parameter
+        i2pOnlySweep.insert(id);
+        peerGate.setStrict(hashes, true);
+        saveI2pOnly();
+    }
     ses->async_add_torrent(std::move(atp));
-    // the flag means I2P only unless the session mixes (i2pModeOf)
+    // the flag alone means I2P only unless the session mixes (i2pModeOf)
     logInfo(QStringLiteral("BitTorrent: added %1%2").arg(rows[id].name, !i2p ? QString()
-                                                         : settings.i2pMixed ? QStringLiteral(" (I2P and direct)")
-                                                                             : QStringLiteral(" (I2P only)")));
+                                                         : strict || !settings.i2pMixed ? QStringLiteral(" (I2P only)")
+                                                                                        : QStringLiteral(" (I2P and direct)")));
     if (BtCounters* c = counters())
         ++c->torrentsAdded;
     return {BtAddOutcome::Added, id, {}};
@@ -2161,6 +2366,132 @@ void BtSession::Impl::saveSeedLimits() const
     writeQueued(optionsPath(), json);
 }
 
+void BtSession::Impl::loadI2pOnly()
+{
+    i2pOnly.clear();
+    const QJsonObject root = QJsonDocument::fromJson(readAll(i2pOnlyPath())).object();
+    for (auto it = root.begin(); it != root.end(); ++it) {
+        const QJsonObject o = it.value().toObject();
+        I2pOnly s;
+        for (const QJsonValue& t : o.value(QStringLiteral("trackers")).toArray()) {
+            const QJsonObject e = t.toObject();
+            s.trackers.emplace_back(e.value(QStringLiteral("url")).toString().toStdString(),
+                                    std::clamp(e.value(QStringLiteral("tier")).toInt(), 0, 255));
+        }
+        for (const QJsonValue& w : o.value(QStringLiteral("webSeeds")).toArray())
+            s.webSeeds.push_back(w.toString().toStdString());
+        const auto flags = lt::torrent_flags_t(static_cast<std::uint64_t>(o.value(QStringLiteral("flagsSet")).toInteger()));
+        s.flagsSet = flags & kI2pOnlyOff;
+        i2pOnly[it.key()] = std::move(s);
+    }
+}
+
+void BtSession::Impl::saveI2pOnly() const
+{
+    if (i2pOnly.empty()) {
+        BackgroundFileWriter::instance().discard(i2pOnlyPath());
+        QFile::remove(i2pOnlyPath());
+        return;
+    }
+    QJsonObject root;
+    for (const auto& [id, s] : i2pOnly) {
+        QJsonArray trackers;
+        for (const auto& [url, tier] : s.trackers)
+            trackers.append(QJsonObject{{QStringLiteral("url"), QString::fromStdString(url)}, {QStringLiteral("tier"), tier}});
+        QJsonArray webSeeds;
+        for (const std::string& w : s.webSeeds)
+            webSeeds.append(QString::fromStdString(w));
+        root.insert(id, QJsonObject{
+                            {QStringLiteral("trackers"), trackers},
+                            {QStringLiteral("webSeeds"), webSeeds},
+                            {QStringLiteral("flagsSet"), static_cast<qint64>(static_cast<std::uint64_t>(s.flagsSet))},
+                        });
+    }
+    writeQueued(i2pOnlyPath(), QJsonDocument(root).toJson(QJsonDocument::Indented));
+}
+
+void BtSession::Impl::stripForI2pOnly(lt::add_torrent_params& atp, I2pOnly& s)
+{
+    atp.tracker_tiers.resize(atp.trackers.size(), 0);
+    std::vector<std::string> trackers;
+    std::vector<int> tiers;
+    for (std::size_t i = 0; i < atp.trackers.size(); ++i) {
+        if (BtAddSource::isI2pTracker(atp.trackers[i])) {
+            trackers.push_back(std::move(atp.trackers[i]));
+            tiers.push_back(atp.tracker_tiers[i]);
+        } else {
+            s.trackers.emplace_back(std::move(atp.trackers[i]), atp.tracker_tiers[i]);
+        }
+    }
+    atp.trackers = std::move(trackers);
+    atp.tracker_tiers = std::move(tiers);
+    s.webSeeds = std::move(atp.url_seeds);
+    atp.url_seeds.clear();
+    s.flagsSet = kI2pOnlyOff & ~atp.flags;
+    atp.flags |= kI2pOnlyOff;
+}
+
+void BtSession::Impl::enterI2pOnly(const QString& id, const lt::torrent_handle& h)
+{
+    I2pOnly& s = i2pOnly[id];   // already strict: what came since goes aside too
+    std::vector<lt::announce_entry> keep;
+    bool moved = false;
+    for (const lt::announce_entry& a : h.trackers()) {
+        if (BtAddSource::isI2pTracker(a.url)) {
+            keep.push_back(a);
+            continue;
+        }
+        if (std::ranges::find(s.trackers, a.url, &std::pair<std::string, int>::first) == s.trackers.end())
+            s.trackers.emplace_back(a.url, a.tier);
+        moved = true;
+    }
+    if (moved) {
+        h.replace_trackers(keep);
+        details[id].trackers = keep;
+    }
+    for (const std::string& w : h.url_seeds()) {
+        if (std::ranges::find(s.webSeeds, w) == s.webSeeds.end())
+            s.webSeeds.push_back(w);
+        h.remove_url_seed(w);
+    }
+    s.flagsSet |= kI2pOnlyOff & ~h.flags();
+    h.set_flags(kI2pOnlyOff, kI2pOnlyOff);
+    // the peers found in the clear: never dialled
+    lt::torrent_handle(h).clear_peers();
+    peerGate.setStrict(h.info_hashes(), true);
+    saveI2pOnly();
+}
+
+void BtSession::Impl::leaveI2pOnly(const QString& id, const lt::torrent_handle& h)
+{
+    const auto it = i2pOnly.find(id);
+    if (it == i2pOnly.end())
+        return;
+    const I2pOnly s = std::move(it->second);
+    i2pOnly.erase(it);
+    i2pOnlySweep.remove(id);
+    saveI2pOnly();
+    peerGate.setStrict(h.info_hashes(), false);
+    // only what it switched off: DHT, PEX and LSD as they were before
+    h.set_flags({}, s.flagsSet);
+    std::vector<lt::announce_entry> trackers = h.trackers();
+    for (const auto& [url, tier] : s.trackers) {
+        if (std::ranges::find(trackers, url, &lt::announce_entry::url) != trackers.end())
+            continue;
+        lt::announce_entry a(url);
+        a.tier = static_cast<std::uint8_t>(tier);
+        trackers.push_back(a);
+    }
+    std::ranges::stable_sort(trackers, {}, &lt::announce_entry::tier);
+    h.replace_trackers(trackers);
+    details[id].trackers = trackers;
+    for (const std::string& w : s.webSeeds)
+        h.add_url_seed(w);
+    h.force_reannounce();
+    if (s.flagsSet & lt::torrent_flags::disable_dht)
+        h.force_dht_announce();
+}
+
 void BtSession::Impl::enforceSeedLimits(const lt::torrent_status& st, const BtTorrentRow& row)
 {
     if (!st.is_seeding || row.paused || limitOverride.contains(row.id))
@@ -2173,8 +2504,10 @@ void BtSession::Impl::enforceSeedLimits(const lt::torrent_status& st, const BtTo
         if (it->second.seedTimeMode != BtLimitMode::Global)
             seedMinutes = it->second.seedTimeMode == BtLimitMode::Custom ? it->second.seedTimeMinutes : 0;
     }
-    const qint64 base = std::max<qint64>({st.all_time_download, st.total_done, 1});
-    const bool ratioReached = ratioPercent > 0 && st.all_time_upload * 100 >= base * ratioPercent;
+    // same ratio as the Torrents list shows (#218), pad bytes left out
+    const double ratio = shareRatio(row.uploaded, row.downloaded, row.haveBytes);
+    const bool ratioReached = ratioPercent > 0 && ratio != kShareRatioNone
+                              && (ratio == kShareRatioInfinite || ratio * 100.0 >= ratioPercent);
     const bool timeReached = seedMinutes > 0 && st.seeding_duration.count() >= qint64(seedMinutes) * 60;
     if (!ratioReached && !timeReached)
         return;
@@ -2185,7 +2518,13 @@ void BtSession::Impl::enforceSeedLimits(const lt::torrent_status& st, const BtTo
 
 lt::settings_pack BtSession::Impl::pack(const BtSettings& s) const
 {
-    lt::settings_pack p = BtSettingsMap::toPack(s);
+    BtSettings resolved = s;
+    if (resolved.listenPort == 0) {
+        if (randomPort == 0)
+            randomPort = freeTcpUdpPort();
+        resolved.listenPort = randomPort;   // still 0 when none found: libtorrent picks
+    }
+    lt::settings_pack p = BtSettingsMap::toPack(resolved);
     if (rateLimits) {
         p.set_int(lt::settings_pack::download_rate_limit, rateLimits->first);
         p.set_int(lt::settings_pack::upload_rate_limit, rateLimits->second);

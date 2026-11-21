@@ -186,6 +186,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <ClCompile Include="Ed3kLinkGrabber.cpp" />
     <ClCompile Include="Ed3kHosterUnpack.cpp" />
     <ClCompile Include="Ed3kArchiveContents.cpp" />
+    <ClCompile Include="Ed3kLocalScan.cpp" />
     <ClCompile Include="Ed3kFriends.cpp" />
     <ClCompile Include="Ed3kRoomMedia.cpp" />
     <ClCompile Include="Ed3kRooms.cpp" />
@@ -244,6 +245,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <QtMoc Include="Ed3kLinkGrabber.h" />
     <QtMoc Include="Ed3kHosterUnpack.h" />
     <QtMoc Include="Ed3kArchiveContents.h" />
+    <QtMoc Include="Ed3kLocalScan.h" />
     <QtMoc Include="Ed3kFriends.h" />
     <QtMoc Include="Ed3kRoomMedia.h" />
     <QtMoc Include="Ed3kRooms.h" />

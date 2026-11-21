@@ -10,6 +10,12 @@
 
 file(GLOB DAEMON_SOURCES CONFIGURE_DEPENDS "*.cpp" "*.h")
 list(REMOVE_ITEM DAEMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
+# ed3k-only sources: need src/ed3k headers (#244)
+if(NOT EMULE_ED3K)
+    list(REMOVE_ITEM DAEMON_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/ArchiveFill.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/ArchiveFill.h")
+endif()
 
 add_library(emuledaemon STATIC ${DAEMON_SOURCES})
 add_library(eMule::Daemon ALIAS emuledaemon)

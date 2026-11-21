@@ -229,6 +229,9 @@
     <ClCompile Include="utils\MoveDownloadsAction.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\LocateFilesAction.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\Ed3kLinkMenu.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -487,6 +490,9 @@
     <ClCompile Include="controls\FilterEdit.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\CheckComboBox.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\HosterCombo.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -730,6 +736,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\MoveDownloadsAction.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\LocateFilesAction.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\Ed3kLinkMenu.h">
@@ -1135,6 +1144,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\FilterEdit.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\CheckComboBox.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\HosterCombo.h">

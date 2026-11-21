@@ -6,6 +6,7 @@
 #include "Ed3kArchiveContents.h"
 #include "RarFixtures.h"
 #include "Ed3kSession.h"
+#include "Ed3kLocalSharer.h"
 #include "archive/ArchiveContentsHook.h"
 #include "archive/ArchiveReader.h"
 #include "archive/ExternalUnpacker.h"
@@ -13,6 +14,8 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QDateTime>
 #include <QProcess>
 #include <QSignalSpy>
 #include <QStandardPaths>
@@ -121,6 +124,7 @@ private slots:
     void readingHashesEveryEntry();
     void onlyChosenEntriesAreExtracted();
     void publishedContentsAreFound();
+    void entriesOnDiskAreMarked();
     void unpackedEntriesAreComparedWithTheManifest();
     void unpackReadFeedsTheRecord();
     void splitVolumesHashedInTheSameRead();
@@ -197,6 +201,53 @@ void tst_Ed3kArchiveContents::onlyChosenEntriesAreExtracted()
     QTemporaryDir out;
     QVERIFY(reader.extractAll(out.path()));
     QCOMPARE(reader.extractedFiles().size(), 1);
+}
+
+// #224: entries whose root a join of the node serves from disk (Shared Files) or a folder
+// scan found are marked; all of them: the archive need not be downloaded
+void tst_Ed3kArchiveContents::entriesOnDiskAreMarked()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QByteArray ep = payload(300 * 1024, 7);
+    const QByteArray nfo = payload(500, 8);
+    const QString epPath = dir.filePath(QStringLiteral("ep1.mkv"));
+    const QString nfoPath = dir.filePath(QStringLiteral("x/info.nfo"));
+    QVERIFY(QDir().mkpath(dir.filePath(QStringLiteral("x"))));
+    for (const auto& [path, data] : {std::pair{epPath, ep}, std::pair{nfoPath, nfo}}) {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(data), data.size());
+    }
+    Ed3kSession node;
+    QVERIFY(node.start(loopback(dir.filePath(QStringLiteral("cfg")))));
+    eMule::ed3k::test::LocalSharer local(node, dir.filePath(QStringLiteral("cfg")));
+    local.start();
+    QVERIFY(local.shareFile(epPath, ep));
+    Ed3kArchiveContents contents(node, dir.filePath(QStringLiteral("cfg")));
+    contents.start();
+
+    Ed3kArchiveContents::Found f;
+    f.name = QStringLiteral("show.rar");
+    f.state = Ed3kArchiveContents::State::Found;
+    f.entries.push_back({QStringLiteral("show/ep1.mkv"), std::uint64_t(ep.size()), rootOf(ep)});
+    f.entries.push_back({QStringLiteral("show/info.nfo"), std::uint64_t(nfo.size()), rootOf(nfo)});
+    std::vector<Ed3kArchiveContents::Found> found{f};
+    contents.markLocal(found);
+    QCOMPARE(found[0].localPaths.size(), std::size_t(2));
+    QCOMPARE(found[0].localPaths[0], epPath);
+    QVERIFY(found[0].localPaths[1].isEmpty());
+    QVERIFY(!found[0].allLocal());
+    // a size other than the file's: not that file
+    QVERIFY(contents.localPathOf(rootOf(ep), std::uint64_t(ep.size()) + 1).isEmpty());
+
+    // the second one found by a folder scan
+    Ed3kJoinBase::addFoundCopy(node, rootOf(nfo), nfoPath, std::uint64_t(nfo.size()), QFileInfo(nfoPath).lastModified().toMSecsSinceEpoch());
+    contents.markLocal(found);
+    QCOMPARE(found[0].localPaths[1], nfoPath);
+    QVERIFY(found[0].allLocal());
+    contents.stop();
+    local.stop();
 }
 
 void tst_Ed3kArchiveContents::publishedContentsAreFound()

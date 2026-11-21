@@ -73,6 +73,7 @@ struct TorrentRow {
     int seedsTotal = -1;
     qint64 downloaded = 0;
     qint64 uploaded = 0;
+    qint64 sessionUploaded = 0;  ///< since the core started
     qint64 failedBytes = 0;
     QString error;
     QString hashV1;      ///< lower-case hex, may be empty
@@ -100,7 +101,7 @@ struct TorrentRow {
     qint64 totalSize = 0;     ///< the whole torrent, wanted or not
     double availability = -1; ///< copies in the swarm, -1 = unknown
 
-    /// uploaded / downloaded; -1 when nothing was downloaded yet.
+    /// shareRatio() (qBittorrent rule): -1 = none yet, -2 = infinite.
     [[nodiscard]] double ratio() const;
     /// Finished or Seeding.
     [[nodiscard]] bool isComplete() const;
@@ -138,6 +139,9 @@ public:
         ColRatio,
         ColEta,
         ColAdded,
+        ColUploaded,         ///< all time; hidden by default
+        ColSessionUploaded,  ///< since the core started; hidden by default
+        ColDownloaded,       ///< all time; hidden by default
         ColCount
     };
 

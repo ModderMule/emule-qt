@@ -709,6 +709,8 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* hand
             readLimits(*r);
             save();
             emit roomsChanged();
+            if (r->reModSelf)   // not from inside the poll: setInfo pumps
+                QTimer::singleShot(0, this, [this, room = in->room] { reModSelf(room); });
         }
     } else if (const auto* b = std::get_if<e::RoomBanned>(&ev)) {
         *handled = true;
@@ -973,6 +975,10 @@ ffi::Result<ffi::Room> Ed3kRooms::joinWith(const QString& link, const QString& n
     Room& r = track(*room, link, nick, key);
     r.waitingHide = false;
     r.owner = owner.has_value();
+    // the old member key is gone (cleanup, new machine): the star needs the new one in the mods
+    r.reModSelf = fresh && r.owner;
+    if (r.reModSelf)   // with the saved info (applied after this), else on the next RoomInfo
+        QTimer::singleShot(0, this, [this, id = *room] { reModSelf(id); });
     if (const auto pub = ffi::roomMemberKey(member.expose()))
         r.memberKey = *pub;
     m_session.pump();
@@ -1370,6 +1376,27 @@ void Ed3kRooms::dialDevPeer()
     for (const auto& [room, r] : m_rooms)
         if (r.neighbours == 0)
             (void)connectPeer(room, peer);
+}
+
+
+void Ed3kRooms::reModSelf(const ffi::Room& room)
+{
+    auto it = m_rooms.find(room);
+    if (it == m_rooms.end() || !it->second.reModSelf)
+        return;
+    Room& r = it->second;
+    if (r.title.isEmpty() && r.mods.empty())
+        return;   // no info held yet: waits for RoomInfo
+    r.reModSelf = false;
+    if (!r.owner || r.isModerator(r.memberKey))
+        return;
+    std::vector<ffi::Key32> mods = r.mods;
+    mods.push_back(r.memberKey);
+    const std::uint32_t flags = (r.closed ? ED3K_ROOM_CLOSED : 0u) | (r.moderated ? ED3K_ROOM_MODERATED : 0u);
+    if (auto ok = setInfo(room, r.title, r.about, flags, mods); !ok)
+        logEd3kWarning(QStringLiteral("ed3k: room %1: own new member key not made moderator").arg(roomHex(room)));
+    else
+        logEd3k(QStringLiteral("ed3k: room %1: own new member key made moderator").arg(roomHex(room)));
 }
 
 } // namespace eMule::ed3k

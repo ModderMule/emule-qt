@@ -133,6 +133,8 @@ struct BtTorrentRow {
     int seedsTotal = -1;
     qint64 downloaded = 0;
     qint64 uploaded = 0;
+    /// uploaded since this core started (BtSession baseline), not libtorrent's per-resume counter
+    qint64 sessionUploaded = 0;
     /// bytes of pieces that failed their hash, and were fetched again
     qint64 failedBytes = 0;
     QString error;
@@ -207,6 +209,8 @@ struct BtPeerRow {
     /// status letters as in Transmission: T O D d U u K ? E h H X I, and P = over I2P
     QString flags;
     bool i2p = false;
+    /// pieces the peer has, one bit per piece, LSB first; empty: no bitfield yet
+    QByteArray have;
 };
 
 struct BtTrackerRow {
@@ -237,12 +241,13 @@ enum class BtLimitMode : quint8 {
 /// Peers a torrent takes. Values are IPC: append only.
 enum class BtI2pMode : quint8 {
     Direct = 0,    ///< no I2P trackers, I2P peers dropped
-    I2pOnly = 1,   ///< i2p_torrent flag: I2P peers only (session mixed mode off)
+    I2pOnly = 1,   ///< I2P peers only; while the session mixes: no clearnet trackers, web seeds, DHT, PEX, LSD
     Mixed = 2,     ///< I2P trackers on a normal torrent: both kinds
 };
 
 /// Per-torrent options. Speeds and peers live in libtorrent's resume data, the seed
-/// limits in BT/torrent-options.json, the I2P mode in the flag and trackers.
+/// limits in BT/torrent-options.json, the I2P mode in the flag and trackers (strict I2P
+/// only: BT/i2p-only.json).
 struct BtTorrentOptions {
     /// KiB/s, 0 = no own limit
     int downloadLimitKb = 0;

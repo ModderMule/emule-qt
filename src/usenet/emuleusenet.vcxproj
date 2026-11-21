@@ -169,6 +169,7 @@
     <ClCompile Include="nzb\SubjectParser.cpp" />
     <ClCompile Include="post\Par2NameIndex.cpp" />
     <ClCompile Include="post\Par2Verifier.cpp" />
+    <ClCompile Include="post\Par2LocalFill.cpp" />
     <ClCompile Include="post\UsenetDirectUnpack.cpp" />
     <ClCompile Include="post\UsenetPostProcessor.cpp" />
     <ClCompile Include="post\UsenetReleaseChecks.cpp" />
@@ -190,6 +191,7 @@
     <ClCompile Include="queue\UsenetWorker.cpp" />
     <ClCompile Include="stream\RarReader.cpp" />
     <ClCompile Include="stream\UsenetEncryptedPreview.cpp" />
+    <ClCompile Include="stream\Mp4Index.cpp" />
     <ClCompile Include="stream\UsenetImagePreview.cpp" />
     <ClCompile Include="stream\UsenetArticleGrab.cpp" />
     <ClCompile Include="stream\UsenetNfoPreview.cpp" />
@@ -206,6 +208,7 @@
     <ClInclude Include="nzb\SubjectParser.h" />
     <ClInclude Include="post\Par2NameIndex.h" />
     <ClInclude Include="post\Par2Verifier.h" />
+    <ClInclude Include="post\Par2LocalFill.h" />
     <ClInclude Include="post\UsenetReleaseChecks.h" />
     <ClInclude Include="post\UsenetUnpacker.h" />
     <ClInclude Include="post\UsenetDeobfuscate.h" />
@@ -220,6 +223,7 @@
     <ClInclude Include="queue\UsenetRepairEstimate.h" />
     <ClInclude Include="queue\UsenetStatistics.h" />
     <ClInclude Include="queue\UsenetUsage.h" />
+    <ClInclude Include="stream\Mp4Index.h" />
     <ClInclude Include="stream\RarReader.h" />
     <ClInclude Include="stream\UsenetStreamIndex.h" />
     <QtMoc Include="UsenetSession.h" />

@@ -84,6 +84,13 @@ using Kind = PrefSpec::Kind;
     // --- Speed and connection limits ---
     t << number("maxUpload", 0, kMaxU32, "KiB/s", "Upload limit. 0 = unlimited.");
     t << number("maxDownload", 0, kMaxU32, "KiB/s", "Download limit. 0 = unlimited.");
+    t << flag("altSpeed", "Alternative speed (turtle): the two limits below replace the upload and "
+              "download limits and any schedule while on.");
+    t << number("altSpeedUp", 0, kMaxU32, "KiB/s", "Turtle upload limit. 0 = unlimited.");
+    t << number("altSpeedDown", 0, kMaxU32, "KiB/s", "Turtle download limit. 0 = unlimited.");
+    t << readOnly(number("inForceUpload", 0, kMaxU32, "KiB/s", "Upload limit in force now (turtle, "
+                         "schedule and ratio rule applied). 0 = unlimited."));
+    t << readOnly(number("inForceDownload", 0, kMaxU32, "KiB/s", "Download limit in force now. 0 = unlimited."));
     t << number("maxConnections", 1, 65535, "", "Maximum simultaneous connections.");
     t << number("maxSourcesPerFile", 1, 5000, "", "Hard limit of sources kept per download.");
     t << advanced(number("maxConsPerFive", 1, 50, "", "New connections allowed per 5 seconds."));
@@ -255,6 +262,7 @@ using Kind = PrefSpec::Kind;
     t << flag("btI2pEd3kJoin", "I2P torrents may join ed3k too (their info hash goes out over ed3k).");
     t << number("btI2pTunnelLength", 1, 7, "", "Hops per I2P tunnel. More = more anonymous, slower.");
     t << number("btI2pTunnelQuantity", 1, 16, "", "I2P tunnels each way.");
+    t << text("btPublicTrackers", 16384, "Public trackers offered by the Torrent Creator, separated by spaces.");
     t << text("btI2pTrackers", 16384, "I2P trackers added to I2P torrents (and to all torrents in mixed "
               "mode), separated by spaces.");
     t << advanced(number("btI2pRouterPort", 1, 65535, "", "TCP and UDP port of the bundled I2P router."));
@@ -305,9 +313,8 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kAutoIndexNode", "Connect to the ed3k index node an eD2K server names. Default off.");
     t << flag("ed3kHide", "Hide this node (ed3k hops.md §1): new ed3k searches, downloads and shares go under the "
                           "anonymous key, through paths of other nodes. Files keep the key they have.");
-    t << number("ed3kHops", 0, 3, "", "Hops of every path while hiding (0 = deniable, not hidden: only while forwarding for "
-                                      "others; 1 = a relay that sees everything, not anonymity).");
-    t << flag("ed3kHopping", "While hiding, forward traffic for other hiding nodes (hops.md §5).");
+    t << number("ed3kHops", 0, 3, "", "Hops of every path while hiding (0 = deniable, not hidden; 1 = a relay that sees "
+                                      "everything, not anonymity). Forwarding for others is always on while hiding.");
     t << number("ed3kHopShare", 1, 100, "%", "Share of the upload limit given to the paths of others.");
     t << advanced(number("ed3kReportProxyType", 0, 5, "", "Proxy for share reports under the anonymous key (0 = off: "
                                                           "none sent; 3 = SOCKS5, 5 = HTTP). They never go directly."));
@@ -388,6 +395,9 @@ using Kind = PrefSpec::Kind;
 
     // --- Web server (shown; changing the API's own access is left to the GUI) ---
     t << readOnly(flag("webServerEnabled", "The template web interface is enabled."));
+    t << readOnly(flag("ipcUPnP", "The GUI/phone port (IPC) is mapped by UPnP when the core listens "
+                       "beyond this computer. Set by a GUI or the phone app only."));
+    t << readOnly(text("ipcListenAddress", 255, "Address the GUI/phone port listens on (ipc.listenAddress)."));
     t << readOnly(flag("webServerRestApiEnabled", "The REST API is enabled."));
     t << readOnly(flag("webServerMcpEnabled", "The MCP endpoint is enabled."));
     t << readOnly(flag("webServerMcpReadOnly", "MCP offers read-only tools only."));

@@ -139,6 +139,7 @@ void tst_PartFileData::loadPartFile_hasValidMetadata()
     const QString tempDir = m_tempDir.path() + QStringLiteral("/temp");
 
     // Files were already copied in the previous test; re-copy to be safe
+    BackgroundFileWriter::instance().flush();   // a queued save rotates the .met away
     if (!QFile::exists(tempDir + QStringLiteral("/002.part.met")))
         QVERIFY(copyPartFiles());
 
@@ -186,6 +187,7 @@ void tst_PartFileData::loadPartFile_downloadProgress()
 {
     const QString tempDir = m_tempDir.path() + QStringLiteral("/temp");
 
+    BackgroundFileWriter::instance().flush();   // a queued save rotates the .met away
     if (!QFile::exists(tempDir + QStringLiteral("/002.part.met")))
         QVERIFY(copyPartFiles());
 
@@ -255,6 +257,7 @@ void tst_PartFileData::addLoadedPartFile_toDownloadQueue()
 {
     const QString tempDir = m_tempDir.path() + QStringLiteral("/temp");
 
+    BackgroundFileWriter::instance().flush();   // a queued save rotates the .met away
     if (!QFile::exists(tempDir + QStringLiteral("/002.part.met")))
         QVERIFY(copyPartFiles());
 

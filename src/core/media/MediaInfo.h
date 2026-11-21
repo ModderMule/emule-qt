@@ -11,6 +11,8 @@
 
 #include <QString>
 
+class QCborMap;
+
 namespace eMule {
 
 // ---------------------------------------------------------------------------
@@ -171,6 +173,10 @@ inline constexpr uint32 kMediaExtractVersion = 2;   // 2: misnamed containers ar
 /// @param bytesRead  If set, how many bytes were read from the file.
 [[nodiscard]] bool extractSharedMediaInfo(const QString& filePath, MediaInfo& info,
                                           qint64* bytesRead = nullptr);
+
+/// The File Details "Media Info" fields (mediaTitle, mediaCodec, mediaWidth, ...) into
+/// @p map. Only what @p info knows: empty fields leave the map's (eD2K tag) values.
+void insertMediaInfoFields(QCborMap& map, const MediaInfo& info);
 
 /// Detect MIME type using QMimeDatabase.
 [[nodiscard]] QString detectMimeType(const QString& filePath);

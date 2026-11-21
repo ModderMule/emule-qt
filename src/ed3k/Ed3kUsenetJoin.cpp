@@ -103,6 +103,9 @@ struct Ed3kUsenetJoin::Post {
         QList<QPair<qint64, qint64>> accepted;
     };
     std::vector<Member> members;
+    /// #224: ranges came before the queue knew the part size (no article taken): offered again
+    /// at the next decoded article
+    bool reaccept = false;
     std::deque<int> claimQueue;
     int claimsRunning = 0;
     bool finished = false;   ///< the item finished; dropped once no hash is pending
@@ -403,6 +406,11 @@ void Ed3kUsenetJoin::onArticleDecoded(const QString& itemId, int fileIndex, qint
     const auto* item = m_queue.findItem(itemId);
     if (!post || !e || !item || fileIndex < 0 || fileIndex >= item->nzb.files.size() || offset < 0 || length <= 0)
         return;
+    // #224: the part size is known now: what ed3k or a local copy wrote before skips its articles
+    if (std::exchange(post->reaccept, false))
+        for (std::size_t m = 0; m < post->members.size(); ++m)
+            for (const auto& [from, to] : post->members[m].accepted)
+                (void)m_queue.acceptExternalRange(itemId, int(m), from, to - from);
 
     // mᵢ of the article: the first <segment> of its number in NZB order (only that one
     // counts, usenet.md §1). An article fetched under a second ID of that number is not mᵢ
@@ -875,6 +883,9 @@ void Ed3kUsenetJoin::handleEvent(const QString& itemId, const ffi::UsenetEvent& 
             acc.append({from, to});
         }
         const int n = m_queue.acceptExternalRange(itemId, int(a->member), from, to - from);
+        if (n == 0)
+            if (const auto post = findPost(itemId))
+                post->reaccept = true;
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: bytes %1+%2 of file %3 from ed3k: %4 article(s)")
                          .arg(a->offset).arg(a->len).arg(a->member).arg(n); });
         m_queue.releaseSealHold(itemId, int(a->member));
@@ -1222,6 +1233,9 @@ void Ed3kUsenetJoin::startDownload(const QString& itemId, int fileIndex)
     if (!missing || missing->empty())
         return;
     (void)openDownload(*m->root, *m->size, itemId, fileIndex);
+    // #224: the same root on disk here: its blocks first, accepted like ed3k's, so the queue
+    // skips their articles (quota); the network gets the rest
+    (void)copyLocal(*m->root);
 }
 
 QString Ed3kUsenetJoin::downloadName(const ffi::Root& root, const Download& d) const
@@ -1251,27 +1265,41 @@ std::vector<std::uint64_t> Ed3kUsenetJoin::wantedBlocks(const Download& d) const
 
 void Ed3kUsenetJoin::onFileBlock(const Download& d, const ffi::event::Block& b)
 {
-    const QString itemId = d.owner;
-    const int fileIndex = d.member;
+    // was: the write and ed3kBlock here; now writeBlock (a local copy's blocks too)
+    (void)writeBlock(d.owner, d.member, b.offset, std::span<const std::byte>{b.data});
+}
+
+bool Ed3kUsenetJoin::takeLocalBlock(const Download& d, std::uint64_t offset, std::span<const std::byte> data)
+{
+    return writeBlock(d.owner, d.member, offset, data);
+}
+
+bool Ed3kUsenetJoin::writeBlock(QString itemId, int fileIndex, std::uint64_t offset, std::span<const std::byte> data)
+{
+    // by value: drainEvents may stop the download whose owner it was
     const auto* item = m_queue.findItem(itemId);
     const auto post = findPost(itemId);
-    if (!item || !post || fileIndex >= item->files.size())
-        return;
+    if (!item || !post || fileIndex < 0 || fileIndex >= item->files.size())
+        return false;
     const auto& st = item->files.at(fileIndex);
     // a sealed file is the queue's and post-processing's now
     if (st.finalized || st.tempPath.isEmpty())
-        return;
+        return false;
     QFile f(st.tempPath);
-    if (!f.open(QIODevice::ReadWrite | QIODevice::ExistingOnly) || !f.seek(qint64(b.offset))
-        || f.write(reinterpret_cast<const char*>(b.data.data()), qint64(b.data.size())) != qint64(b.data.size())) {
+    // not there before the first article: made in the item's folder (a gone folder: the item is)
+    const auto mode = QFileInfo(st.tempPath).dir().exists() ? QIODevice::ReadWrite
+                                                            : QIODevice::ReadWrite | QIODevice::ExistingOnly;
+    if (!f.open(mode) || !f.seek(qint64(offset))
+        || f.write(reinterpret_cast<const char*>(data.data()), qint64(data.size())) != qint64(data.size())) {
         logEd3kWarning(QStringLiteral("ed3k usenet: cannot write a block into %1").arg(st.tempPath));
-        return;
+        return false;
     }
     f.close();
-    if (auto ok = post->join.ed3kBlock(std::uint64_t(fileIndex), b.offset, std::uint32_t(b.data.size())); !ok)
+    if (auto ok = post->join.ed3kBlock(std::uint64_t(fileIndex), offset, std::uint32_t(data.size())); !ok)
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: block %1 of file %2 not taken (error %3)")
-                         .arg(b.offset).arg(fileIndex).arg(errorName(ok.error())); });
+                         .arg(offset).arg(fileIndex).arg(errorName(ok.error())); });
     drainEvents(itemId);
+    return true;
 }
 
 void Ed3kUsenetJoin::onBlobFetched(const QString& owner, int member, const ffi::Root& root, const QByteArray& data)

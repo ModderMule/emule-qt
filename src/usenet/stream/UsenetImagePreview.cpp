@@ -220,9 +220,14 @@ QString UsenetImagePreview::targetPath(int file) const
 
 void UsenetImagePreview::articleDone(const Job& job, const ArticleFetcher& fetcher)
 {
+    if (job.file != m_plan.video)
+        return;
     // the video's real size, for the head fraction
-    if (job.file == m_plan.video && m_videoSize <= 0)
+    if (m_videoSize <= 0)
         m_videoSize = fetcher.declaredFileSize();
+    // posters cut every part but the last to one size
+    if (job.segment == 0 && !m_plan.videoInArchive)
+        m_partSize = fetcher.decodedBytes();
 }
 
 void UsenetImagePreview::collectImages()
@@ -255,14 +260,118 @@ void UsenetImagePreview::startVideo()
         });
         return;
     }
+    // mp4: the index says where each keyframe is, so frames come from the whole runtime
+    static const QStringList mp4Exts{QStringLiteral("mp4"), QStringLiteral("m4v"), QStringLiteral("mov")};
+    if (mp4Exts.contains(ext) && canLeaveGap(m_videoPath)) {
+        fetchJobs({{m_plan.video, 0}}, [self] {
+            if (self)
+                self->onMp4Probe();
+        });
+        return;
+    }
+    startHead();
+}
+
+void UsenetImagePreview::startHead()
+{
     QList<Job> jobs;
-    const int n = segmentsFor(file, kHeadBytes);
+    const int n = segmentsFor(m_nzb.files.at(m_plan.video), kHeadBytes);
     for (int s = 0; s < n; ++s)
-        jobs.append({m_plan.video, s});
+        if (!covers(m_plan.video, m_partSize * s, m_partSize) || m_partSize <= 0)
+            jobs.append({m_plan.video, s});
+    QPointer<UsenetImagePreview> self(this);
     fetchJobs(std::move(jobs), [self] {
         if (self)
             self->onVideoHead();
     });
+}
+
+QList<UsenetArticleGrab::Job> UsenetImagePreview::videoJobsFor(qint64 offset, qint64 length) const
+{
+    QList<Job> jobs;
+    const int count = int(m_nzb.files.at(m_plan.video).segments.size());
+    if (m_partSize <= 0 || count <= 0)
+        return jobs;
+    length = std::min(length, std::max<qint64>(0, m_videoSize - offset));
+    const int first = int(std::min<qint64>(offset / m_partSize, count - 1));
+    const int last = int(std::min<qint64>((offset + std::max<qint64>(length, 1) - 1) / m_partSize, count - 1));
+    for (int s = first; s <= last; ++s)
+        if (!covers(m_plan.video, qint64(s) * m_partSize, std::min(m_partSize, m_videoSize - qint64(s) * m_partSize)))
+            jobs.append({m_plan.video, s});
+    return jobs;
+}
+
+void UsenetImagePreview::onMp4Probe()
+{
+    if (m_partSize <= 0 || m_videoSize <= 0) {
+        if (received(m_plan.video) <= 0) {
+            finish(tr("The video is not on the server."));
+            return;
+        }
+        startHead();
+        return;
+    }
+    m_moov = findMp4Moov([this](qint64 offset, qint64 length) {
+        return readRange(m_plan.video, offset, std::min(length, m_videoSize - offset));
+    }, m_videoSize);
+    QPointer<UsenetImagePreview> self(this);
+    if (m_moov.state == Mp4MoovSpot::State::NeedBytes && ++m_probeRounds <= kMoovProbeRounds) {
+        auto jobs = videoJobsFor(m_moov.offset, 16);
+        if (!jobs.isEmpty()) {
+            fetchJobs(std::move(jobs), [self] {
+                if (self)
+                    self->onMp4Probe();
+            });
+            return;
+        }
+    }
+    if (m_moov.state != Mp4MoovSpot::State::Found || m_moov.size > kMaxMoovBytes
+        || m_moov.offset + m_moov.size > m_videoSize) {
+        startHead();
+        return;
+    }
+    fetchJobs(videoJobsFor(m_moov.offset, m_moov.size), [self] {
+        if (self)
+            self->onMoov();
+    });
+}
+
+void UsenetImagePreview::onMoov()
+{
+    const QList<Mp4Keyframe> all =
+        mp4VideoKeyframes(readRange(m_plan.video, m_moov.offset, m_moov.size));
+    m_keyframes = spreadKeyframes(all, kFrames + 2);   // spares for the blank ones
+    if (m_keyframes.size() < 2) {
+        startHead();
+        return;
+    }
+    // the keyframe plus what decodes up to the seek target just past it
+    const qint64 durationMs = std::max<qint64>(1, all.back().timeMs);
+    const qint64 after = std::max<qint64>(256 * 1024, m_videoSize / durationMs * (kSeekAfterKeyMs * 3));
+    QList<Job> jobs;
+    for (const Mp4Keyframe& k : std::as_const(m_keyframes))
+        for (const Job& j : videoJobsFor(k.offset, k.size + after))
+            if (std::ranges::find_if(jobs, [&j](const Job& o) { return o.segment == j.segment; }) == jobs.end())
+                jobs.append(j);
+    QPointer<UsenetImagePreview> self(this);
+    fetchJobs(std::move(jobs), [self] {
+        if (self)
+            self->onKeyframes();
+    });
+}
+
+void UsenetImagePreview::onKeyframes()
+{
+    std::vector<qint64> positions;
+    for (const Mp4Keyframe& k : std::as_const(m_keyframes))
+        if (covers(m_plan.video, k.offset, k.size))
+            positions.push_back(k.timeMs + kSeekAfterKeyMs);
+    if (positions.empty()) {
+        finish(tr("The video is not on the server."));
+        return;
+    }
+    m_videoName = QFileInfo(fileNameOf(m_nzb.files.at(m_plan.video))).fileName();
+    grabFrames(m_videoPath, 1.0, std::move(positions));
 }
 
 void UsenetImagePreview::onArchivePeek()
@@ -363,8 +472,9 @@ void UsenetImagePreview::onVideoHead()
     grabFrames(m_videoPath, span);
 }
 
-void UsenetImagePreview::grabFrames(const QString& path, double span)
+void UsenetImagePreview::grabFrames(const QString& path, double span, std::vector<qint64> positionsMs)
 {
+    const bool spread = !positionsMs.empty();
     if (span <= 0.0) {
         finish();
         return;
@@ -374,13 +484,13 @@ void UsenetImagePreview::grabFrames(const QString& path, double span)
 
     auto* grabber = new FrameGrabThread(this);
     QPointer<UsenetImagePreview> self(this);
-    auto done = [self, grabber](const std::vector<QImage>& frames) {
+    auto done = [self, grabber, spread](const std::vector<QImage>& frames) {
         if (!self)
             return;
         int n = 0;
-        // the first is at 0 s: mostly black or a logo; fades too, while others are left
+        // head: the first is at 0 s, mostly black or a logo; fades too, while others are left
         std::vector<size_t> keep;
-        for (size_t i = frames.size() > 1 ? 1 : 0; i < frames.size(); ++i)
+        for (size_t i = !spread && frames.size() > 1 ? 1 : 0; i < frames.size(); ++i)
             if (!isBlankFrame(frames[i]) && keep.size() < size_t(kFrames))
                 keep.push_back(i);
         if (keep.empty() && !frames.empty())
@@ -412,6 +522,7 @@ void UsenetImagePreview::grabFrames(const QString& path, double span)
     request.frameCount = kFrames + 3;   // spares for the blank ones
     request.maxWidth = kFrameWidth;
     request.spanFraction = span;
+    request.positionsMs = std::move(positionsMs);
     grabber->requestGrab(request);
 }
 

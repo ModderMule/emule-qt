@@ -22,6 +22,7 @@
 
 namespace eMule {
 
+class Friend;
 class PartFile;
 
 namespace usenet {
@@ -303,6 +304,8 @@ private:
     void handleLookupArchiveContents(const Ipc::IpcMessage& msg);
     void handleDownloadArchiveEntries(const Ipc::IpcMessage& msg);
     void handleSetArchiveEntries(const Ipc::IpcMessage& msg);
+    void handleTakeArchiveFromDisk(const Ipc::IpcMessage& msg);
+    void handleLocateLocalCopies(const Ipc::IpcMessage& msg);
 
     // eNode meta search (750-754) — IpcClientHandlerMeta.cpp
     void handleFetchMetaFile(const Ipc::IpcMessage& msg);
@@ -363,6 +366,9 @@ private:
     static bool applyPreferenceC(const QString& key, const QCborValue& val);
     static bool applyPreferenceBt(const QString& key, const QCborValue& val);
     static bool applyPreferenceEd3k(const QString& key, const QCborValue& val);
+
+    /// eD2K friend by hash, else by addr + port (friend added by IP). @p bad: neither key usable.
+    [[nodiscard]] static Friend* friendOf(const QString& hash, const QString& addr, int port, bool* bad);
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;

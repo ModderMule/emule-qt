@@ -29,9 +29,11 @@
 #include "utils/StallWatchdog.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDeadlineTimer>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QHostAddress>
 #include <QLockFile>
 #include <QTcpServer>
@@ -137,6 +139,37 @@ bool lockAfterStop(QLockFile& lock, const QString& ipcHost, uint16_t ipcPort)
             return true;
     }
     return false;
+}
+
+/// Left by a core until its clean exit: still there at a start, the last core died
+/// without a word (report 58: killed, or a crash the handler could not write)
+QString runMarkerPath(const QString& configDir)
+{
+    return configDir + QStringLiteral("/emulecored.running");
+}
+
+/// What the last run left behind when it did not reach its clean exit; empty: it did.
+QString lastRunNote(const QString& configDir)
+{
+    QFile marker(runMarkerPath(configDir));
+    if (!marker.open(QIODevice::ReadOnly))
+        return {};
+    const QString pid = QString::fromLatin1(marker.readAll().trimmed());
+    const QDateTime since = QFileInfo(marker).lastModified();
+    const QFileInfoList dumps = QDir(eMule::CrashHandler::crashDir())
+        .entryInfoList({QStringLiteral("*.crash"), QStringLiteral("*.dmp")}, QDir::Files, QDir::Time);
+    const QString dump = !dumps.isEmpty() && dumps.first().lastModified() >= since
+        ? dumps.first().fileName()
+        : QStringLiteral("none, killed by the system or a signal?");
+    return QStringLiteral("The previous core (pid %1, started %2) ended without shutting down; crash dump: %3")
+        .arg(pid.isEmpty() ? QStringLiteral("?") : pid, since.toString(Qt::ISODate), dump);
+}
+
+void writeRunMarker(const QString& configDir)
+{
+    QFile marker(runMarkerPath(configDir));
+    if (marker.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        marker.write(QByteArray::number(QCoreApplication::applicationPid()));
 }
 
 } // namespace
@@ -294,6 +327,22 @@ int main(int argc, char* argv[])
                              .arg(QDir::toNativeSeparators(lockPath)));
     }
 
+    // Windows reserves port blocks at boot (Hyper-V, WSL2, Docker): move off one and
+    // save it, so the GUI dials the same. A --port given by hand stays.
+    if (cli.portOverride() == 0 && eMule::Preferences::ipcPortReserved(ipcHost, ipcPort)) {
+        const QList<uint16_t> ownPorts{eMule::thePrefs.port(), eMule::thePrefs.udpPort(),
+                                       eMule::thePrefs.webServerPort(),
+                                       eMule::thePrefs.btListenPort()};
+        if (const uint16_t moved = eMule::Preferences::freeIpcPort(ipcHost, ipcPort, ownPorts);
+            moved != 0) {
+            eMule::logWarning(QStringLiteral("IPC port %1 is reserved by the system, using %2")
+                                  .arg(ipcPort).arg(moved));
+            ipcPort = moved;
+            eMule::thePrefs.setIpcPort(moved);
+            eMule::thePrefs.save();
+        }
+    }
+
     // One default core per user, wherever it was installed: the setup's per-user
     // config and a portable copy each have a profile lock of their own. A --config
     // profile stays separate, unless it names the default one.
@@ -365,6 +414,10 @@ int main(int argc, char* argv[])
         eMule::AppConfig::langCandidates(QCoreApplication::applicationDirPath()));
     QCoreApplication::installTranslator(&translations);
 
+    // Both locks ours: a marker still there is the last core's, which never reached its exit
+    const QString lastRun = lastRunNote(configDir);
+    writeRunMarker(configDir);
+
     // Create and start daemon
     eMule::DaemonApp daemon;
     daemon.setTranslationRouter(&translations);
@@ -372,6 +425,7 @@ int main(int argc, char* argv[])
     daemon.setIpcPortOverride(ipcPort);
     daemon.setAutoUpdate(cli.autoUpdate(), cli.autoUpdateHours());
     if (!daemon.start()) {
+        QFile::remove(runMarkerPath(configDir));
         eMule::logError(QStringLiteral("Failed to start daemon"));
         // IpcServer logged the reason already
         eMule::AppConfig::writeCoreStartFailure(
@@ -379,6 +433,10 @@ int main(int argc, char* argv[])
                                                      : daemon.startError());
         return 1;
     }
+
+    // after start(): the GUI gets it with the first log sync
+    if (!lastRun.isEmpty())
+        eMule::logWarning(lastRun);
 
     eMule::logInfo(QStringLiteral("Daemon running. IPC listening on %1:%2")
                        .arg(ipcHost.isEmpty() ? QStringLiteral("127.0.0.1") : ipcHost)
@@ -431,6 +489,7 @@ int main(int argc, char* argv[])
 
     shutdownNow();
     eMule::WinShutdownHandler::finished();
+    QFile::remove(runMarkerPath(configDir));   // a clean exit, a restart too
 
     if (eMule::DaemonApp::restartRequested()) {
         // The restarted core takes the locks again: same pid, or a new process
