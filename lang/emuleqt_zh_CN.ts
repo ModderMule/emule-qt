@@ -26592,7 +26592,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+77"/>
         <source>%1 (disabled)</source>
         <translation>%1（已禁用）</translation>
     </message>
@@ -26609,7 +26609,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>否</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+105"/>
         <source>Server Name</source>
         <translation>服务器名称</translation>
     </message>
@@ -26726,7 +26726,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+338"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+344"/>
         <location line="+91"/>
         <source>Disconnect</source>
         <translation>断开连接</translation>
@@ -26738,12 +26738,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+2"/>
-        <location line="+425"/>
+        <location line="+437"/>
         <source>Connect</source>
         <translation>连接</translation>
     </message>
     <message>
-        <location line="-492"/>
+        <location line="-510"/>
         <source>Invalid URL: %1</source>
         <translation>无效的URL: %1</translation>
     </message>
@@ -26773,26 +26773,26 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>已下载 server.met，解压 &quot;%1&quot;（%2 字节）。正在解析...</translation>
     </message>
     <message>
-        <location line="+624"/>
+        <location line="+642"/>
         <location line="+2"/>
         <location line="+25"/>
-        <location line="+41"/>
+        <location line="+44"/>
         <source>IP:Port:</source>
         <translation>IP:端口：</translation>
     </message>
     <message>
-        <location line="-68"/>
+        <location line="-71"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+66"/>
+        <location line="+69"/>
         <source>ID:</source>
         <translation>ID：</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-53"/>
         <source>eD2K Server</source>
         <translation>eD2K服务器</translation>
     </message>
@@ -26802,7 +26802,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>描述：</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Version:</source>
         <translation>版本：</translation>
     </message>
@@ -26871,7 +26871,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>▸ 服务器 (%1)</translation>
     </message>
     <message>
-        <location line="-643"/>
+        <location line="-658"/>
         <source>Connect To</source>
         <translation>连接到</translation>
     </message>
@@ -26887,12 +26887,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+1"/>
-        <location line="+508"/>
+        <location line="+523"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-507"/>
+        <location line="-522"/>
         <source>High</source>
         <translation>高</translation>
     </message>
@@ -26952,7 +26952,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>查找...</translation>
     </message>
     <message>
-        <location line="+56"/>
+        <location line="+8"/>
+        <source>Show Raw IPs</source>
+        <translation>显示原始 IP</translation>
+    </message>
+    <message>
+        <location line="+60"/>
         <source>▸ Servers (0)</source>
         <translation>▸ 服务器 (0)</translation>
     </message>
@@ -27009,7 +27014,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+6"/>
-        <location line="+44"/>
+        <location line="+47"/>
         <location line="+3"/>
         <location line="+10"/>
         <location line="+3"/>
@@ -27020,7 +27025,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>状态：</translation>
     </message>
     <message>
-        <location line="-102"/>
+        <location line="-105"/>
         <source>Connected</source>
         <translation>已连接</translation>
     </message>
@@ -27030,7 +27035,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>High ID</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+19"/>
+        <source>Hostname:</source>
+        <translation>主机名：</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <location line="+49"/>
         <source>Connecting...</source>
         <translation>连接中...</translation>
@@ -27060,12 +27070,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         </translation>
     </message>
     <message>
-        <location line="-739"/>
+        <location line="-742"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
     <message>
-        <location line="+386"/>
+        <location line="+389"/>
         <source>Invalid server.met header: 0x%1</source>
         <translation>无效的server.met头: 0x%1</translation>
     </message>

@@ -151,6 +151,7 @@ void UiState::load(const QString& configDir)
         m_lowIdHintDisabled = root["lowIdHintDisabled"].as<bool>(m_lowIdHintDisabled);
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
         m_resolvePeerHostnames = root["resolvePeerHostnames"].as<bool>(m_resolvePeerHostnames);
+        m_serverListRawIps = root["serverListRawIps"].as<bool>(m_serverListRawIps);
         m_showTaskbarProgress = root["showTaskbarProgress"].as<bool>(m_showTaskbarProgress);
         m_showDownloadStatusFilter = root["showDownloadStatusFilter"].as<bool>(m_showDownloadStatusFilter);
         m_downloadSortHistory = root["downloadSortHistory"].as<bool>(m_downloadSortHistory);
@@ -308,6 +309,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "lowIdHintDisabled" << YAML::Value << m_lowIdHintDisabled;
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
     out << YAML::Key << "resolvePeerHostnames" << YAML::Value << m_resolvePeerHostnames;
+    out << YAML::Key << "serverListRawIps" << YAML::Value << m_serverListRawIps;
     out << YAML::Key << "showTaskbarProgress" << YAML::Value << m_showTaskbarProgress;
     out << YAML::Key << "showDownloadStatusFilter" << YAML::Value << m_showDownloadStatusFilter;
     out << YAML::Key << "downloadSortHistory" << YAML::Value << m_downloadSortHistory;

@@ -319,6 +319,12 @@ void ServerPanel::applyDisplayOptions()
     if (m_serverListModel) {
         m_serverListModel->refreshEmphasis();
         m_serverListModel->setResolveHostnames(theUiState.resolvePeerHostnames());
+    m_serverListModel->setShowHostnames(!theUiState.serverListRawIps());
+    // My Info's hostname row
+    connect(m_serverListModel, &ServerListModel::hostnameResolved, this, [this](const QString& address) {
+        if (address == m_ed2kServerAddr)
+            refreshMyInfo();
+    });
     }
 }
 
@@ -638,6 +644,18 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     findAction->setEnabled(hasItems);
     connect(findAction, &QAction::triggered, this, &ServerPanel::showFindDialog);
 
+    // -- Show Raw IPs (only while hostnames are resolved) -----------------------
+    if (m_serverListModel->resolvesHostnames()) {
+        m_serverMenu->addSeparator();
+        auto* rawIpAction = m_serverMenu->addAction(tr("Show Raw IPs"));
+        rawIpAction->setCheckable(true);
+        rawIpAction->setChecked(!m_serverListModel->showsHostnames());
+        connect(rawIpAction, &QAction::toggled, this, [this](bool raw) {
+            theUiState.setServerListRawIps(raw);
+            m_serverListModel->setShowHostnames(!raw);
+        });
+    }
+
     m_serverMenu->popup(m_serverListView->viewport()->mapToGlobal(pos));
 }
 
@@ -954,6 +972,9 @@ void ServerPanel::refreshMyInfo()
             if (!srvDesc.isEmpty())
                 html += sp + tr("Description:") + QStringLiteral("\t") + srvDesc + QStringLiteral("<br>");
             html += sp + tr("IP:Port:") + QStringLiteral("\t%1:%2<br>").arg(srvAddr).arg(srvPort);
+            if (const QString host = m_serverListModel ? m_serverListModel->hostname(srvAddr) : QString();
+                !host.isEmpty())
+                html += sp + tr("Hostname:") + QStringLiteral("\t") + host.toHtmlEscaped() + QStringLiteral("<br>");
             if (!srvVersion.isEmpty())
                 html += sp + tr("Version:") + QStringLiteral("\t") + srvVersion + QStringLiteral("<br>");
             html += sp + tr("Users:") + QStringLiteral("\t") + fmtNum(srvUsers) + QStringLiteral("<br>");

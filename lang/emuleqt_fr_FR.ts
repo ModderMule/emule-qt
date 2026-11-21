@@ -26680,7 +26680,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+77"/>
         <source>%1 (disabled)</source>
         <translation>%1 (désactivé)</translation>
     </message>
@@ -26697,7 +26697,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Non</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+105"/>
         <source>Server Name</source>
         <translation>Nom du serveur</translation>
     </message>
@@ -26814,7 +26814,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+338"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+344"/>
         <location line="+91"/>
         <source>Disconnect</source>
         <translation>Déconnecter</translation>
@@ -26826,12 +26826,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
     </message>
     <message>
         <location line="+2"/>
-        <location line="+425"/>
+        <location line="+437"/>
         <source>Connect</source>
         <translation>Connecter</translation>
     </message>
     <message>
-        <location line="-492"/>
+        <location line="-510"/>
         <source>Invalid URL: %1</source>
         <translation>URL invalide : %1</translation>
     </message>
@@ -26861,26 +26861,26 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>server.met téléchargé, &quot;%1&quot; décompressé (%2 octets). Analyse en cours...</translation>
     </message>
     <message>
-        <location line="+624"/>
+        <location line="+642"/>
         <location line="+2"/>
         <location line="+25"/>
-        <location line="+41"/>
+        <location line="+44"/>
         <source>IP:Port:</source>
         <translation>IP:Port :</translation>
     </message>
     <message>
-        <location line="-68"/>
+        <location line="-71"/>
         <source>Unknown</source>
         <translation>Inconnu</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+66"/>
+        <location line="+69"/>
         <source>ID:</source>
         <translation>ID :</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-53"/>
         <source>eD2K Server</source>
         <translation>Serveur eD2K</translation>
     </message>
@@ -26890,7 +26890,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Description :</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Version:</source>
         <translation>Version :</translation>
     </message>
@@ -26959,7 +26959,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>▸ Serveurs (%1)</translation>
     </message>
     <message>
-        <location line="-643"/>
+        <location line="-658"/>
         <source>Connect To</source>
         <translation>Se connecter à</translation>
     </message>
@@ -26975,12 +26975,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
     </message>
     <message>
         <location line="+1"/>
-        <location line="+508"/>
+        <location line="+523"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-507"/>
+        <location line="-522"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
@@ -27040,7 +27040,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Rechercher...</translation>
     </message>
     <message>
-        <location line="+56"/>
+        <location line="+8"/>
+        <source>Show Raw IPs</source>
+        <translation>Afficher les IP brutes</translation>
+    </message>
+    <message>
+        <location line="+60"/>
         <source>▸ Servers (0)</source>
         <translation>▸ Serveurs (0)</translation>
     </message>
@@ -27097,7 +27102,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
     </message>
     <message>
         <location line="+6"/>
-        <location line="+44"/>
+        <location line="+47"/>
         <location line="+3"/>
         <location line="+10"/>
         <location line="+3"/>
@@ -27108,7 +27113,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Statut :</translation>
     </message>
     <message>
-        <location line="-102"/>
+        <location line="-105"/>
         <source>Connected</source>
         <translation>Connecté</translation>
     </message>
@@ -27118,7 +27123,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>High ID</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+19"/>
+        <source>Hostname:</source>
+        <translation>Nom d&apos;hôte :</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <location line="+49"/>
         <source>Connecting...</source>
         <translation>Connexion...</translation>
@@ -27149,12 +27159,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         </translation>
     </message>
     <message>
-        <location line="-739"/>
+        <location line="-742"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
     <message>
-        <location line="+386"/>
+        <location line="+389"/>
         <source>Invalid server.met header: 0x%1</source>
         <translation>En-tête server.met invalide : 0x%1</translation>
     </message>

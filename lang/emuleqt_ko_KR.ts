@@ -26592,7 +26592,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+77"/>
         <source>%1 (disabled)</source>
         <translation>%1 (비활성화됨)</translation>
     </message>
@@ -26609,7 +26609,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>아니오</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+105"/>
         <source>Server Name</source>
         <translation>서버 이름</translation>
     </message>
@@ -26726,7 +26726,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+338"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+344"/>
         <location line="+91"/>
         <source>Disconnect</source>
         <translation>연결 해제</translation>
@@ -26738,12 +26738,12 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+425"/>
+        <location line="+437"/>
         <source>Connect</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-492"/>
+        <location line="-510"/>
         <source>Invalid URL: %1</source>
         <translation>잘못된 URL: %1</translation>
     </message>
@@ -26773,26 +26773,26 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>server.met을 다운로드하고 &quot;%1&quot;의 압축을 풀었습니다(%2바이트). 분석 중...</translation>
     </message>
     <message>
-        <location line="+624"/>
+        <location line="+642"/>
         <location line="+2"/>
         <location line="+25"/>
-        <location line="+41"/>
+        <location line="+44"/>
         <source>IP:Port:</source>
         <translation>IP:포트:</translation>
     </message>
     <message>
-        <location line="-68"/>
+        <location line="-71"/>
         <source>Unknown</source>
         <translation>알 수 없음</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+66"/>
+        <location line="+69"/>
         <source>ID:</source>
         <translation>ID:</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-53"/>
         <source>eD2K Server</source>
         <translation>eD2K 서버</translation>
     </message>
@@ -26802,7 +26802,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>설명:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Version:</source>
         <translation>버전:</translation>
     </message>
@@ -26871,7 +26871,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>▸ 서버 (%1)</translation>
     </message>
     <message>
-        <location line="-643"/>
+        <location line="-658"/>
         <source>Connect To</source>
         <translation>연결 대상</translation>
     </message>
@@ -26887,12 +26887,12 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+508"/>
+        <location line="+523"/>
         <source>Normal</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="-507"/>
+        <location line="-522"/>
         <source>High</source>
         <translation>높음</translation>
     </message>
@@ -26952,7 +26952,12 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>찾기...</translation>
     </message>
     <message>
-        <location line="+56"/>
+        <location line="+8"/>
+        <source>Show Raw IPs</source>
+        <translation>원본 IP 표시</translation>
+    </message>
+    <message>
+        <location line="+60"/>
         <source>▸ Servers (0)</source>
         <translation>▸ 서버 (0)</translation>
     </message>
@@ -27009,7 +27014,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+44"/>
+        <location line="+47"/>
         <location line="+3"/>
         <location line="+10"/>
         <location line="+3"/>
@@ -27020,7 +27025,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>상태:</translation>
     </message>
     <message>
-        <location line="-102"/>
+        <location line="-105"/>
         <source>Connected</source>
         <translation>연결됨</translation>
     </message>
@@ -27030,7 +27035,12 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>High ID</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+19"/>
+        <source>Hostname:</source>
+        <translation>호스트 이름:</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <location line="+49"/>
         <source>Connecting...</source>
         <translation>연결 중...</translation>
@@ -27060,12 +27070,12 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         </translation>
     </message>
     <message>
-        <location line="-739"/>
+        <location line="-742"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
     <message>
-        <location line="+386"/>
+        <location line="+389"/>
         <source>Invalid server.met header: 0x%1</source>
         <translation>잘못된 server.met 헤더: 0x%1</translation>
     </message>

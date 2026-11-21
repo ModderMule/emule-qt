@@ -288,6 +288,13 @@ public:
         m_resolvePeerHostnames = on;
         scheduleSave();
     }
+    /// Server list IP columns show raw IPs though hostnames are resolved.
+    [[nodiscard]] bool serverListRawIps() const { return m_serverListRawIps; }
+    void setServerListRawIps(bool on)
+    {
+        m_serverListRawIps = on;
+        scheduleSave();
+    }
     void setShowCountryFlags(bool on)
     {
         m_showCountryFlags = on;
@@ -607,6 +614,7 @@ private:
     bool m_lowIdHintDisabled = false;
     bool m_showCountryFlags = true;
     bool m_resolvePeerHostnames = false;
+    bool m_serverListRawIps = false;
     bool m_showTaskbarProgress = true;
     bool m_showDownloadStatusFilter = false;
     bool m_downloadSortHistory = false;

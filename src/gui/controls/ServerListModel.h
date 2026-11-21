@@ -113,14 +113,26 @@ public:
     /// Repaint the connected row's colour and font, e.g. after the bold option changed.
     void refreshEmphasis();
 
-    /// IP / IPv6 columns show the PTR name ("Resolve downloaders' hostnames").
+    /// Look up PTR names ("Resolve downloaders' hostnames").
     void setResolveHostnames(bool enabled);
+    [[nodiscard]] bool resolvesHostnames() const { return m_resolver.enabled(); }
+    /// IP / IPv6 columns show the names found; off: raw IPs, names only in the tooltip.
+    void setShowHostnames(bool show);
+    [[nodiscard]] bool showsHostnames() const { return m_showHostnames; }
+    /// PTR name of a listed address; empty when off, pending or none.
+    [[nodiscard]] QString hostname(const QString& address) const { return m_resolver.hostname(address); }
+
+signals:
+    /// A lookup of @p address finished.
+    void hostnameResolved(const QString& address);
 
 protected:
     [[nodiscard]] int columnCountValue() const override { return ColCount; }
 
 private:
     [[nodiscard]] bool isEmphasised(const ServerRow& r) const;
+    [[nodiscard]] bool hostnamesShown() const { return m_showHostnames && m_resolver.enabled(); }
+    void refreshAddressColumns();
     /// "name : port" once resolved, else "ip : port" (MFC spacing); IPv6 bracketed.
     [[nodiscard]] QString endpointText(const QString& address, uint16_t port, bool bracket) const;
     void refreshHostnames();
@@ -129,6 +141,7 @@ private:
     uint32_t m_connectedServerId = 0;
     QStringList m_indexNodeIds;   ///< lower-case hex
     HostnameResolver m_resolver;
+    bool m_showHostnames = true;
 };
 
 } // namespace eMule
