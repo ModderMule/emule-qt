@@ -119,12 +119,6 @@ public:
     /// IP / IPv6 columns show the names found; off: raw IPs, names only in the tooltip.
     void setShowHostnames(bool show);
     [[nodiscard]] bool showsHostnames() const { return m_showHostnames; }
-    /// PTR name of a listed address; empty when off, pending or none.
-    [[nodiscard]] QString hostname(const QString& address) const { return m_resolver.hostname(address); }
-
-signals:
-    /// A lookup of @p address finished.
-    void hostnameResolved(const QString& address);
 
 protected:
     [[nodiscard]] int columnCountValue() const override { return ColCount; }

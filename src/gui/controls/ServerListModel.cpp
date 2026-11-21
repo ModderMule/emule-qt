@@ -376,7 +376,6 @@ void ServerListModel::hostnameChanged(const QString& address)
                              {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
         }
     }
-    emit hostnameResolved(address);
 }
 
 } // namespace eMule
