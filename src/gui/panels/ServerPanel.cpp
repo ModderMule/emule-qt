@@ -693,9 +693,13 @@ void ServerPanel::setupUi()
     auto* horzSplitter = new QSplitter(Qt::Horizontal, this);
     horzSplitter->setChildrenCollapsible(false);
     horzSplitter->addWidget(m_vertSplitter);
-    horzSplitter->addWidget(createControlsPanel());
+    QWidget* controls = createControlsPanel();
+    horzSplitter->addWidget(controls);
     horzSplitter->setStretchFactor(0, 4);
     horzSplitter->setStretchFactor(1, 1);
+    // My Info: wide enough that its rows don't wrap; draggable and saved
+    horzSplitter->setSizes({1000, PanelLayout::fontScaled(controls, 360)});
+    theUiState.bindServerHorzSplitter(horzSplitter);
 
     mainLayout->addWidget(horzSplitter);
 }
@@ -777,7 +781,7 @@ QWidget* ServerPanel::createControlsPanel()
     auto* widget = new QWidget;
     // grows with the text size, or larger fonts clip the column
     widget->setMinimumWidth(PanelLayout::fontScaled(widget, 200));
-    widget->setMaximumWidth(PanelLayout::fontScaled(widget, 300));
+    widget->setMaximumWidth(PanelLayout::fontScaled(widget, 500));
     auto* layout = new QVBoxLayout(widget);
     layout->setContentsMargins(4, 2, 4, 2);
     layout->setSpacing(6);
@@ -1050,7 +1054,10 @@ void ServerPanel::refreshMyInfo()
 
     // ---- ed3k Network (no MFC original) ---------------------------------------
     // own section like the dialog's, though ed3k has no servers yet
-    html += NetworkInfoDialog::ed3kHtml(m_ed3kInfo, true);
+    html += NetworkInfoDialog::ed3kHtml(m_ed3kInfo, true, [&](const QString& address) {
+        myAddresses.append(address);
+        return m_myInfoResolver.hostname(address);
+    });
 
     // ---- Web Interface ------------------------------------------------------
     html += QStringLiteral("<br><b>") + tr("Web Interface") + QStringLiteral("</b><br>");

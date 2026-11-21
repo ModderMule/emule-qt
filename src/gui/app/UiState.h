@@ -48,6 +48,8 @@ public:
 
     /// Restore a splitter from saved sizes, connect it to auto-update.
     void bindServerSplitter(QSplitter* splitter);
+    /// Server window: lists | My Info column
+    void bindServerHorzSplitter(QSplitter* splitter);
     void bindKadSplitter(QSplitter* splitter);
     /// The ed3k page of the Kad window: sizes of its own.
     void bindEd3kKadSplitter(QSplitter* splitter);
@@ -579,6 +581,7 @@ private:
     static QByteArray repairedHeaderState(const QByteArray& state);
 
     QList<int> m_serverSplitSizes;
+    QList<int> m_serverHorzSplitSizes;
     QList<int> m_kadSplitSizes;
     QList<int> m_ed3kKadSplitSizes;
     QList<int> m_transferSplitSizes;

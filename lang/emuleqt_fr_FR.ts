@@ -891,7 +891,7 @@ Le noyau continue d&apos;écouter sur le port TCP %1 et le port UDP %2.</transla
     <message>
         <location line="+2"/>
         <source>The network interface selected in Options has no public address known yet, so nothing could be tested over it. Connect to the network first, then test again.</source>
-        <translation type="unfinished"></translation>
+        <translation>L&apos;interface réseau sélectionnée dans les Options n&apos;a pas encore d&apos;adresse publique connue, donc rien n&apos;a pu être testé par elle. Connectez-vous d&apos;abord au réseau, puis relancez le test.</translation>
     </message>
     <message>
         <location line="+4"/>
@@ -977,12 +977,12 @@ Le noyau continue d&apos;écouter sur le port TCP %1 et le port UDP %2.</transla
     <message>
         <location line="+5"/>
         <source>Some test packets from the website did not arrive, but peers prove the port open: the packets were lost on the way (often dropped by a VPN or provider), the port is not closed.</source>
-        <translation type="unfinished"></translation>
+        <translation>Certains paquets de test du site web ne sont pas arrivés, mais des pairs prouvent que le port est ouvert : les paquets se sont perdus en route (souvent rejetés par un VPN ou le fournisseur), le port n&apos;est pas fermé.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>The website&apos;s test packets did not arrive.</source>
-        <translation type="unfinished"></translation>
+        <translation>Les paquets de test du site web ne sont pas arrivés.</translation>
     </message>
     <message>
         <location line="+17"/>
@@ -1005,63 +1005,63 @@ Le noyau continue d&apos;écouter sur le port TCP %1 et le port UDP %2.</transla
     <message>
         <location line="+58"/>
         <source>other ed3k nodes reach this node at %1</source>
-        <translation type="unfinished"></translation>
+        <translation>d&apos;autres nœuds ed3k atteignent ce nœud à %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>eD2K clients reach this UDP port at %1 (Kad check passed)</source>
-        <translation type="unfinished"></translation>
+        <translation>des clients eD2K atteignent ce port UDP à %1 (vérification Kad réussie)</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>the eD2K server gave a High ID at %1</source>
-        <translation type="unfinished"></translation>
+        <translation>le serveur eD2K a attribué un High ID à %1</translation>
     </message>
     <message>
         <location line="+13"/>
         <source>The website&apos;s test failed (%1).</source>
-        <translation type="unfinished"></translation>
+        <translation>Le test du site web a échoué (%1).</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test connection got no answer: it was dropped on the way.</source>
-        <translation type="unfinished"></translation>
+        <translation>La connexion de test du site web n&apos;a reçu aucune réponse : elle a été rejetée en route.</translation>
     </message>
     <message numerus="yes">
         <location line="+2"/>
         <source>None of the %n test packet(s) from the website arrived: lost on the way.</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>Le %n paquet de test du site web n&apos;est pas arrivé : perdu en route.</numerusform>
+            <numerusform>Aucun des %n paquets de test du site web n&apos;est arrivé : perdus en route.</numerusform>
         </translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test packet did not arrive: lost on the way.</source>
-        <translation type="unfinished"></translation>
+        <translation>Le paquet de test du site web n&apos;est pas arrivé : perdu en route.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>reachable, %1.</source>
-        <translation type="unfinished"></translation>
+        <translation>accessible, %1.</translation>
     </message>
     <message numerus="yes">
         <location line="+3"/>
         <source>not reachable: none of the %n test packet(s) arrived (firewall or missing port forwarding)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>non accessible : le %n paquet de test n&apos;est pas arrivé (pare-feu ou redirection de port manquante)</numerusform>
+            <numerusform>non accessible : aucun des %n paquets de test n&apos;est arrivé (pare-feu ou redirection de port manquante)</numerusform>
         </translation>
     </message>
     <message>
         <location line="+13"/>
         <source>Only IPv4 was tested: the network interface %1 selected in Options has no IPv6.</source>
-        <translation type="unfinished"></translation>
+        <translation>Seul IPv4 a été testé : l&apos;interface réseau %1 sélectionnée dans les Options n&apos;a pas d&apos;IPv6.</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Only IPv6 was tested: the network interface %1 selected in Options has no IPv4.</source>
-        <translation type="unfinished"></translation>
+        <translation>Seul IPv6 a été testé : l&apos;interface réseau %1 sélectionnée dans les Options n&apos;a pas d&apos;IPv4.</translation>
     </message>
     <message>
         <location line="+10"/>
@@ -16971,26 +16971,30 @@ Port TCP : %3</translation>
     <message>
         <location line="+812"/>
         <source>Usenet Disabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet désactivé</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Usenet is turned off, so NZB files and links cannot be added.
 
 Turn it on under Options → Usenet, then try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet est désactivé : impossible d&apos;ajouter des fichiers ou liens NZB.
+
+Activez-le dans Options → Usenet, puis réessayez.</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Hoster Downloads Disabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Téléchargements hébergeurs désactivés</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Hoster downloads are turned off, so link containers cannot be opened.
 
 Turn them on under Options → ed3k → Hoster, then try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Les téléchargements hébergeurs sont désactivés : impossible d&apos;ouvrir des conteneurs de liens.
+
+Activez-les dans Options → ed3k → Hoster, puis réessayez.</translation>
     </message>
     <message>
         <location line="+206"/>
@@ -17709,7 +17713,7 @@ Activez-le dans Options → BitTorrent, puis réessayez.</translation>
     <message>
         <location line="-421"/>
         <source>Built without the hoster resolver, cannot open %1.</source>
-        <translation type="unfinished"></translation>
+        <translation>Compilé sans le résolveur d&apos;hébergeurs, impossible d&apos;ouvrir %1.</translation>
     </message>
     <message>
         <location line="+422"/>
@@ -19043,7 +19047,7 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+94"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+95"/>
         <source>Network Information</source>
         <translation>Informations réseau</translation>
     </message>
@@ -19081,34 +19085,34 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+347"/>
+        <location line="+348"/>
         <source>UDP Port:</source>
         <translation>Port UDP :</translation>
     </message>
     <message>
-        <location line="-323"/>
+        <location line="-324"/>
         <source>eD2K Network</source>
         <translation>Réseau eD2K</translation>
     </message>
     <message>
         <location line="+6"/>
         <location line="+188"/>
-        <location line="+122"/>
-        <location line="+211"/>
+        <location line="+123"/>
+        <location line="+215"/>
         <source>Connected</source>
         <translation>Connecté</translation>
     </message>
     <message>
-        <location line="-519"/>
+        <location line="-524"/>
         <location line="+145"/>
         <location line="+39"/>
-        <location line="+124"/>
-        <location line="+210"/>
+        <location line="+125"/>
+        <location line="+214"/>
         <source>Connecting</source>
         <translation>Connexion</translation>
     </message>
     <message>
-        <location line="-516"/>
+        <location line="-521"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>Déconnecté</translation>
@@ -19117,48 +19121,48 @@ Le télécharger à nouveau ?</translation>
         <location line="-144"/>
         <location line="+145"/>
         <location line="+117"/>
-        <location line="+36"/>
+        <location line="+37"/>
         <location line="+13"/>
-        <location line="+120"/>
+        <location line="+124"/>
         <location line="+5"/>
         <location line="+84"/>
         <source>Status:</source>
         <translation>Statut :</translation>
     </message>
     <message>
-        <location line="-514"/>
+        <location line="-519"/>
         <location line="+65"/>
         <location line="+156"/>
-        <location line="+144"/>
+        <location line="+149"/>
         <source>Users:</source>
         <translation>Utilisateurs :</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-369"/>
         <location line="+66"/>
         <location line="+156"/>
-        <location line="+145"/>
+        <location line="+150"/>
         <source>Files:</source>
         <translation>Fichiers :</translation>
     </message>
     <message>
-        <location line="-360"/>
-        <location line="+314"/>
-        <location line="+114"/>
+        <location line="-365"/>
+        <location line="+315"/>
+        <location line="+118"/>
         <source>Unknown</source>
         <translation>Inconnu</translation>
     </message>
     <message>
-        <location line="-428"/>
+        <location line="-433"/>
         <location line="+2"/>
         <location line="+50"/>
         <location line="+98"/>
-        <location line="+347"/>
+        <location line="+352"/>
         <source>IP:Port:</source>
         <translation>IP:Port :</translation>
     </message>
     <message>
-        <location line="-490"/>
+        <location line="-495"/>
         <location line="+147"/>
         <source>ID:</source>
         <translation>ID :</translation>
@@ -19200,12 +19204,12 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+289"/>
+        <location line="+294"/>
         <source>IPv6:</source>
         <translation>IPv6 :</translation>
     </message>
     <message>
-        <location line="-287"/>
+        <location line="-292"/>
         <source>IPv6 Status:</source>
         <translation>État IPv6 :</translation>
     </message>
@@ -19216,35 +19220,35 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+448"/>
+        <location line="+453"/>
         <source>Name:</source>
         <translation>Nom :</translation>
     </message>
     <message>
-        <location line="-446"/>
+        <location line="-451"/>
         <source>Description:</source>
         <translation>Description :</translation>
     </message>
     <message>
         <location line="+5"/>
-        <location line="+455"/>
+        <location line="+460"/>
         <source>Version:</source>
         <translation>Version :</translation>
     </message>
     <message>
-        <location line="-447"/>
-        <location line="+303"/>
+        <location line="-452"/>
+        <location line="+308"/>
         <source>Connections:</source>
         <translation>Connexions :</translation>
     </message>
     <message>
-        <location line="-302"/>
-        <location line="+303"/>
+        <location line="-307"/>
+        <location line="+308"/>
         <source>Obfuscated</source>
         <translation>Obscurci</translation>
     </message>
     <message>
-        <location line="-303"/>
+        <location line="-308"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
@@ -19255,18 +19259,18 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+444"/>
+        <location line="+449"/>
         <source>Ping:</source>
         <translation>Ping :</translation>
     </message>
     <message>
-        <location line="-443"/>
-        <location line="+443"/>
+        <location line="-448"/>
+        <location line="+448"/>
         <source>%1 ms</source>
         <translation>%1 ms</translation>
     </message>
     <message>
-        <location line="-437"/>
+        <location line="-442"/>
         <source>eD2K Server Features</source>
         <translation>Fonctionnalités du serveur eD2K</translation>
     </message>
@@ -19344,20 +19348,20 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+221"/>
+        <location line="+226"/>
         <location line="+150"/>
         <source>Yes</source>
         <translation>Oui</translation>
     </message>
     <message>
-        <location line="-371"/>
-        <location line="+221"/>
+        <location line="-376"/>
+        <location line="+226"/>
         <location line="+150"/>
         <source>No</source>
         <translation>Non</translation>
     </message>
     <message>
-        <location line="-357"/>
+        <location line="-362"/>
         <source>Kad Network</source>
         <translation>Réseau Kad</translation>
     </message>
@@ -19383,24 +19387,24 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+161"/>
+        <location line="+166"/>
         <source>Buddies served:</source>
         <translation>Buddies servis :</translation>
     </message>
     <message>
-        <location line="-131"/>
-        <location line="+143"/>
+        <location line="-136"/>
+        <location line="+148"/>
         <source>%1 (Experimental: %2)</source>
         <translation>%1 (expérimental : %2)</translation>
     </message>
     <message>
-        <location line="-136"/>
-        <location line="+147"/>
+        <location line="-141"/>
+        <location line="+152"/>
         <source>Indexed:</source>
         <translation>Indexé :</translation>
     </message>
     <message>
-        <location line="-146"/>
+        <location line="-151"/>
         <source>Source:</source>
         <translation>Source :</translation>
     </message>
@@ -19448,18 +19452,18 @@ Le télécharger à nouveau ?</translation>
         <translation>URL :</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+20"/>
         <source>ed3k Network</source>
         <translation>Réseau ed3k</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+133"/>
+        <location line="+137"/>
         <source>Not running</source>
         <translation>Arrêté</translation>
     </message>
     <message>
-        <location line="-110"/>
+        <location line="-114"/>
         <source>Offline</source>
         <translation>Hors ligne</translation>
     </message>
@@ -19489,7 +19493,12 @@ Le télécharger à nouveau ?</translation>
         <translation>NAT symétrique (port non testé)</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+10"/>
+        <source>Hostname:</source>
+        <translation>Nom d&apos;hôte :</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>IPv4:</source>
         <translation>IPv4:</translation>
     </message>
@@ -19684,7 +19693,7 @@ Le télécharger à nouveau ?</translation>
         <translation>Nœuds d&apos;index :</translation>
     </message>
     <message>
-        <location line="-485"/>
+        <location line="-490"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -19695,25 +19704,25 @@ Le télécharger à nouveau ?</translation>
         <location line="+1"/>
         <location line="+96"/>
         <location line="+17"/>
-        <location line="+170"/>
+        <location line="+171"/>
         <source>Open</source>
         <translation>Ouvert</translation>
     </message>
     <message>
-        <location line="-168"/>
+        <location line="-169"/>
         <source>unverified</source>
         <translation>non vérifié</translation>
     </message>
     <message>
         <location line="+36"/>
-        <location line="+154"/>
+        <location line="+159"/>
         <source>None</source>
         <translation>Aucun</translation>
     </message>
     <message>
-        <location line="-88"/>
-        <location line="+40"/>
-        <location line="+133"/>
+        <location line="-93"/>
+        <location line="+41"/>
+        <location line="+137"/>
         <source>Disabled</source>
         <translation>Désactivé</translation>
     </message>
@@ -26826,12 +26835,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
     </message>
     <message>
         <location line="+2"/>
-        <location line="+437"/>
+        <location line="+442"/>
         <source>Connect</source>
         <translation>Connecter</translation>
     </message>
     <message>
-        <location line="-510"/>
+        <location line="-513"/>
         <source>Invalid URL: %1</source>
         <translation>URL invalide : %1</translation>
     </message>
@@ -26861,26 +26870,26 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>server.met téléchargé, &quot;%1&quot; décompressé (%2 octets). Analyse en cours...</translation>
     </message>
     <message>
-        <location line="+642"/>
-        <location line="+2"/>
-        <location line="+25"/>
-        <location line="+44"/>
+        <location line="+652"/>
+        <location line="+3"/>
+        <location line="+27"/>
+        <location line="+42"/>
         <source>IP:Port:</source>
         <translation>IP:Port :</translation>
     </message>
     <message>
-        <location line="-71"/>
+        <location line="-72"/>
         <source>Unknown</source>
         <translation>Inconnu</translation>
     </message>
     <message>
-        <location line="+7"/>
-        <location line="+69"/>
+        <location line="+10"/>
+        <location line="+68"/>
         <source>ID:</source>
         <translation>ID :</translation>
     </message>
     <message>
-        <location line="-53"/>
+        <location line="-52"/>
         <source>eD2K Server</source>
         <translation>Serveur eD2K</translation>
     </message>
@@ -26890,24 +26899,24 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Description :</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+4"/>
         <source>Version:</source>
         <translation>Version :</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+50"/>
+        <location line="+51"/>
         <source>Users:</source>
         <translation>Utilisateurs :</translation>
     </message>
     <message>
-        <location line="-49"/>
-        <location line="+51"/>
+        <location line="-50"/>
+        <location line="+52"/>
         <source>Files:</source>
         <translation>Fichiers :</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-51"/>
         <source>Connection:</source>
         <translation>Connexion :</translation>
     </message>
@@ -26934,12 +26943,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>non vérifié</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+15"/>
         <source>Extern UDP Port:</source>
         <translation>Port UDP externe :</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+23"/>
         <source>Web Interface</source>
         <translation>Interface web</translation>
     </message>
@@ -26954,12 +26963,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Désactivé</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+32"/>
         <source>▸ Servers (%1)</source>
         <translation>▸ Serveurs (%1)</translation>
     </message>
     <message>
-        <location line="-658"/>
+        <location line="-676"/>
         <source>Connect To</source>
         <translation>Se connecter à</translation>
     </message>
@@ -26975,12 +26984,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
     </message>
     <message>
         <location line="+1"/>
-        <location line="+523"/>
+        <location line="+536"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-522"/>
+        <location line="-535"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
@@ -27045,12 +27054,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Afficher les IP brutes</translation>
     </message>
     <message>
-        <location line="+60"/>
+        <location line="+64"/>
         <source>▸ Servers (0)</source>
         <translation>▸ Serveurs (0)</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+84"/>
         <source>New Server</source>
         <translation>Nouveau serveur</translation>
     </message>
@@ -27066,12 +27075,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
     </message>
     <message>
         <location line="+10"/>
-        <location line="+159"/>
+        <location line="+169"/>
         <source>Name:</source>
         <translation>Nom :</translation>
     </message>
     <message>
-        <location line="-152"/>
+        <location line="-162"/>
         <source>Add to list</source>
         <translation>Ajouter à la liste</translation>
     </message>
@@ -27096,51 +27105,51 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Mes infos</translation>
     </message>
     <message>
-        <location line="+70"/>
+        <location line="+77"/>
         <source>eD2K Network</source>
         <translation>Réseau eD2K</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+47"/>
+        <location line="+48"/>
         <location line="+3"/>
         <location line="+10"/>
         <location line="+3"/>
-        <location line="+32"/>
+        <location line="+33"/>
         <location line="+4"/>
-        <location line="+9"/>
+        <location line="+12"/>
         <source>Status:</source>
         <translation>Statut :</translation>
     </message>
     <message>
-        <location line="-105"/>
+        <location line="-110"/>
         <source>Connected</source>
         <translation>Connecté</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+19"/>
         <source>High ID</source>
         <translation>High ID</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="-46"/>
         <source>Hostname:</source>
         <translation>Nom d&apos;hôte :</translation>
     </message>
     <message>
-        <location line="+9"/>
-        <location line="+49"/>
+        <location line="+72"/>
+        <location line="+50"/>
         <source>Connecting...</source>
         <translation>Connexion...</translation>
     </message>
     <message>
-        <location line="-46"/>
-        <location line="+49"/>
+        <location line="-47"/>
+        <location line="+50"/>
         <source>Disconnected</source>
         <translation>Déconnecté</translation>
     </message>
     <message>
-        <location line="-44"/>
+        <location line="-45"/>
         <source>Kad Network</source>
         <translation>Réseau Kad</translation>
     </message>
@@ -27151,7 +27160,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Derrière pare-feu</translation>
     </message>
     <message numerus="yes">
-        <location line="+691"/>
+        <location line="+696"/>
         <source>%n server(s) not added — LAN addresses are filtered</source>
         <translation>
             <numerusform>%n serveur non ajouté — les adresses LAN sont filtrées</numerusform>
@@ -27159,12 +27168,12 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         </translation>
     </message>
     <message>
-        <location line="-742"/>
+        <location line="-745"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
     <message>
-        <location line="+389"/>
+        <location line="+392"/>
         <source>Invalid server.met header: 0x%1</source>
         <translation>En-tête server.met invalide : 0x%1</translation>
     </message>

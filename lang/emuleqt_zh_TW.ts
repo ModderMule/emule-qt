@@ -881,7 +881,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+2"/>
         <source>The network interface selected in Options has no public address known yet, so nothing could be tested over it. Connect to the network first, then test again.</source>
-        <translation type="unfinished"></translation>
+        <translation>選項中所選的網路介面尚無已知的公用位址，因此無法透過它進行任何測試。請先連線網路，然後再測試。</translation>
     </message>
     <message>
         <location line="+4"/>
@@ -967,12 +967,12 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+5"/>
         <source>Some test packets from the website did not arrive, but peers prove the port open: the packets were lost on the way (often dropped by a VPN or provider), the port is not closed.</source>
-        <translation type="unfinished"></translation>
+        <translation>網站的部分測試封包未到達，但對等端證明連接埠是開放的：封包在途中遺失（通常被 VPN 或供應商丟棄），連接埠並未關閉。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>The website&apos;s test packets did not arrive.</source>
-        <translation type="unfinished"></translation>
+        <translation>網站的測試封包未到達。</translation>
     </message>
     <message>
         <location line="+17"/>
@@ -995,61 +995,61 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+58"/>
         <source>other ed3k nodes reach this node at %1</source>
-        <translation type="unfinished"></translation>
+        <translation>其他 ed3k 節點可透過 %1 連到本節點</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>eD2K clients reach this UDP port at %1 (Kad check passed)</source>
-        <translation type="unfinished"></translation>
+        <translation>eD2K 用戶端可透過 %1 連到此 UDP 連接埠（Kad 檢查通過）</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>the eD2K server gave a High ID at %1</source>
-        <translation type="unfinished"></translation>
+        <translation>eD2K 伺服器在 %1 給出了 High ID</translation>
     </message>
     <message>
         <location line="+13"/>
         <source>The website&apos;s test failed (%1).</source>
-        <translation type="unfinished"></translation>
+        <translation>網站測試失敗（%1）。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test connection got no answer: it was dropped on the way.</source>
-        <translation type="unfinished"></translation>
+        <translation>網站的測試連線沒有收到回應：它在途中被丟棄。</translation>
     </message>
     <message numerus="yes">
         <location line="+2"/>
         <source>None of the %n test packet(s) from the website arrived: lost on the way.</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>網站的 %n 個測試封包均未到達：在途中遺失。</numerusform>
         </translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test packet did not arrive: lost on the way.</source>
-        <translation type="unfinished"></translation>
+        <translation>網站的測試封包未到達：在途中遺失。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>reachable, %1.</source>
-        <translation type="unfinished"></translation>
+        <translation>可連線，%1。</translation>
     </message>
     <message numerus="yes">
         <location line="+3"/>
         <source>not reachable: none of the %n test packet(s) arrived (firewall or missing port forwarding)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>無法連線：%n 個測試封包均未到達（防火牆或缺少連接埠轉送）</numerusform>
         </translation>
     </message>
     <message>
         <location line="+13"/>
         <source>Only IPv4 was tested: the network interface %1 selected in Options has no IPv6.</source>
-        <translation type="unfinished"></translation>
+        <translation>僅測試了 IPv4：選項中所選的網路介面 %1 沒有 IPv6。</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Only IPv6 was tested: the network interface %1 selected in Options has no IPv4.</source>
-        <translation type="unfinished"></translation>
+        <translation>僅測試了 IPv6：選項中所選的網路介面 %1 沒有 IPv4。</translation>
     </message>
     <message>
         <location line="+10"/>
@@ -16686,31 +16686,35 @@ IPv6：%5
     <message>
         <location line="+1765"/>
         <source>Built without the hoster resolver, cannot open %1.</source>
-        <translation type="unfinished"></translation>
+        <translation>建置時未包含網盤解析器，無法開啟 %1。</translation>
     </message>
     <message>
         <location line="+661"/>
         <source>Usenet Disabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet 已停用</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Usenet is turned off, so NZB files and links cannot be added.
 
 Turn it on under Options → Usenet, then try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet 已關閉，無法新增 NZB 檔案與連結。
+
+請在 選項 → Usenet 中開啟後再試一次。</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Hoster Downloads Disabled</source>
-        <translation type="unfinished"></translation>
+        <translation>網盤下載已停用</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Hoster downloads are turned off, so link containers cannot be opened.
 
 Turn them on under Options → ed3k → Hoster, then try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>網盤下載已關閉，無法開啟連結容器。
+
+請在 選項 → ed3k → Hoster 中開啟後再試一次。</translation>
     </message>
     <message>
         <location line="+206"/>
@@ -18557,7 +18561,7 @@ Download it again?</source>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+94"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+95"/>
         <source>Network Information</source>
         <translation>網路資訊</translation>
     </message>
@@ -18595,34 +18599,34 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+347"/>
+        <location line="+348"/>
         <source>UDP Port:</source>
         <translation>UDP 連接埠：</translation>
     </message>
     <message>
-        <location line="-323"/>
+        <location line="-324"/>
         <source>eD2K Network</source>
         <translation>eD2K 網路</translation>
     </message>
     <message>
         <location line="+6"/>
         <location line="+188"/>
-        <location line="+122"/>
-        <location line="+211"/>
+        <location line="+123"/>
+        <location line="+215"/>
         <source>Connected</source>
         <translation>已連線</translation>
     </message>
     <message>
-        <location line="-519"/>
+        <location line="-524"/>
         <location line="+145"/>
         <location line="+39"/>
-        <location line="+124"/>
-        <location line="+210"/>
+        <location line="+125"/>
+        <location line="+214"/>
         <source>Connecting</source>
         <translation>連線中</translation>
     </message>
     <message>
-        <location line="-516"/>
+        <location line="-521"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>已中斷連線</translation>
@@ -18631,48 +18635,48 @@ Download it again?</source>
         <location line="-144"/>
         <location line="+145"/>
         <location line="+117"/>
-        <location line="+36"/>
+        <location line="+37"/>
         <location line="+13"/>
-        <location line="+120"/>
+        <location line="+124"/>
         <location line="+5"/>
         <location line="+84"/>
         <source>Status:</source>
         <translation>狀態：</translation>
     </message>
     <message>
-        <location line="-514"/>
+        <location line="-519"/>
         <location line="+65"/>
         <location line="+156"/>
-        <location line="+144"/>
+        <location line="+149"/>
         <source>Users:</source>
         <translation>使用者數：</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-369"/>
         <location line="+66"/>
         <location line="+156"/>
-        <location line="+145"/>
+        <location line="+150"/>
         <source>Files:</source>
         <translation>檔案數：</translation>
     </message>
     <message>
-        <location line="-360"/>
+        <location line="-365"/>
         <location line="+2"/>
         <location line="+50"/>
         <location line="+98"/>
-        <location line="+347"/>
+        <location line="+352"/>
         <source>IP:Port:</source>
         <translation>IP:連接埠：</translation>
     </message>
     <message>
-        <location line="-497"/>
-        <location line="+314"/>
-        <location line="+114"/>
+        <location line="-502"/>
+        <location line="+315"/>
+        <location line="+118"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location line="-421"/>
+        <location line="-426"/>
         <location line="+147"/>
         <source>ID:</source>
         <translation>ID：</translation>
@@ -18692,12 +18696,12 @@ Download it again?</source>
         <location line="+1"/>
         <location line="+96"/>
         <location line="+17"/>
-        <location line="+170"/>
+        <location line="+171"/>
         <source>Open</source>
         <translation>開放</translation>
     </message>
     <message>
-        <location line="-281"/>
+        <location line="-282"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -18710,12 +18714,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-109"/>
-        <location line="+289"/>
+        <location line="+294"/>
         <source>IPv6:</source>
         <translation>IPv6：</translation>
     </message>
     <message>
-        <location line="-302"/>
+        <location line="-307"/>
         <source>server verified</source>
         <translation>伺服器已驗證</translation>
     </message>
@@ -18751,35 +18755,35 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+448"/>
+        <location line="+453"/>
         <source>Name:</source>
         <translation>名稱：</translation>
     </message>
     <message>
-        <location line="-446"/>
+        <location line="-451"/>
         <source>Description:</source>
         <translation>描述：</translation>
     </message>
     <message>
         <location line="+5"/>
-        <location line="+455"/>
+        <location line="+460"/>
         <source>Version:</source>
         <translation>版本：</translation>
     </message>
     <message>
-        <location line="-447"/>
-        <location line="+303"/>
+        <location line="-452"/>
+        <location line="+308"/>
         <source>Connections:</source>
         <translation>連線數：</translation>
     </message>
     <message>
-        <location line="-302"/>
-        <location line="+303"/>
+        <location line="-307"/>
+        <location line="+308"/>
         <source>Obfuscated</source>
         <translation>已模糊化</translation>
     </message>
     <message>
-        <location line="-303"/>
+        <location line="-308"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
@@ -18790,18 +18794,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+444"/>
+        <location line="+449"/>
         <source>Ping:</source>
         <translation>Ping：</translation>
     </message>
     <message>
-        <location line="-443"/>
-        <location line="+443"/>
+        <location line="-448"/>
+        <location line="+448"/>
         <source>%1 ms</source>
         <translation>%1 毫秒</translation>
     </message>
     <message>
-        <location line="-437"/>
+        <location line="-442"/>
         <source>eD2K Server Features</source>
         <translation>eD2K 伺服器功能</translation>
     </message>
@@ -18879,20 +18883,20 @@ Download it again?</source>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+221"/>
+        <location line="+226"/>
         <location line="+150"/>
         <source>Yes</source>
         <translation>是</translation>
     </message>
     <message>
-        <location line="-371"/>
-        <location line="+221"/>
+        <location line="-376"/>
+        <location line="+226"/>
         <location line="+150"/>
         <source>No</source>
         <translation>否</translation>
     </message>
     <message>
-        <location line="-357"/>
+        <location line="-362"/>
         <source>Kad Network</source>
         <translation>Kad 網路</translation>
     </message>
@@ -18913,35 +18917,35 @@ Download it again?</source>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+154"/>
+        <location line="+159"/>
         <source>None</source>
         <translation>無</translation>
     </message>
     <message>
-        <location line="-152"/>
+        <location line="-157"/>
         <source>Buddy:</source>
         <translation>夥伴：</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+161"/>
+        <location line="+166"/>
         <source>Buddies served:</source>
         <translation>已服務的夥伴：</translation>
     </message>
     <message>
-        <location line="-131"/>
-        <location line="+143"/>
+        <location line="-136"/>
+        <location line="+148"/>
         <source>%1 (Experimental: %2)</source>
         <translation>%1（實驗性：%2）</translation>
     </message>
     <message>
-        <location line="-136"/>
-        <location line="+147"/>
+        <location line="-141"/>
+        <location line="+152"/>
         <source>Indexed:</source>
         <translation>已索引：</translation>
     </message>
     <message>
-        <location line="-146"/>
+        <location line="-151"/>
         <source>Source:</source>
         <translation>來源：</translation>
     </message>
@@ -18972,13 +18976,13 @@ Download it again?</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+40"/>
-        <location line="+133"/>
+        <location line="+41"/>
+        <location line="+137"/>
         <source>Disabled</source>
         <translation>已停用</translation>
     </message>
     <message>
-        <location line="-171"/>
+        <location line="-176"/>
         <source>not running</source>
         <translation>未執行</translation>
     </message>
@@ -18995,18 +18999,18 @@ Download it again?</source>
         <translation>網址：</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+20"/>
         <source>ed3k Network</source>
         <translation>ed3k 網路</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+133"/>
+        <location line="+137"/>
         <source>Not running</source>
         <translation>未執行</translation>
     </message>
     <message>
-        <location line="-110"/>
+        <location line="-114"/>
         <source>Offline</source>
         <translation>離線</translation>
     </message>
@@ -19036,7 +19040,12 @@ Download it again?</source>
         <translation>對稱 NAT（連接埠未測試）</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+10"/>
+        <source>Hostname:</source>
+        <translation>主機名稱：</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>IPv4:</source>
         <translation>IPv4:</translation>
     </message>
@@ -26202,7 +26211,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+275"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+277"/>
         <source>Invalid URL: %1</source>
         <translation>無效的 URL：%1</translation>
     </message>
@@ -26232,7 +26241,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>已下載 server.met，已解壓縮「%1」（%2 位元組）。正在解析...</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+37"/>
         <location line="+91"/>
         <source>Disconnect</source>
         <translation>中斷連線</translation>
@@ -26244,12 +26253,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+2"/>
-        <location line="+437"/>
+        <location line="+442"/>
         <source>Connect</source>
         <translation>連線</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-369"/>
         <source>Connect To</source>
         <translation>連線到</translation>
     </message>
@@ -26265,12 +26274,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+1"/>
-        <location line="+523"/>
+        <location line="+536"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-522"/>
+        <location line="-535"/>
         <source>High</source>
         <translation>高</translation>
     </message>
@@ -26335,12 +26344,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>顯示原始 IP</translation>
     </message>
     <message>
-        <location line="+60"/>
+        <location line="+64"/>
         <source>▸ Servers (0)</source>
         <translation>▸ 伺服器 (0)</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+84"/>
         <source>New Server</source>
         <translation>新伺服器</translation>
     </message>
@@ -26356,12 +26365,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+10"/>
-        <location line="+159"/>
+        <location line="+169"/>
         <source>Name:</source>
         <translation>名稱：</translation>
     </message>
     <message>
-        <location line="-152"/>
+        <location line="-162"/>
         <source>Add to list</source>
         <translation>加入到清單</translation>
     </message>
@@ -26386,48 +26395,48 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>我的資訊</translation>
     </message>
     <message>
-        <location line="+70"/>
+        <location line="+77"/>
         <source>eD2K Network</source>
         <translation>eD2K 網路</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+47"/>
+        <location line="+48"/>
         <location line="+3"/>
         <location line="+10"/>
         <location line="+3"/>
-        <location line="+32"/>
+        <location line="+33"/>
         <location line="+4"/>
-        <location line="+9"/>
+        <location line="+12"/>
         <source>Status:</source>
         <translation>狀態：</translation>
     </message>
     <message>
-        <location line="-105"/>
+        <location line="-110"/>
         <source>Connected</source>
         <translation>已連線</translation>
     </message>
     <message>
         <location line="+5"/>
-        <location line="+2"/>
-        <location line="+25"/>
-        <location line="+44"/>
+        <location line="+3"/>
+        <location line="+27"/>
+        <location line="+42"/>
         <source>IP:Port:</source>
         <translation>IP:連接埠：</translation>
     </message>
     <message>
-        <location line="-71"/>
+        <location line="-72"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location line="+7"/>
-        <location line="+69"/>
+        <location line="+10"/>
+        <location line="+68"/>
         <source>ID:</source>
         <translation>ID：</translation>
     </message>
     <message>
-        <location line="-66"/>
+        <location line="-65"/>
         <source>Low ID</source>
         <translation>低-ID</translation>
     </message>
@@ -26447,29 +26456,29 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>描述：</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-61"/>
         <source>Hostname:</source>
         <translation>主機名稱：</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+65"/>
         <source>Version:</source>
         <translation>版本：</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+50"/>
+        <location line="+51"/>
         <source>Users:</source>
         <translation>使用者數：</translation>
     </message>
     <message>
-        <location line="-49"/>
-        <location line="+51"/>
+        <location line="-50"/>
+        <location line="+52"/>
         <source>Files:</source>
         <translation>檔案數：</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-51"/>
         <source>Connection:</source>
         <translation>連線：</translation>
     </message>
@@ -26480,18 +26489,18 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+3"/>
-        <location line="+49"/>
+        <location line="+50"/>
         <source>Connecting...</source>
         <translation>連線中...</translation>
     </message>
     <message>
-        <location line="-46"/>
-        <location line="+49"/>
+        <location line="-47"/>
+        <location line="+50"/>
         <source>Disconnected</source>
         <translation>已中斷連線</translation>
     </message>
     <message>
-        <location line="-44"/>
+        <location line="-45"/>
         <source>Kad Network</source>
         <translation>Kad 網路</translation>
     </message>
@@ -26519,12 +26528,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>未驗證</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+15"/>
         <source>Extern UDP Port:</source>
         <translation>外部 UDP 連接埠：</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+23"/>
         <source>Web Interface</source>
         <translation>Web 介面</translation>
     </message>
@@ -26539,7 +26548,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>已停用</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+32"/>
         <source>▸ Servers (%1)</source>
         <translation>▸ 伺服器 (%1)</translation>
     </message>

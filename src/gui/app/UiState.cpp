@@ -89,6 +89,7 @@ void UiState::load(const QString& configDir)
             root = YAML::Node(YAML::NodeType::Map);   // empty file: defaults, still import below
 
         m_serverSplitSizes     = readIntList(root, "serverSplitSizes");
+        m_serverHorzSplitSizes = readIntList(root, "serverHorzSplitSizes");
         m_kadSplitSizes        = readIntList(root, "kadSplitSizes");
         m_ed3kKadSplitSizes    = readIntList(root, "ed3kKadSplitSizes");
         m_transferSplitSizes   = readIntList(root, "transferSplitSizes");
@@ -269,6 +270,7 @@ void UiState::save(const QString& configDir)
     out << YAML::BeginMap;
 
     writeIntList(out, "serverSplitSizes",     m_serverSplitSizes);
+    writeIntList(out, "serverHorzSplitSizes", m_serverHorzSplitSizes);
     writeIntList(out, "kadSplitSizes",        m_kadSplitSizes);
     writeIntList(out, "ed3kKadSplitSizes",    m_ed3kKadSplitSizes);
     writeIntList(out, "transferSplitSizes",   m_transferSplitSizes);
@@ -476,6 +478,11 @@ void UiState::setStatsColors(const std::array<QColor, kStatsColorCount>& colors)
 void UiState::bindServerSplitter(QSplitter* splitter)
 {
     bindSplitter(splitter, m_serverSplitSizes);
+}
+
+void UiState::bindServerHorzSplitter(QSplitter* splitter)
+{
+    bindSplitter(splitter, m_serverHorzSplitSizes);
 }
 
 void UiState::bindKadSplitter(QSplitter* splitter)

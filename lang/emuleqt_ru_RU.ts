@@ -901,7 +901,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+2"/>
         <source>The network interface selected in Options has no public address known yet, so nothing could be tested over it. Connect to the network first, then test again.</source>
-        <translation type="unfinished"></translation>
+        <translation>У сетевого интерфейса, выбранного в настройках, ещё нет известного публичного адреса, поэтому через него ничего не удалось проверить. Сначала подключитесь к сети, затем повторите проверку.</translation>
     </message>
     <message>
         <location line="+4"/>
@@ -987,12 +987,12 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+5"/>
         <source>Some test packets from the website did not arrive, but peers prove the port open: the packets were lost on the way (often dropped by a VPN or provider), the port is not closed.</source>
-        <translation type="unfinished"></translation>
+        <translation>Часть тестовых пакетов с сайта не дошла, но пиры доказывают, что порт открыт: пакеты потерялись в пути (часто их отбрасывает VPN или провайдер), порт не закрыт.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>The website&apos;s test packets did not arrive.</source>
-        <translation type="unfinished"></translation>
+        <translation>Тестовые пакеты с сайта не дошли.</translation>
     </message>
     <message>
         <location line="+17"/>
@@ -1015,65 +1015,65 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     <message>
         <location line="+58"/>
         <source>other ed3k nodes reach this node at %1</source>
-        <translation type="unfinished"></translation>
+        <translation>другие узлы ed3k достигают этого узла по адресу %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>eD2K clients reach this UDP port at %1 (Kad check passed)</source>
-        <translation type="unfinished"></translation>
+        <translation>клиенты eD2K достигают этого UDP-порта по адресу %1 (проверка Kad пройдена)</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>the eD2K server gave a High ID at %1</source>
-        <translation type="unfinished"></translation>
+        <translation>сервер eD2K выдал High ID по адресу %1</translation>
     </message>
     <message>
         <location line="+13"/>
         <source>The website&apos;s test failed (%1).</source>
-        <translation type="unfinished"></translation>
+        <translation>Тест сайта не удался (%1).</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test connection got no answer: it was dropped on the way.</source>
-        <translation type="unfinished"></translation>
+        <translation>Тестовое соединение сайта не получило ответа: оно было отброшено в пути.</translation>
     </message>
     <message numerus="yes">
         <location line="+2"/>
         <source>None of the %n test packet(s) from the website arrived: lost on the way.</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>Ни один из %n тестового пакета с сайта не дошёл: потерян в пути.</numerusform>
+            <numerusform>Ни один из %n тестовых пакетов с сайта не дошёл: потеряны в пути.</numerusform>
+            <numerusform>Ни один из %n тестовых пакетов с сайта не дошёл: потеряны в пути.</numerusform>
         </translation>
     </message>
     <message>
         <location line="+2"/>
         <source>The website&apos;s test packet did not arrive: lost on the way.</source>
-        <translation type="unfinished"></translation>
+        <translation>Тестовый пакет с сайта не дошёл: потерян в пути.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>reachable, %1.</source>
-        <translation type="unfinished"></translation>
+        <translation>доступен, %1.</translation>
     </message>
     <message numerus="yes">
         <location line="+3"/>
         <source>not reachable: none of the %n test packet(s) arrived (firewall or missing port forwarding)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>недоступен: ни один из %n тестового пакета не дошёл (брандмауэр или нет проброса порта)</numerusform>
+            <numerusform>недоступен: ни один из %n тестовых пакетов не дошёл (брандмауэр или нет проброса порта)</numerusform>
+            <numerusform>недоступен: ни один из %n тестовых пакетов не дошёл (брандмауэр или нет проброса порта)</numerusform>
         </translation>
     </message>
     <message>
         <location line="+13"/>
         <source>Only IPv4 was tested: the network interface %1 selected in Options has no IPv6.</source>
-        <translation type="unfinished"></translation>
+        <translation>Проверен только IPv4: у сетевого интерфейса %1, выбранного в настройках, нет IPv6.</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Only IPv6 was tested: the network interface %1 selected in Options has no IPv4.</source>
-        <translation type="unfinished"></translation>
+        <translation>Проверен только IPv6: у сетевого интерфейса %1, выбранного в настройках, нет IPv4.</translation>
     </message>
     <message>
         <location line="+10"/>
@@ -16840,31 +16840,35 @@ IPv6: %5
     <message>
         <location line="+1765"/>
         <source>Built without the hoster resolver, cannot open %1.</source>
-        <translation type="unfinished"></translation>
+        <translation>Собрано без резолвера хостингов, невозможно открыть %1.</translation>
     </message>
     <message>
         <location line="+661"/>
         <source>Usenet Disabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet отключён</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Usenet is turned off, so NZB files and links cannot be added.
 
 Turn it on under Options → Usenet, then try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet выключен, поэтому NZB-файлы и ссылки нельзя добавить.
+
+Включите его в Параметры → Usenet и повторите попытку.</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Hoster Downloads Disabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Загрузки с хостингов отключены</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Hoster downloads are turned off, so link containers cannot be opened.
 
 Turn them on under Options → ed3k → Hoster, then try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Загрузки с хостингов выключены, поэтому контейнеры ссылок нельзя открыть.
+
+Включите их в Параметры → ed3k → Hoster и повторите попытку.</translation>
     </message>
     <message>
         <location line="+206"/>
@@ -18719,7 +18723,7 @@ Download it again?</source>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+94"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+95"/>
         <source>Network Information</source>
         <translation>Сетевая информация</translation>
     </message>
@@ -18757,34 +18761,34 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+347"/>
+        <location line="+348"/>
         <source>UDP Port:</source>
         <translation>UDP-порт:</translation>
     </message>
     <message>
-        <location line="-323"/>
+        <location line="-324"/>
         <source>eD2K Network</source>
         <translation>Сеть eD2K</translation>
     </message>
     <message>
         <location line="+6"/>
         <location line="+188"/>
-        <location line="+122"/>
-        <location line="+211"/>
+        <location line="+123"/>
+        <location line="+215"/>
         <source>Connected</source>
         <translation>Соединён</translation>
     </message>
     <message>
-        <location line="-519"/>
+        <location line="-524"/>
         <location line="+145"/>
         <location line="+39"/>
-        <location line="+124"/>
-        <location line="+210"/>
+        <location line="+125"/>
+        <location line="+214"/>
         <source>Connecting</source>
         <translation>Соединение</translation>
     </message>
     <message>
-        <location line="-516"/>
+        <location line="-521"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>Отсоединён</translation>
@@ -18793,48 +18797,48 @@ Download it again?</source>
         <location line="-144"/>
         <location line="+145"/>
         <location line="+117"/>
-        <location line="+36"/>
+        <location line="+37"/>
         <location line="+13"/>
-        <location line="+120"/>
+        <location line="+124"/>
         <location line="+5"/>
         <location line="+84"/>
         <source>Status:</source>
         <translation>Статус:</translation>
     </message>
     <message>
-        <location line="-514"/>
+        <location line="-519"/>
         <location line="+65"/>
         <location line="+156"/>
-        <location line="+144"/>
+        <location line="+149"/>
         <source>Users:</source>
         <translation>Пользователи:</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-369"/>
         <location line="+66"/>
         <location line="+156"/>
-        <location line="+145"/>
+        <location line="+150"/>
         <source>Files:</source>
         <translation>Файлы:</translation>
     </message>
     <message>
-        <location line="-360"/>
+        <location line="-365"/>
         <location line="+2"/>
         <location line="+50"/>
         <location line="+98"/>
-        <location line="+347"/>
+        <location line="+352"/>
         <source>IP:Port:</source>
         <translation>IP:порт:</translation>
     </message>
     <message>
-        <location line="-497"/>
-        <location line="+314"/>
-        <location line="+114"/>
+        <location line="-502"/>
+        <location line="+315"/>
+        <location line="+118"/>
         <source>Unknown</source>
         <translation>Неизвестно</translation>
     </message>
     <message>
-        <location line="-421"/>
+        <location line="-426"/>
         <location line="+147"/>
         <source>ID:</source>
         <translation>ID:</translation>
@@ -18854,12 +18858,12 @@ Download it again?</source>
         <location line="+1"/>
         <location line="+96"/>
         <location line="+17"/>
-        <location line="+170"/>
+        <location line="+171"/>
         <source>Open</source>
         <translation>Открыт</translation>
     </message>
     <message>
-        <location line="-281"/>
+        <location line="-282"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -18872,12 +18876,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-109"/>
-        <location line="+289"/>
+        <location line="+294"/>
         <source>IPv6:</source>
         <translation>IPv6:</translation>
     </message>
     <message>
-        <location line="-302"/>
+        <location line="-307"/>
         <source>server verified</source>
         <translation>проверено сервером</translation>
     </message>
@@ -18913,35 +18917,35 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+448"/>
+        <location line="+453"/>
         <source>Name:</source>
         <translation>Имя:</translation>
     </message>
     <message>
-        <location line="-446"/>
+        <location line="-451"/>
         <source>Description:</source>
         <translation>Описание:</translation>
     </message>
     <message>
         <location line="+5"/>
-        <location line="+455"/>
+        <location line="+460"/>
         <source>Version:</source>
         <translation>Версия:</translation>
     </message>
     <message>
-        <location line="-447"/>
-        <location line="+303"/>
+        <location line="-452"/>
+        <location line="+308"/>
         <source>Connections:</source>
         <translation>Соединения:</translation>
     </message>
     <message>
-        <location line="-302"/>
-        <location line="+303"/>
+        <location line="-307"/>
+        <location line="+308"/>
         <source>Obfuscated</source>
         <translation>Завуалирован</translation>
     </message>
     <message>
-        <location line="-303"/>
+        <location line="-308"/>
         <source>Normal</source>
         <translation>Нормальный</translation>
     </message>
@@ -18952,18 +18956,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+444"/>
+        <location line="+449"/>
         <source>Ping:</source>
         <translation>Пинг:</translation>
     </message>
     <message>
-        <location line="-443"/>
-        <location line="+443"/>
+        <location line="-448"/>
+        <location line="+448"/>
         <source>%1 ms</source>
         <translation>%1 мс</translation>
     </message>
     <message>
-        <location line="-437"/>
+        <location line="-442"/>
         <source>eD2K Server Features</source>
         <translation>Возможности сервера eD2K</translation>
     </message>
@@ -19041,20 +19045,20 @@ Download it again?</source>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+221"/>
+        <location line="+226"/>
         <location line="+150"/>
         <source>Yes</source>
         <translation>Да</translation>
     </message>
     <message>
-        <location line="-371"/>
-        <location line="+221"/>
+        <location line="-376"/>
+        <location line="+226"/>
         <location line="+150"/>
         <source>No</source>
         <translation>Нет</translation>
     </message>
     <message>
-        <location line="-357"/>
+        <location line="-362"/>
         <source>Kad Network</source>
         <translation>Сеть Kad</translation>
     </message>
@@ -19075,35 +19079,35 @@ Download it again?</source>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+154"/>
+        <location line="+159"/>
         <source>None</source>
         <translation>Нет</translation>
     </message>
     <message>
-        <location line="-152"/>
+        <location line="-157"/>
         <source>Buddy:</source>
         <translation>Приятель:</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+161"/>
+        <location line="+166"/>
         <source>Buddies served:</source>
         <translation>Обслужено приятелей:</translation>
     </message>
     <message>
-        <location line="-131"/>
-        <location line="+143"/>
+        <location line="-136"/>
+        <location line="+148"/>
         <source>%1 (Experimental: %2)</source>
         <translation>%1 (экспериментально: %2)</translation>
     </message>
     <message>
-        <location line="-136"/>
-        <location line="+147"/>
+        <location line="-141"/>
+        <location line="+152"/>
         <source>Indexed:</source>
         <translation>Проиндексировано:</translation>
     </message>
     <message>
-        <location line="-146"/>
+        <location line="-151"/>
         <source>Source:</source>
         <translation>Источник:</translation>
     </message>
@@ -19134,13 +19138,13 @@ Download it again?</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+40"/>
-        <location line="+133"/>
+        <location line="+41"/>
+        <location line="+137"/>
         <source>Disabled</source>
         <translation>Отключено</translation>
     </message>
     <message>
-        <location line="-171"/>
+        <location line="-176"/>
         <source>not running</source>
         <translation>не запущен</translation>
     </message>
@@ -19159,18 +19163,18 @@ Download it again?</source>
         <translation>URL:</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+20"/>
         <source>ed3k Network</source>
         <translation>Сеть ed3k</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+133"/>
+        <location line="+137"/>
         <source>Not running</source>
         <translation>Не запущен</translation>
     </message>
     <message>
-        <location line="-110"/>
+        <location line="-114"/>
         <source>Offline</source>
         <translation>Недоступна</translation>
     </message>
@@ -19200,7 +19204,12 @@ Download it again?</source>
         <translation>Симметричный NAT (порт не проверен)</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+10"/>
+        <source>Hostname:</source>
+        <translation>Имя хоста:</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>IPv4:</source>
         <translation>IPv4:</translation>
     </message>
@@ -26376,7 +26385,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+275"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+277"/>
         <source>Invalid URL: %1</source>
         <translation>Неверный URL: %1</translation>
     </message>
@@ -26406,7 +26415,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>server.met загружен, распакован &quot;%1&quot; (%2 байт). Разбор...</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+37"/>
         <location line="+91"/>
         <source>Disconnect</source>
         <translation>Отсоединиться</translation>
@@ -26418,12 +26427,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+2"/>
-        <location line="+437"/>
+        <location line="+442"/>
         <source>Connect</source>
         <translation>Соединиться</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-369"/>
         <source>Connect To</source>
         <translation>Соединиться с</translation>
     </message>
@@ -26439,12 +26448,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+1"/>
-        <location line="+523"/>
+        <location line="+536"/>
         <source>Normal</source>
         <translation>Нормальный</translation>
     </message>
     <message>
-        <location line="-522"/>
+        <location line="-535"/>
         <source>High</source>
         <translation>Высокий</translation>
     </message>
@@ -26509,12 +26518,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Показывать исходные IP</translation>
     </message>
     <message>
-        <location line="+60"/>
+        <location line="+64"/>
         <source>▸ Servers (0)</source>
         <translation>▸ Серверы (0)</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+84"/>
         <source>New Server</source>
         <translation>Новый сервер</translation>
     </message>
@@ -26530,12 +26539,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+10"/>
-        <location line="+159"/>
+        <location line="+169"/>
         <source>Name:</source>
         <translation>Имя:</translation>
     </message>
     <message>
-        <location line="-152"/>
+        <location line="-162"/>
         <source>Add to list</source>
         <translation>Добавить в список</translation>
     </message>
@@ -26560,48 +26569,48 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Моя информация</translation>
     </message>
     <message>
-        <location line="+70"/>
+        <location line="+77"/>
         <source>eD2K Network</source>
         <translation>Сеть eD2K</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+47"/>
+        <location line="+48"/>
         <location line="+3"/>
         <location line="+10"/>
         <location line="+3"/>
-        <location line="+32"/>
+        <location line="+33"/>
         <location line="+4"/>
-        <location line="+9"/>
+        <location line="+12"/>
         <source>Status:</source>
         <translation>Статус:</translation>
     </message>
     <message>
-        <location line="-105"/>
+        <location line="-110"/>
         <source>Connected</source>
         <translation>Соединён</translation>
     </message>
     <message>
         <location line="+5"/>
-        <location line="+2"/>
-        <location line="+25"/>
-        <location line="+44"/>
+        <location line="+3"/>
+        <location line="+27"/>
+        <location line="+42"/>
         <source>IP:Port:</source>
         <translation>IP:порт:</translation>
     </message>
     <message>
-        <location line="-71"/>
+        <location line="-72"/>
         <source>Unknown</source>
         <translation>Неизвестно</translation>
     </message>
     <message>
-        <location line="+7"/>
-        <location line="+69"/>
+        <location line="+10"/>
+        <location line="+68"/>
         <source>ID:</source>
         <translation>ID:</translation>
     </message>
     <message>
-        <location line="-66"/>
+        <location line="-65"/>
         <source>Low ID</source>
         <translation>Низкий ID</translation>
     </message>
@@ -26621,29 +26630,29 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Описание:</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-61"/>
         <source>Hostname:</source>
         <translation>Имя хоста:</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+65"/>
         <source>Version:</source>
         <translation>Версия:</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+50"/>
+        <location line="+51"/>
         <source>Users:</source>
         <translation>Пользователи:</translation>
     </message>
     <message>
-        <location line="-49"/>
-        <location line="+51"/>
+        <location line="-50"/>
+        <location line="+52"/>
         <source>Files:</source>
         <translation>Файлы:</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-51"/>
         <source>Connection:</source>
         <translation>Соединение:</translation>
     </message>
@@ -26654,18 +26663,18 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+3"/>
-        <location line="+49"/>
+        <location line="+50"/>
         <source>Connecting...</source>
         <translation>Соединение...</translation>
     </message>
     <message>
-        <location line="-46"/>
-        <location line="+49"/>
+        <location line="-47"/>
+        <location line="+50"/>
         <source>Disconnected</source>
         <translation>Отсоединён</translation>
     </message>
     <message>
-        <location line="-44"/>
+        <location line="-45"/>
         <source>Kad Network</source>
         <translation>Сеть Kad</translation>
     </message>
@@ -26693,12 +26702,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>не проверен</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+15"/>
         <source>Extern UDP Port:</source>
         <translation>Внешний UDP-порт:</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+23"/>
         <source>Web Interface</source>
         <translation>Web интерфейс</translation>
     </message>
@@ -26713,7 +26722,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Отключено</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+32"/>
         <source>▸ Servers (%1)</source>
         <translation>▸ Серверы (%1)</translation>
     </message>
