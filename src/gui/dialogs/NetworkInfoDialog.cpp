@@ -3,6 +3,7 @@
 /// @brief Network Information dialog — implementation.
 
 #include "dialogs/NetworkInfoDialog.h"
+#include "utils/AddressSortKey.h"
 #include "dialogs/VpnPromo.h"
 #include "utils/Appearance.h"
 
@@ -497,7 +498,8 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
 // ed3k and BitTorrent sections (no MFC original)
 // ---------------------------------------------------------------------------
 
-QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k, bool compact)
+QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k, bool compact,
+                                    const std::function<QString(const QString&)>& hostnameOf)
 {
     const Fmt fmt{compact};
     // a core without ed3k, or from before the section
@@ -544,6 +546,10 @@ QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k, bool compact)
         const QString ep = ed3k.value(endpoint).toString();
         const QString state = reach(ed3k.value(key).toInteger(), bit);
         html += fmt.row(label, ep.isEmpty() ? state : QStringLiteral("%1 (%2)").arg(ep.toHtmlEscaped(), state));
+        if (!ep.isEmpty() && hostnameOf) {
+            if (const QString host = hostnameOf(splitEndpoint(ep).host); !host.isEmpty())
+                html += fmt.row(tr("Hostname:"), host.toHtmlEscaped());
+        }
     };
     family(tr("IPv4:"), QStringLiteral("class4"), QStringLiteral("endpoint4"), 1);
     family(tr("IPv6:"), QStringLiteral("class6"), QStringLiteral("endpoint6"), 2);

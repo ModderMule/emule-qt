@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "controls/KadLookupGraph.h"
 #include "app/SkinIcons.h"
+#include "utils/AddressSortKey.h"
 #include "utils/CountryFlags.h"
 
 #include <QContextMenuEvent>
@@ -84,6 +85,16 @@ KadGraphBase::KadGraphBase(QWidget* parent)
     m_dwell.setSingleShot(true);
     m_dwell.setInterval(kDwellMs);
     connect(&m_dwell, &QTimer::timeout, this, &KadGraphBase::onDwell);
+    // a shown tip picks up the name
+    connect(&m_resolver, &HostnameResolver::resolved, this, [this] {
+        if (QToolTip::isVisible())
+            refreshTip();
+    });
+}
+
+void KadGraphBase::setResolveHostnames(bool on)
+{
+    m_resolver.setEnabled(on);
 }
 
 void KadGraphBase::setLoading(bool on)
@@ -130,6 +141,31 @@ QString KadGraphBase::countryRow(const QString& cc)
 {
     const QString country = CountryFlags::tooltipHtml(cc);
     return country.isEmpty() ? QString() : tipRowHtml(tr("Country"), country);
+}
+
+QString KadGraphBase::addressRows(const QString& endpoint) const
+{
+    if (endpoint.isEmpty())
+        return {};
+    QString html = tipRow(tr("IP"), endpoint);
+    const QString ip = splitEndpoint(endpoint).host;
+    if (m_resolver.enabled() && HostnameResolver::isResolvable(ip)) {
+        QString name = m_resolver.hostname(ip);
+        if (name.isEmpty())
+            name = m_resolver.isPending(ip) || !m_resolver.isKnown(ip) ? tr("Resolving…") : tr("Not found");
+        html += tipRow(tr("Hostname"), name);
+    }
+    return html;
+}
+
+void KadGraphBase::syncHostnames(const QStringList& endpoints)
+{
+    QStringList ips;
+    ips.reserve(endpoints.size());
+    for (const QString& e : endpoints)
+        if (!e.isEmpty())
+            ips.append(splitEndpoint(e).host);
+    m_resolver.sync(ips);
 }
 
 void KadGraphBase::mouseMoveEvent(QMouseEvent* event)
@@ -210,6 +246,11 @@ void KadLookupGraph::setLookup(std::vector<LookupEntry> entries, int searchType)
     m_entries = std::move(entries);
     m_searchType = searchType;
     m_snapshotAge.restart();
+    QStringList endpoints;
+    endpoints.reserve(static_cast<qsizetype>(m_entries.size()));
+    for (const auto& e : m_entries)
+        endpoints.append(e.addr);
+    syncHostnames(endpoints);
     layoutNodes();
     setLoading(false);   // and the tip under the pointer follows the new nodes
     update();
@@ -509,6 +550,7 @@ QString KadLookupGraph::toolTipText(int drawIdx) const
     return QStringLiteral("<qt><b>%1</b><table cellspacing=0>").arg(e.contactID)
         + row(tr("Node ID"), e.contactID)
         + countryRow(e.cc)
+        + addressRows(e.addr)
         + row(tr("Distance"), e.distance)
         + row(tr("Protocol Version"), QString::number(e.contactVersion))
         + QStringLiteral("<tr><td colspan=2><hr></td></tr>")

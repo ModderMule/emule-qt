@@ -9,6 +9,7 @@
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
 #include "controls/TorrentFileTree.h"
+#include "utils/AddressSortKey.h"
 #include "utils/ClientIcons.h"
 #include "utils/Clipboard.h"
 #include "utils/CountryFlags.h"
@@ -420,7 +421,7 @@ void TorrentListsPane::applyPeers(const QCborArray& peers, const QCborArray& ed3
         setCell(item, PeerProgress, percentText(progress), progress, true);
         setCell(item, PeerStatus, flags);
         item->setToolTip(PeerStatus, torrentPeerFlagsTooltip(flags));
-        setCell(item, PeerAddress, address);
+        setCell(item, PeerAddress, address, endpointSortKey(address));
         const QString cc = p.value(QStringLiteral("cc")).toString();
         setFlag(item, PeerAddress, cc, i2p);
         item->setToolTip(PeerAddress, i2p ? tr("I2P peer (anonymous, encrypted)") : CountryFlags::tooltip(cc));
@@ -447,7 +448,7 @@ void TorrentListsPane::applyPeers(const QCborArray& peers, const QCborArray& ed3
         setCell(item, PeerProgress, percentText(progress), progress, true);
         setCell(item, PeerStatus, e.stateText());
         item->setToolTip(PeerStatus, QString());
-        setCell(item, PeerAddress, e.addressText());
+        setCell(item, PeerAddress, e.addressText(), endpointSortKey(e.address));
         setFlag(item, PeerAddress, e.cc);
         item->setToolTip(PeerAddress, CountryFlags::tooltip(e.cc));
         setCell(item, PeerClient, e.software.isEmpty() ? e.name : QStringLiteral("%1 (%2)").arg(e.name, e.software));

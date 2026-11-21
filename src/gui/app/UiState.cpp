@@ -89,6 +89,7 @@ void UiState::load(const QString& configDir)
             root = YAML::Node(YAML::NodeType::Map);   // empty file: defaults, still import below
 
         m_serverSplitSizes     = readIntList(root, "serverSplitSizes");
+        m_serverHorzSplitSizes = readIntList(root, "serverHorzSplitSizes");
         m_kadSplitSizes        = readIntList(root, "kadSplitSizes");
         m_ed3kKadSplitSizes    = readIntList(root, "ed3kKadSplitSizes");
         m_transferSplitSizes   = readIntList(root, "transferSplitSizes");
@@ -150,6 +151,8 @@ void UiState::load(const QString& configDir)
         m_startCount = root["startCount"].as<int>(m_startCount);
         m_lowIdHintDisabled = root["lowIdHintDisabled"].as<bool>(m_lowIdHintDisabled);
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
+        m_resolvePeerHostnames = root["resolvePeerHostnames"].as<bool>(m_resolvePeerHostnames);
+        m_serverListRawIps = root["serverListRawIps"].as<bool>(m_serverListRawIps);
         m_showTaskbarProgress = root["showTaskbarProgress"].as<bool>(m_showTaskbarProgress);
         m_showDownloadStatusFilter = root["showDownloadStatusFilter"].as<bool>(m_showDownloadStatusFilter);
         m_downloadSortHistory = root["downloadSortHistory"].as<bool>(m_downloadSortHistory);
@@ -267,6 +270,7 @@ void UiState::save(const QString& configDir)
     out << YAML::BeginMap;
 
     writeIntList(out, "serverSplitSizes",     m_serverSplitSizes);
+    writeIntList(out, "serverHorzSplitSizes", m_serverHorzSplitSizes);
     writeIntList(out, "kadSplitSizes",        m_kadSplitSizes);
     writeIntList(out, "ed3kKadSplitSizes",    m_ed3kKadSplitSizes);
     writeIntList(out, "transferSplitSizes",   m_transferSplitSizes);
@@ -306,6 +310,8 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "startCount" << YAML::Value << m_startCount;
     out << YAML::Key << "lowIdHintDisabled" << YAML::Value << m_lowIdHintDisabled;
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
+    out << YAML::Key << "resolvePeerHostnames" << YAML::Value << m_resolvePeerHostnames;
+    out << YAML::Key << "serverListRawIps" << YAML::Value << m_serverListRawIps;
     out << YAML::Key << "showTaskbarProgress" << YAML::Value << m_showTaskbarProgress;
     out << YAML::Key << "showDownloadStatusFilter" << YAML::Value << m_showDownloadStatusFilter;
     out << YAML::Key << "downloadSortHistory" << YAML::Value << m_downloadSortHistory;
@@ -472,6 +478,11 @@ void UiState::setStatsColors(const std::array<QColor, kStatsColorCount>& colors)
 void UiState::bindServerSplitter(QSplitter* splitter)
 {
     bindSplitter(splitter, m_serverSplitSizes);
+}
+
+void UiState::bindServerHorzSplitter(QSplitter* splitter)
+{
+    bindSplitter(splitter, m_serverHorzSplitSizes);
 }
 
 void UiState::bindKadSplitter(QSplitter* splitter)

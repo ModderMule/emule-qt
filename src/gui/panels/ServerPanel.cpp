@@ -127,6 +127,8 @@ ServerPanel::ServerPanel(QWidget* parent)
     : QWidget(parent)
 {
     setupUi();
+    m_myInfoResolver.setEnabled(theUiState.resolvePeerHostnames());
+    connect(&m_myInfoResolver, &HostnameResolver::resolved, this, &ServerPanel::refreshMyInfo);
 
     m_poller = new PanelPoller(this, [this] { onRefreshTimer(); });
     m_poller->setInterval(5000);
@@ -316,8 +318,14 @@ void ServerPanel::refreshUpdateUrl()
 
 void ServerPanel::applyDisplayOptions()
 {
-    if (m_serverListModel)
+    if (m_serverListModel) {
         m_serverListModel->refreshEmphasis();
+        m_serverListModel->setResolveHostnames(theUiState.resolvePeerHostnames());
+    }
+    if (m_myInfoResolver.enabled() != theUiState.resolvePeerHostnames()) {
+        m_myInfoResolver.setEnabled(theUiState.resolvePeerHostnames());
+        refreshMyInfo();
+    }
 }
 
 void ServerPanel::onRefreshTimer()
@@ -636,6 +644,18 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     findAction->setEnabled(hasItems);
     connect(findAction, &QAction::triggered, this, &ServerPanel::showFindDialog);
 
+    // -- Show Raw IPs (only while hostnames are resolved) -----------------------
+    if (m_serverListModel->resolvesHostnames()) {
+        m_serverMenu->addSeparator();
+        auto* rawIpAction = m_serverMenu->addAction(tr("Show Raw IPs"));
+        rawIpAction->setCheckable(true);
+        rawIpAction->setChecked(!m_serverListModel->showsHostnames());
+        connect(rawIpAction, &QAction::toggled, this, [this](bool raw) {
+            theUiState.setServerListRawIps(raw);
+            m_serverListModel->setShowHostnames(!raw);
+        });
+    }
+
     m_serverMenu->popup(m_serverListView->viewport()->mapToGlobal(pos));
 }
 
@@ -673,9 +693,13 @@ void ServerPanel::setupUi()
     auto* horzSplitter = new QSplitter(Qt::Horizontal, this);
     horzSplitter->setChildrenCollapsible(false);
     horzSplitter->addWidget(m_vertSplitter);
-    horzSplitter->addWidget(createControlsPanel());
+    QWidget* controls = createControlsPanel();
+    horzSplitter->addWidget(controls);
     horzSplitter->setStretchFactor(0, 4);
     horzSplitter->setStretchFactor(1, 1);
+    // My Info: wide enough that its rows don't wrap; draggable and saved
+    horzSplitter->setSizes({1000, PanelLayout::fontScaled(controls, 360)});
+    theUiState.bindServerHorzSplitter(horzSplitter);
 
     mainLayout->addWidget(horzSplitter);
 }
@@ -694,6 +718,8 @@ QWidget* ServerPanel::createServerListPanel()
     layout->addWidget(m_serversLabel);
 
     m_serverListModel = new ServerListModel(this);
+    m_serverListModel->setResolveHostnames(theUiState.resolvePeerHostnames());
+    m_serverListModel->setShowHostnames(!theUiState.serverListRawIps());
     auto* serverProxy = new SortValueProxy(this);
     serverProxy->setSourceModel(m_serverListModel);
     serverProxy->setSortRole(Qt::UserRole);
@@ -755,7 +781,7 @@ QWidget* ServerPanel::createControlsPanel()
     auto* widget = new QWidget;
     // grows with the text size, or larger fonts clip the column
     widget->setMinimumWidth(PanelLayout::fontScaled(widget, 200));
-    widget->setMaximumWidth(PanelLayout::fontScaled(widget, 300));
+    widget->setMaximumWidth(PanelLayout::fontScaled(widget, 500));
     auto* layout = new QVBoxLayout(widget);
     layout->setContentsMargins(4, 2, 4, 2);
     layout->setSpacing(6);
@@ -893,6 +919,13 @@ void ServerPanel::refreshMyInfo()
             + VpnPromo::Text::html(open ? VpnPromo::Pitch::Anonymity : VpnPromo::Pitch::HighId)
             + QStringLiteral("</div>");
     }
+    // "Hostname:" row under an IP:Port row once the PTR name is in
+    QStringList myAddresses;
+    const auto addHostname = [this, &html, &myAddresses, &sp](const QString& address) {
+        myAddresses.append(address);
+        if (const QString host = m_myInfoResolver.hostname(address); !host.isEmpty())
+            html += sp + tr("Hostname:") + QStringLiteral("\t") + host.toHtmlEscaped() + QStringLiteral("<br>");
+    };
     // a block after <br> leaves an empty line
     const auto addVpn = [&html, &vpn] {
         if (vpn.isEmpty())
@@ -925,7 +958,10 @@ void ServerPanel::refreshMyInfo()
         if (lowId && pubIP == 0)
             html += sp + tr("IP:Port:") + QStringLiteral("\t") + tr("Unknown") + QStringLiteral("<br>");
         else
+        {
             html += sp + tr("IP:Port:") + QStringLiteral("\t") + QStringLiteral("%1:%2").arg(fmtIPSwap(pubIP)).arg(thePrefs.port()) + QStringLiteral("<br>");
+            addHostname(fmtIPSwap(pubIP));
+        }
         addVpn();
 
         // Client ID
@@ -951,6 +987,7 @@ void ServerPanel::refreshMyInfo()
             if (!srvDesc.isEmpty())
                 html += sp + tr("Description:") + QStringLiteral("\t") + srvDesc + QStringLiteral("<br>");
             html += sp + tr("IP:Port:") + QStringLiteral("\t%1:%2<br>").arg(srvAddr).arg(srvPort);
+            addHostname(srvAddr);
             if (!srvVersion.isEmpty())
                 html += sp + tr("Version:") + QStringLiteral("\t") + srvVersion + QStringLiteral("<br>");
             html += sp + tr("Users:") + QStringLiteral("\t") + fmtNum(srvUsers) + QStringLiteral("<br>");
@@ -993,6 +1030,7 @@ void ServerPanel::refreshMyInfo()
             if (m_kadIP != 0) {
                 html += sp + tr("IP:Port:") + QStringLiteral("\t%1:%2<br>")
                         .arg(fmtIP(m_kadIP)).arg(thePrefs.udpPort());
+                addHostname(fmtIP(m_kadIP));
             }
             // ID (numeric)
             if (m_kadId != 0)
@@ -1016,13 +1054,17 @@ void ServerPanel::refreshMyInfo()
 
     // ---- ed3k Network (no MFC original) ---------------------------------------
     // own section like the dialog's, though ed3k has no servers yet
-    html += NetworkInfoDialog::ed3kHtml(m_ed3kInfo, true);
+    html += NetworkInfoDialog::ed3kHtml(m_ed3kInfo, true, [&](const QString& address) {
+        myAddresses.append(address);
+        return m_myInfoResolver.hostname(address);
+    });
 
     // ---- Web Interface ------------------------------------------------------
     html += QStringLiteral("<br><b>") + tr("Web Interface") + QStringLiteral("</b><br>");
     html += sp + tr("Status:") + QStringLiteral("\t")
         + (thePrefs.webServerEnabled() ? tr("Enabled") : tr("Disabled")) + QStringLiteral("<br>");
 
+    m_myInfoResolver.sync(myAddresses);
     if (html == m_infoHtml)
         return;
     m_infoHtml = html;

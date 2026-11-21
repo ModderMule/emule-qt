@@ -6,6 +6,9 @@
 #include "DetailDialog.h"
 
 #include <QCborMap>
+#include <QHash>
+
+class QGridLayout;
 
 namespace eMule {
 
@@ -17,6 +20,7 @@ class ClientDetailDialog : public DetailDialog {
 public:
     /// Construct from a CBOR details map (as returned by GetClientDetails).
     explicit ClientDetailDialog(const QCborMap& details, QWidget* parent = nullptr);
+    ~ClientDetailDialog() override;
 
     /// Swap the dialog to a different client — the Prev/Next walker's entry point.
     void setDetails(const QCborMap& details) override;
@@ -31,9 +35,15 @@ private:
     [[nodiscard]] QWidget* buildContent(const QCborMap& details);
     /// An ed3k upload queue row (Ed3kUploadsBridge): node, Hello, country, its turn; no eD2K credits.
     [[nodiscard]] QWidget* buildEd3kContent(const QCborMap& details);
+    /// "Hostname" row under Peer IP; only with "Resolve downloaders' hostnames" on.
+    void addHostnameRow(QGridLayout* grid, int row, const QString& addr);
+    /// Reverse DNS of @p addr from the cache; starts the lookup on first use.
+    [[nodiscard]] QString hostnameText(const QString& addr);
 
     QWidget* m_content = nullptr;
     QString  m_cc;   ///< country rows are flag widgets (both views), rebuilt when these change
+    QHash<QString, QString> m_hostnames;     ///< addr -> PTR name; empty = none found
+    QHash<QString, int>     m_hostLookups;   ///< addr -> QHostInfo lookup id, in flight
 };
 
 } // namespace eMule

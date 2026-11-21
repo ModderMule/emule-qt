@@ -11,6 +11,7 @@
 #include <QString>
 
 #include "AbstractTableModel.h"
+#include "utils/HostnameResolver.h"
 
 #include <cstdint>
 #include <utility>
@@ -114,6 +115,10 @@ public:
 
     explicit ClientListModel(ClientListMode mode, QObject* parent = nullptr);
 
+    /// A peer address not looked up yet ("Resolve downloaders' hostnames").
+    [[nodiscard]] bool canResolveHostname(const ClientRow& client) const;
+    void setResolveHostnames(bool enabled);
+
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
                                       int role = Qt::DisplayRole) const override;
@@ -125,6 +130,7 @@ public:
         syncRows(std::move(clients), [](const ClientRow& r) -> QString {
             return r.userHash + u'|' + r.addr + u':' + QString::number(r.port);
         });
+        refreshHostnames();
     }
 
     [[nodiscard]] int clientCount() const { return count(); }
@@ -135,6 +141,8 @@ public:
     /// Shared List: does the peer allow "View Shared Files". Shown only with
     /// "Show more controls".
     [[nodiscard]] int sharedListColumn() const { return baseColumnCount() - 1; }
+    /// Appended after existing columns to preserve saved layouts.
+    [[nodiscard]] int peerIpColumn() const { return baseColumnCount() + extraColumnCount(); }
     /// Columns that exist only with "Show more controls".
     [[nodiscard]] std::vector<int> extColumns() const;
     /// Columns hidden on a fresh layout.
@@ -164,6 +172,12 @@ private:
     [[nodiscard]] static QString lowIdText(const ClientRow& c);
 
     ClientListMode m_mode;
+    HostnameResolver m_resolver;
+
+    /// Rows carrying a peer address, not a service host or a hidden one.
+    [[nodiscard]] static bool hostnameCandidate(const ClientRow& client);
+    void refreshHostnames();
+    void hostnameChanged(const QString& address);
 };
 
 } // namespace eMule

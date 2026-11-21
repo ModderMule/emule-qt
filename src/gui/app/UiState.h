@@ -48,6 +48,8 @@ public:
 
     /// Restore a splitter from saved sizes, connect it to auto-update.
     void bindServerSplitter(QSplitter* splitter);
+    /// Server window: lists | My Info column
+    void bindServerHorzSplitter(QSplitter* splitter);
     void bindKadSplitter(QSplitter* splitter);
     /// The ed3k page of the Kad window: sizes of its own.
     void bindEd3kKadSplitter(QSplitter* splitter);
@@ -282,6 +284,19 @@ public:
 
     /// Country flag next to the client/server icon (IP2Country). Display-only.
     [[nodiscard]] bool showCountryFlags() const { return m_showCountryFlags; }
+    [[nodiscard]] bool resolvePeerHostnames() const { return m_resolvePeerHostnames; }
+    void setResolvePeerHostnames(bool on)
+    {
+        m_resolvePeerHostnames = on;
+        scheduleSave();
+    }
+    /// Server list IP columns show raw IPs though hostnames are resolved.
+    [[nodiscard]] bool serverListRawIps() const { return m_serverListRawIps; }
+    void setServerListRawIps(bool on)
+    {
+        m_serverListRawIps = on;
+        scheduleSave();
+    }
     void setShowCountryFlags(bool on)
     {
         m_showCountryFlags = on;
@@ -566,6 +581,7 @@ private:
     static QByteArray repairedHeaderState(const QByteArray& state);
 
     QList<int> m_serverSplitSizes;
+    QList<int> m_serverHorzSplitSizes;
     QList<int> m_kadSplitSizes;
     QList<int> m_ed3kKadSplitSizes;
     QList<int> m_transferSplitSizes;
@@ -600,6 +616,8 @@ private:
     int m_startCount = 0;
     bool m_lowIdHintDisabled = false;
     bool m_showCountryFlags = true;
+    bool m_resolvePeerHostnames = false;
+    bool m_serverListRawIps = false;
     bool m_showTaskbarProgress = true;
     bool m_showDownloadStatusFilter = false;
     bool m_downloadSortHistory = false;

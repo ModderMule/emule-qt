@@ -14,6 +14,8 @@
 #include <QCborValue>
 #include <QWidget>
 
+#include "utils/HostnameResolver.h"
+
 #include <functional>
 #include <optional>
 #include <utility>
@@ -192,6 +194,7 @@ private:
     uint32_t m_ed2kPublicIP = 0;
     QString m_ed2kServerDesc;
     QString m_ed2kServerAddr;
+    HostnameResolver m_myInfoResolver;   ///< My Info: own IPs + connected server
     uint16_t m_ed2kServerPort = 0;
     QString m_ed2kServerVersion;
     uint32_t m_ed2kServerUsers = 0;

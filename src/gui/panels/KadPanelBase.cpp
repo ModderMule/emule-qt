@@ -77,6 +77,14 @@ void KadPanelBase::switchToBottomTab(int index)
         m_bottomTabWidget->setCurrentIndex(index);
 }
 
+void KadPanelBase::applyDisplayOptions()
+{
+    const bool resolve = theUiState.resolvePeerHostnames();
+    m_lookupGraph->setResolveHostnames(resolve);
+    m_incomingGraph->setResolveHostnames(resolve);
+    m_incomingModel->setResolveHostnames(resolve);
+}
+
 // ---------------------------------------------------------------------------
 // protected
 // ---------------------------------------------------------------------------
@@ -117,6 +125,7 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
         m_topTabWidget->addTab(m_graphStack, tr("▸ Search Details"));
     for (KadGraphBase* graph : {static_cast<KadGraphBase*>(m_lookupGraph), static_cast<KadGraphBase*>(m_incomingGraph)}) {
         graph->setAutoShowLookups(theUiState.kadAutoShowLookups());
+        graph->setResolveHostnames(theUiState.resolvePeerHostnames());
         connect(graph, &KadGraphBase::autoShowLookupsToggled, this, [this](bool on) {
             theUiState.setKadAutoShowLookups(on);
             m_lookupGraph->setAutoShowLookups(on);
@@ -138,14 +147,25 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
 
     // Bottom: our lookups and the requests other nodes sent us
     m_incomingModel = new KadIncomingModel(network, this);
+    m_incomingModel->setResolveHostnames(theUiState.resolvePeerHostnames());
     QLabel* noLabel = nullptr;
     QWidget* incoming = buildListPanel(m_incomingModel, {}, {}, m_incomingView, noLabel);
     auto* incomingView = static_cast<ListTreeView*>(m_incomingView);
     incomingView->setDefaultSort(KadIncomingModel::ColTime, Qt::DescendingOrder);
-    // Time, Type, Key, Name, From, Answer
-    incomingView->bindColumns(network == KadIncomingModel::Network::Ed2k ? QStringLiteral("kadIncoming")
-                                                                         : QStringLiteral("ed3kKadIncoming"),
-                              {70, 120, 240, 240, network == KadIncomingModel::Network::Ed2k ? 40 : 290, 160});
+    // Time, Type, Key, Name, From, Answer (+ IP on ed3k)
+    if (network == KadIncomingModel::Network::Ed2k) {
+        incomingView->bindColumns(QStringLiteral("kadIncoming"), {70, 120, 240, 240, 180, 160});
+        // From was flag-only (40 px) before it got the ip:port: widen a layout saved then
+        if (auto* hdr = incomingView->header(); hdr->sectionSize(KadIncomingModel::ColFrom) < 60)
+            hdr->resizeSection(KadIncomingModel::ColFrom, 180);
+    } else {
+        const QString key = QStringLiteral("ed3kKadIncoming");
+        const bool newIpColumn = isNewColumn(key, KadIncomingModel::ColIp);
+        incomingView->bindColumns(key, {70, 120, 240, 240, 290, 160, 180});
+        // IP before Answer; also into a layout saved before it
+        if (newIpColumn)
+            placeColumn(incomingView, KadIncomingModel::ColIp, KadIncomingModel::ColFrom, 180);
+    }
     m_bottomTabWidget = new QTabWidget;
     m_bottomTabWidget->setDocumentMode(true);
     const QIcon searchIcon = thePrefs.useOriginalIcons() ? skinIcon(QStringLiteral(":/icons/KadCurrentSearches.ico")) : QIcon();
@@ -239,6 +259,20 @@ void KadPanelBase::setContactCount(int count)
 {
     m_contactsLabel->setText(tr("▸ Contacts (%1)").arg(count));
     m_topTabWidget->setTabText(0, tr("▸ Contacts (%1)").arg(count));
+}
+
+bool KadPanelBase::isNewColumn(const QString& stateKey, int column)
+{
+    return !theUiState.hasHeaderState(stateKey) || theUiState.headerStateSectionCount(stateKey) <= column;
+}
+
+void KadPanelBase::placeColumn(QTreeView* view, int column, int after, int width)
+{
+    auto* hdr = view->header();
+    const int from = hdr->visualIndex(column);
+    const int to = hdr->visualIndex(after) + 1;
+    hdr->moveSection(from, from < to ? to - 1 : to);
+    hdr->resizeSection(column, width);
 }
 
 void KadPanelBase::setLookupTabTitle(const QString& lookupTitle)

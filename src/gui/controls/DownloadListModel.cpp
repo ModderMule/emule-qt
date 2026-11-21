@@ -194,6 +194,9 @@ QString sourceTooltipText(const SourceRow& s, bool extended)
                                                ? QStringLiteral("(%1)").arg(DownloadListModel::tr("Unknown")) : s.userName);
     if (s.ed3k)
         info += u'\n' + ed3kNetworkText(s.ed3kAnon, ed3kJoinOf(s.ed3kJoin));
+    info += u'\n' + DownloadListModel::tr("Peer IP: %1").arg(
+        s.ed3kAnon ? DownloadListModel::tr("Hidden")
+                   : s.addr.isEmpty() ? DownloadListModel::tr("Unknown") : s.addr);
     info += QStringLiteral("\n%1:%2:%3\n\n").arg(DownloadListModel::tr("Server"), s.serverAddr.isEmpty()
                                                         ? QStringLiteral("0.0.0.0") : s.serverAddr)
                 .arg(s.serverPort);

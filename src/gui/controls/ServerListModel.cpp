@@ -2,6 +2,7 @@
 #include "controls/ServerListModel.h"
 
 #include "prefs/Preferences.h"
+#include "utils/AddressSortKey.h"
 #include "utils/Appearance.h"
 #include "utils/ColorUtils.h"
 #include "utils/CountryFlags.h"
@@ -16,26 +17,6 @@
 namespace eMule {
 
 namespace {
-
-/// A fixed-width sort key for an address, because the displayed form sorts by
-/// leading digit: "192.168.1.10" lands before "192.168.1.9".
-///
-/// An IPv6 literal has no octets to pad and is left as it is. The key stays a
-/// QString either way, so the column keeps a single type and every IPv4 row
-/// sorts ahead of every IPv6 one — arbitrary, but stable and grouped.
-QString addressSortKey(const QString& ip, uint16_t port)
-{
-    QString host = ip;
-    const QStringList octets = ip.split(QLatin1Char('.'));
-    if (octets.size() == 4) {
-        QStringList padded;
-        padded.reserve(4);
-        for (const QString& octet : octets)
-            padded << QStringLiteral("%1").arg(octet.toUInt(), 3, 10, QLatin1Char('0'));
-        host = padded.join(QLatin1Char('.'));
-    }
-    return QStringLiteral("%1:%2").arg(host).arg(port, 5, 10, QLatin1Char('0'));
-}
 
 /// Strength order, which the wire value is not — it is 0 Normal, 1 High, 2 Low.
 /// MFC sorts this column by strength (ServerListCtrl.cpp:632-645); by name it
@@ -54,6 +35,24 @@ int preferenceRank(int wireValue)
 ServerListModel::ServerListModel(QObject* parent)
     : AbstractTableModel<ServerRow>(parent)
 {
+    connect(&m_resolver, &HostnameResolver::resolved, this, &ServerListModel::hostnameChanged);
+}
+
+void ServerListModel::setResolveHostnames(bool enabled)
+{
+    if (m_resolver.enabled() == enabled)
+        return;
+    m_resolver.setEnabled(enabled);
+    refreshHostnames();
+    refreshAddressColumns();
+}
+
+void ServerListModel::setShowHostnames(bool show)
+{
+    if (m_showHostnames == show)
+        return;
+    m_showHostnames = show;
+    refreshAddressColumns();
 }
 
 QVariant ServerListModel::data(const QModelIndex& index, int role) const
@@ -68,7 +67,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         case ColName:        return r.name;
-        case ColIP:          return QStringLiteral("%1 : %2").arg(r.ip).arg(r.port);
+        case ColIP:          return endpointText(r.ip, r.port, false);
         case ColDescription: return r.description;
         case ColPing:        return r.ping ? QString::number(r.ping) : QString{};
         case ColUsers:       return r.users ? formatShortNumber(r.users) : QString{};
@@ -82,8 +81,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColLowID:       return formatShortNumber(r.lowIdUsers);
         case ColObfuscation: return r.obfuscation ? tr("Yes") : tr("No");
         case ColCountry:     return CountryFlags::columnText(r.cc);
-        case ColIPv6:        return r.addr6.isEmpty() ? QString{}
-                                                      : QStringLiteral("[%1] : %2").arg(r.addr6).arg(r.port);
+        case ColIPv6:        return r.addr6.isEmpty() ? QString{} : endpointText(r.addr6, r.port, true);
         case ColHardFiles:   return formatShortNumber(r.hardFiles);
         case ColVersion:     return r.version;
         default:             break;
@@ -96,7 +94,8 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::UserRole) {
         switch (index.column()) {
         case ColName:        return r.name;
-        case ColIP:          return addressSortKey(r.ip, r.port);
+        case ColIP:          return hostnamesShown() ? m_resolver.displayText(r.ip, addressSortKey(r.ip, r.port))
+                                                 : addressSortKey(r.ip, r.port);
         case ColDescription: return r.description;
         case ColPing:        return r.ping;
         case ColUsers:       return r.users;
@@ -109,7 +108,10 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColLowID:       return r.lowIdUsers;
         case ColObfuscation: return r.obfuscation ? 1 : 0;
         case ColCountry:     return CountryFlags::sortKey(r.cc);
-        case ColIPv6:        return r.addr6;
+        case ColIPv6:        if (r.addr6.isEmpty())
+                                 return QString();
+                             return hostnamesShown() ? m_resolver.displayText(r.addr6, addressSortKey(r.addr6, r.port))
+                                                     : addressSortKey(r.addr6, r.port);
         case ColHardFiles:   return r.hardFiles;
         case ColVersion:     return r.version;
         default:             break;
@@ -124,10 +126,13 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         && !r.cc.isEmpty())
         return CountryFlags::tooltip(r.cc);
 
-    // Both addresses of a dual-stack server
-    if (role == Qt::ToolTipRole && (index.column() == ColIP || index.column() == ColIPv6)
-        && !r.addr6.isEmpty())
-        return QStringLiteral("%1 : %2\n[%3] : %2").arg(r.ip).arg(r.port).arg(r.addr6);
+    // Both addresses of a dual-stack server, each with its hostname
+    if (role == Qt::ToolTipRole && (index.column() == ColIP || index.column() == ColIPv6)) {
+        QString tip = m_resolver.toolTip(r.ip, r.port);
+        if (!r.addr6.isEmpty())
+            tip += QLatin1Char('\n') + m_resolver.toolTip(r.addr6, r.port);
+        return tip;
+    }
 
     // MFC ServerListCtrl.cpp:209-214: light grey once dead, grey from the second failure.
     // deadServerRetries 0 means "never remove" here, so nothing counts as dead.
@@ -180,7 +185,7 @@ QVariant ServerListModel::headerData(int section, Qt::Orientation orientation, i
 
     switch (section) {
     case ColName:        return tr("Server Name");
-    case ColIP:          return tr("IP");
+    case ColIP:          return hostnamesShown() ? tr("Hostname / IP") : tr("IP");
     case ColDescription: return tr("Description");
     case ColPing:        return tr("Ping");
     case ColUsers:       return tr("Users");
@@ -193,7 +198,7 @@ QVariant ServerListModel::headerData(int section, Qt::Orientation orientation, i
     case ColLowID:       return tr("Low ID");
     case ColObfuscation: return tr("Obfuscation");
     case ColCountry:     return tr("Country");
-    case ColIPv6:        return tr("IPv6");
+    case ColIPv6:        return hostnamesShown() ? tr("Hostname / IPv6") : tr("IPv6");
     case ColHardFiles:   return tr("Hard File Limit");
     case ColVersion:     return tr("Version");
     default:             return {};
@@ -247,6 +252,7 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
     // Keyed in place: refreshes arrive on every connect state push, and a reset
     // between the two clicks of a double click eats it.
     syncRows(std::move(rows), [](const ServerRow& r) { return r.serverId; });
+    refreshHostnames();
 
     // Force repaint of foreground color after model reset so the connected
     // server row reliably shows blue through the sort proxy model.
@@ -326,6 +332,50 @@ bool ServerListModel::isEmphasised(const ServerRow& r) const
         return false;
     const QString link = r.ed3kLink.toLower();
     return std::ranges::any_of(m_indexNodeIds, [&](const QString& id) { return link.contains(id); });
+}
+
+QString ServerListModel::endpointText(const QString& address, uint16_t port, bool bracket) const
+{
+    const QString name = hostnamesShown() ? m_resolver.hostname(address) : QString();
+    if (!name.isEmpty())
+        return QStringLiteral("%1 : %2").arg(name).arg(port);
+    return bracket ? QStringLiteral("[%1] : %2").arg(address).arg(port)
+                   : QStringLiteral("%1 : %2").arg(address).arg(port);
+}
+
+void ServerListModel::refreshAddressColumns()
+{
+    emit headerDataChanged(Qt::Horizontal, ColIP, ColIPv6);
+    if (count() > 0) {
+        for (const int col : {int(ColIP), int(ColIPv6)})
+            emit dataChanged(index(0, col), index(count() - 1, col),
+                             {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
+    }
+}
+
+void ServerListModel::refreshHostnames()
+{
+    QStringList addresses;
+    addresses.reserve(count() * 2);
+    for (const auto& r : m_rows) {
+        addresses.append(r.ip);   // a dynIP hostname is skipped by the resolver
+        if (!r.addr6.isEmpty())
+            addresses.append(r.addr6);
+    }
+    m_resolver.sync(addresses);
+}
+
+void ServerListModel::hostnameChanged(const QString& address)
+{
+    for (int row = 0; row < count(); ++row) {
+        const ServerRow& r = m_rows[static_cast<size_t>(row)];
+        if (r.ip == address || r.addr6 == address) {
+            emit dataChanged(index(row, ColIP), index(row, ColIP),
+                             {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
+            emit dataChanged(index(row, ColIPv6), index(row, ColIPv6),
+                             {Qt::DisplayRole, Qt::ToolTipRole, Qt::UserRole});
+        }
+    }
 }
 
 } // namespace eMule

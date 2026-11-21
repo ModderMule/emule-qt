@@ -860,7 +860,8 @@ target_link_libraries(tst_TransferToolbar PRIVATE eMule::Core Qt6::Widgets)
 emule_add_test(tst_KadIncomingGraph FOLDER "GUI"
     SOURCES tst_KadIncomingGraph.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/controls/KadIncomingGraph.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/controls/KadLookupGraph.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/KadLookupGraph.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/HostnameResolver.cpp")
 target_include_directories(tst_KadIncomingGraph PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
 target_link_libraries(tst_KadIncomingGraph PRIVATE eMule::Core Qt6::Widgets)
 
@@ -1135,6 +1136,7 @@ emule_add_test(tst_ListSorting FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/IndexerResultsModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/KadContactsModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/HostnameResolver.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/KadSearchesModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UploadStatusDelegate.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadProgressDelegate.cpp"
@@ -1164,6 +1166,7 @@ emule_add_test(tst_CountryFlags FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ClientListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ServerListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/KadContactsModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/HostnameResolver.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"

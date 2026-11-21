@@ -9,6 +9,8 @@
 
 #include <QCborArray>
 #include <QCborMap>
+
+#include <functional>
 #include "dialogs/RememberedSizeDialog.h"
 
 class QTextBrowser;
@@ -31,8 +33,10 @@ public:
     /// add the server's feature list (MFC NetworkInfoDlg.cpp:182).
     [[nodiscard]] static QString infoHtml(const QCborMap& info, bool extended);
     /// GetNetworkInfo "ed3k" block; empty for a core without it. @p compact: lines for
-    /// the Server window's My Info instead of tables
-    [[nodiscard]] static QString ed3kHtml(const QCborMap& ed3k, bool compact = false);
+    /// the Server window's My Info instead of tables. @p hostnameOf: PTR name of an
+    /// own address, empty if none; set = a "Hostname:" row under IPv4 / IPv6
+    [[nodiscard]] static QString ed3kHtml(const QCborMap& ed3k, bool compact = false,
+                                          const std::function<QString(const QString&)>& hostnameOf = {});
     /// GetNetworkInfo "shared": per network with @p extended, else combined
     [[nodiscard]] static QString sharedHtml(const QCborMap& shared, bool extended, bool compact = false);
 
