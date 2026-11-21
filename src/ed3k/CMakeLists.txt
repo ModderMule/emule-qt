@@ -50,6 +50,9 @@ endif()
 # ed3k.hpp's templates push Ed3kSession.cpp over MSVC's 2^16 sections (C1128)
 if(MSVC)
     target_compile_options(emuleed3k PRIVATE /bigobj)
+    # each TU needs GBs for ed3k.hpp; 5 at once hit C1060 (out of heap) on CI
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS emuleed3k_compile=2)
+    set_property(TARGET emuleed3k PROPERTY JOB_POOL_COMPILE emuleed3k_compile)
 endif()
 
 set_target_properties(emuleed3k PROPERTIES FOLDER "Libraries")

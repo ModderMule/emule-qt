@@ -8,6 +8,7 @@
 #include "controls/LogTextView.h"
 #include "prefs/Preferences.h"
 #include "utils/BadgeIcons.h"
+#include "utils/Clipboard.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -344,7 +345,7 @@ bool Ed3kRoomTab::eventFilter(QObject* watched, QEvent* event)
         }
         const QString author = p->author;
         ours << new QAction(tr("Copy member key"), menu.get());
-        connect(ours.last(), &QAction::triggered, this, [author] { QApplication::clipboard()->setText(author); });
+        connect(ours.last(), &QAction::triggered, this, [author] { Clipboard::setText(author); });
     }
     if (!m_replyTo.isEmpty()) {
         ours << new QAction(tr("Cancel reply"), menu.get());
@@ -443,7 +444,7 @@ void Ed3kRoomTab::buildMemberKeyBar()
     row->addWidget(copy);
     row->addWidget(m_importBtn);
     row->addWidget(close);
-    connect(copy, &QPushButton::clicked, this, [this] { QApplication::clipboard()->setText(m_keyEdit->text()); });
+    connect(copy, &QPushButton::clicked, this, [this] { Clipboard::setText(m_keyEdit->text()); });
     connect(m_importBtn, &QPushButton::clicked, this, &Ed3kRoomTab::importAdmitRequested);
     connect(close, &QPushButton::clicked, m_keyBar, &QWidget::hide);
     insertWidget(0, m_keyBar);

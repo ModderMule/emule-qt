@@ -117,6 +117,9 @@ public:
     /// room list is not in yet: then the link waits for it (membership check first).
     bool openEd3kRoomLink(const QString& link);
 
+    /// True when the room list is in and holds @p link's room (same key + id).
+    [[nodiscard]] bool isEd3kRoomMember(const QString& link) const;
+
     /// --subtab: the tab at @p index (Status, Rooms (ed3k), then channels and rooms); a room
     /// tab opens once the core lists it, so this waits up to 30 s for it.
     void switchToSubTab(int index);

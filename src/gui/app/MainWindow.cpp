@@ -1513,6 +1513,9 @@ void MainWindow::onClipboardChanged()
             if (!m_ipc || !m_ipc->isConnected())
                 return;   // as below: the reconnect re-check picks it up
             m_lastClipboardContents = text;
+            // a room we're in: nothing to do, no tab, no notice (copying links to invite is common)
+            if (m_ircPanel->isEd3kRoomMember(room))
+                return;
             if (m_ircPanel->openEd3kRoomLink(room))
                 switchToTab(TabIRC);
             return;

@@ -247,6 +247,13 @@ void IrcPanel::setIpcClient(IpcClient* ipc)
         selfTestRoomFiles(dir);
 }
 
+bool IrcPanel::isEd3kRoomMember(const QString& link) const
+{
+    return m_roomList && std::ranges::any_of(m_roomList->rooms(), [&](const QCborValue& v) {
+        return sameRoomLink(v.toMap().value(QStringLiteral("link")).toString(), link);
+    });
+}
+
 bool IrcPanel::openEd3kRoomLink(const QString& link)
 {
     // no room list yet (GUI start, node still starting): membership unknown, so wait for it
@@ -577,13 +584,13 @@ void IrcPanel::onEd3kRoomAction(int action, const QString& room)
         break;
     }
     case A::CopyLink:
-        QApplication::clipboard()->setText(row.value(QStringLiteral("link")).toString());
+        Clipboard::setText(row.value(QStringLiteral("link")).toString());
         appendInfo(m_statusKey, row.value(QStringLiteral("private")).toBool()
                                     ? tr("* Room link copied. It holds the room's secret: give it to members only")
                                     : tr("* Room link copied"));
         break;
     case A::CopyMemberKey:
-        QApplication::clipboard()->setText(row.value(QStringLiteral("memberKey")).toString());
+        Clipboard::setText(row.value(QStringLiteral("memberKey")).toString());
         appendInfo(m_statusKey, tr("* Your member key of this room was copied: send it to a moderator to be admitted"));
         break;
     case A::ImportAdmit: {
@@ -957,7 +964,7 @@ void IrcPanel::fillEd3kNickMenu(QMenu& menu, Ed3kRoomTab* tab, const QString& sh
     QAction* title = menu.addAction(skinIcon(QStringLiteral(":/icons/User.ico")), tr("Nick : %1").arg(IrcNickList::bare(shown, IrcServerModes{})));
     title->setEnabled(false);
     menu.addSeparator();
-    menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::CopyMemberKey), tr("Copy member key"), this, [member] { QApplication::clipboard()->setText(member); })->setEnabled(!member.isEmpty());
+    menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::CopyMemberKey), tr("Copy member key"), this, [member] { Clipboard::setText(member); })->setEnabled(!member.isEmpty());
     // §2.5: answer the member's newest post; §6: mute it here alone
     const Ed3kRoomTab::Post* last = member.isEmpty() ? nullptr : tab->lastPostOf(member);
     menu.addAction(skinIcon(QStringLiteral(":/icons/UserMessage.ico")), tr("Reply to last post"), this, [this, tab = QPointer<Ed3kRoomTab>(tab), id = last ? last->id : QString()] {
@@ -1135,7 +1142,7 @@ void IrcPanel::admitEd3kMember(const QString& room, const QString& memberKey)
             return;
         }
         const QString text = r.fieldMap(1).value(QStringLiteral("admit")).toString();
-        QApplication::clipboard()->setText(text);
+        Clipboard::setText(text);
         QMessageBox box(QMessageBox::Information, tr("Admit"),
                         tr("The admit is in the clipboard. Hand it to the newcomer, who imports it "
                            "(Rooms (ed3k) tab, Import admit)."),
