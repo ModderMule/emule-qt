@@ -49,7 +49,11 @@ DownloadRow ed3kDownloadRow(const QCborMap& m)
     // the eD2K status tokens (statusText): verifying shows as "Completing (Hashing)"
     switch (m.value(QStringLiteral("state")).toInteger()) {
     case 1: row.status = QStringLiteral("paused"); row.isPaused = true; break;
-    case 2: row.status = QStringLiteral("completing"); row.fileOp = 1; break;
+    case 2:
+        row.status = QStringLiteral("completing");
+        row.fileOp = m.value(QStringLiteral("copying")).toBool() ? 2 : 1;
+        row.completionPermille = int(m.value(QStringLiteral("completionPermille")).toInteger(-1));
+        break;
     case 3: row.status = QStringLiteral("complete"); row.percentCompleted = 100.0; break;
     case 4: row.status = QStringLiteral("error"); break;
     default: row.status = row.transferringSrcCount > 0 ? QStringLiteral("ready") : QStringLiteral("empty"); break;

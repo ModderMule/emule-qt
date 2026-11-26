@@ -219,6 +219,7 @@ Torrent options › I2P: Direct only / I2P only / I2P and direct.
 - Switching to Direct or I2P-and-direct puts it all back: trackers (by tier), web seeds, only the disable flags strict switched on, DHT re-announce.
 - Add dialog "I2P only" (or the I2P-only-for-new default) = strict from the start: stripped in the add params, web seeds of the loaded torrent swept at `add_torrent_alert`. A torrent flagged only because of an `.i2p` tracker stays non-strict.
 - Older flagged torrents without a strict record: I2P only while mixed mode is off, shown as "I2P and direct" while it is on, as before.
+- Trackers are only added by the user, except the editable I2P list. A magnet's private flag is unknown until metadata: with own trackers the list waits, public = added then, private = never. Asked-for I2P only can't wait (clearnet trackers are set aside), so the list goes in at once and comes out again if metadata says private. Pending state: `BT/i2p-list-wait.json`.
 
 ## Logging
 
@@ -348,3 +349,13 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
 
 - ToDo: Visual Studio projects for `tst_TorrentDetailsGui` (and the other BitTorrent GUI tests)
 - ToDo: a Torrents page in the web UI (the REST routes exist)
+
+## Locate Files (#224)
+
+Torrents list › context menu › **Locate Files...**: a folder on the core's disk is searched for the torrent's unfinished files, so data you already have is not downloaded again. No blake3 record is needed.
+
+- Match: size, then the torrent's own hashes (`session/BtLocateFiles`). v2/hybrid: the file's merkle root. v1: every piece touching the file. A piece shared with a neighbour needs that neighbour too (found, or on disk); otherwise the file is not linked, because libtorrent would later write that piece into the original. Its proved whole pieces are copied into the download instead (`add_piece`, 16 MiB batches read on a worker, libtorrent hashes again); the original is only read. Reply field `copied`.
+- Link: files stay where they are (`rename_file` to the absolute path). Sequence: pause, partial moved to `<name>.located-old`, rename, partial deleted, recheck, previous state restored. `rename_file` refuses while a file is at the old path.
+- Persisted: `located-files.json` and the resume data.
+- **Remove with files keeps found files.** libtorrent's `delete_files` follows absolute renames, so such a torrent is removed with `delete_partfile` and only files under the save path are deleted (`torrent_deleted_alert`).
+- `move_storage` leaves found files where they are. IPC `LocateTorrentFiles` = 823. Test: `tst_BtLocateFiles`.

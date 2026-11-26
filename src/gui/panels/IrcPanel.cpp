@@ -799,7 +799,7 @@ void IrcPanel::setupUi()
 
     // Nick list view
     m_nickModel = new QStringListModel(this);
-    m_nickListView = new QListView(leftWidget);
+    m_nickListView = new NoNeighbourSelect<QListView>(leftWidget);
     SkinColors::bind(m_nickListView, {QStringLiteral("IRCNicksLv"), QStringLiteral("DefLv")}, true);
     m_nickProxy = new RoomNickProxy(this);
     m_nickProxy->setSourceModel(m_nickModel);

@@ -155,6 +155,8 @@ private slots:
     void deadSlot_goesToALowIdWeCanCallBack();
     void deadSlot_keptWhileThePeerIsStillReceiving();
     void deadSlot_cooldownDoublesAndKeepsThePeerOutOfTheNextPick();
+    void deadSlot_keptWhileTheLineHasRoomForAnotherSlot();
+    void deadSlot_productiveSessionRestartsTheCooldown();
     void sessionLimit_waitsWhileTheSlotIsProductiveAndTheLineHasRoom();
 
     // A slot is never opened for a peer we could not dial
@@ -3320,6 +3322,7 @@ void tst_UploadQueue::deadSlot_goesToAWaitingClient()
     SlotGateGuard gates;
     thePrefs.setDynUpEnabled(false);
     thePrefs.setMaxUpload(100);   // a limit, and nothing going out: not full
+    thePrefs.setUploadSlotTargetRate(50);   // ladder: 2 slots, so no room for a third
 
     QueueRankEnv env;
     UploadQueue queue;
@@ -3419,6 +3422,7 @@ void tst_UploadQueue::deadSlot_keptWhileThePeerIsStillReceiving()
     SlotGateGuard gates;
     thePrefs.setDynUpEnabled(false);
     thePrefs.setMaxUpload(100);
+    thePrefs.setUploadSlotTargetRate(50);   // ladder: 2 slots, so no room for a third
 
     QueueRankEnv env;
     UploadQueue queue;
@@ -3467,6 +3471,7 @@ void tst_UploadQueue::deadSlot_staysWithoutSomeoneToTakeIt()
     SlotGateGuard gates;
     thePrefs.setDynUpEnabled(false);
     thePrefs.setMaxUpload(100);
+    thePrefs.setUploadSlotTargetRate(50);   // ladder: 2 slots, so no room for a third
 
     QueueRankEnv env;
     UploadQueue queue;
@@ -3477,6 +3482,10 @@ void tst_UploadQueue::deadSlot_staysWithoutSomeoneToTakeIt()
     auto* idle = env.makeClient(84, file);
     QVERIFY(env.connectSocket(idle));
     QVERIFY(queue.addClientToQueue(idle));
+    auto* working = env.makeClient(83, file);
+    QVERIFY(env.connectSocket(working));
+    QVERIFY(queue.addClientToQueue(working));
+    working->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
     QCOMPARE(queue.waitingUserCount(), 0);
 
     QSignalSpy ended(&queue, &UploadQueue::uploadEnded);
@@ -3508,6 +3517,7 @@ void tst_UploadQueue::deadSlot_goesToALowIdWeCanCallBack()
     SlotGateGuard gates;
     thePrefs.setDynUpEnabled(false);
     thePrefs.setMaxUpload(100);
+    thePrefs.setUploadSlotTargetRate(50);   // ladder: 2 slots, so no room for a third
     const uint16 oldUdp = thePrefs.udpPort();
     const auto restoreUdp = qScopeGuard([&] { thePrefs.setUdpPort(oldUdp); });
     thePrefs.setUdpPort(4672);
@@ -3521,6 +3531,10 @@ void tst_UploadQueue::deadSlot_goesToALowIdWeCanCallBack()
     auto* idle = env.makeClient(88, file);
     QVERIFY(env.connectSocket(idle));
     QVERIFY(queue.addClientToQueue(idle));
+    auto* working = env.makeClient(87, file);
+    QVERIFY(env.connectSocket(working));
+    QVERIFY(queue.addClientToQueue(working));
+    working->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
 
     auto* lowId = env.makeClient(89, file);
     lowId->setUserIDHybrid(5);
@@ -3539,6 +3553,97 @@ void tst_UploadQueue::deadSlot_goesToALowIdWeCanCallBack()
     queue.recycleDeadSlots(t0 + UploadQueue::kDeadSlotMs);
     QCOMPARE(ended.count(), 1);
     QCOMPARE(ended.at(0).at(0).value<eMule::UpDownClient*>(), idle);
+}
+
+// Fast line, few slots: the waiter gets a slot of its own, nobody is evicted for it.
+// A peer pausing between requests lost its slot for up to 16 min, leaving the line idle.
+void tst_UploadQueue::deadSlot_keptWhileTheLineHasRoomForAnotherSlot()
+{
+    SlotGateGuard gates;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(62500);   // 500 Mbit
+
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xEB, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* working = env.makeClient(91, file);
+    auto* idle = env.makeClient(92, file);
+    for (auto* c : {working, idle}) {
+        QVERIFY(env.connectSocket(c));
+        QVERIFY(queue.addClientToQueue(c));
+        QCOMPARE(c->uploadState(), UploadState::Uploading);
+    }
+    working->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+    auto* next = env.makeClient(93, file);
+    QVERIFY(env.connectSocket(next));
+    QVERIFY(queue.addClientToQueue(next));
+    QVERIFY(queue.slotRoomLeft());
+
+    QSignalSpy ended(&queue, &UploadQueue::uploadEnded);
+    const uint64 t0 = getTickCount();
+    queue.recycleDeadSlots(t0);
+    queue.recycleDeadSlots(t0 + 60'000);
+    QCOMPARE(ended.count(), 0);
+    QCOMPARE(idle->uploadState(), UploadState::Uploading);
+    QVERIFY(!queue.isSlotCoolingDown(idle, t0 + 60'000));
+
+    // same line, ed3k holds every other slot the ladder allows: now it goes
+    queue.setForeignSlots(static_cast<int>(queue.ladderSlotCount(0)));
+    QVERIFY(!queue.slotRoomLeft());
+    queue.recycleDeadSlots(t0 + 61'000);
+    QCOMPARE(ended.count(), 1);
+    QCOMPARE(ended.at(0).at(0).value<eMule::UpDownClient*>(), idle);
+}
+
+// A session that sent a part or more lost its slot to a pause, not to idling: the
+// cooldown starts over at kSlotCooldownMs instead of doubling.
+void tst_UploadQueue::deadSlot_productiveSessionRestartsTheCooldown()
+{
+    SlotGateGuard gates;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(0);   // unlimited, nothing going out: no room for a third slot
+
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xEC, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* idle = env.makeClient(94, file);
+    auto* other = env.makeClient(95, file);
+    for (auto* c : {idle, other}) {
+        QVERIFY(env.connectSocket(c));
+        QVERIFY(queue.addClientToQueue(c));
+    }
+    other->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+    auto* next = env.makeClient(96, file);
+    QVERIFY(env.connectSocket(next));
+    QVERIFY(queue.addClientToQueue(next));
+    QVERIFY(!queue.slotRoomLeft());
+
+    // first strike: base wait
+    uint64 t = getTickCount();
+    queue.recycleDeadSlots(t);
+    t += UploadQueue::kDeadSlotMs;
+    queue.recycleDeadSlots(t);
+    QCOMPARE(idle->uploadState(), UploadState::OnUploadQueue);
+    QVERIFY(!queue.isSlotCoolingDown(idle, t + UploadQueue::kSlotCooldownMs));
+
+    // back in a slot, sends a whole part, pauses: base wait again, not twice
+    QVERIFY(queue.removeFromWaitingQueue(idle));
+    QVERIFY(queue.addUpNextClient(idle));
+    QCOMPARE(idle->uploadState(), UploadState::Uploading);
+    idle->addQueueSessionPayloadUp(PARTSIZE);
+    t += UploadQueue::kSlotCooldownMs + 1000;
+    queue.recycleDeadSlots(t);
+    t += UploadQueue::kDeadSlotMs;
+    queue.recycleDeadSlots(t);
+    QCOMPARE(idle->uploadState(), UploadState::OnUploadQueue);
+    QVERIFY(queue.isSlotCoolingDown(idle, t + UploadQueue::kSlotCooldownMs - 1));
+    QVERIFY(!queue.isSlotCoolingDown(idle, t + UploadQueue::kSlotCooldownMs));
 }
 
 void tst_UploadQueue::deadSlot_cooldownDoublesAndKeepsThePeerOutOfTheNextPick()

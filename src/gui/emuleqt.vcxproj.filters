@@ -627,6 +627,9 @@
     <ClInclude Include="controls\AbstractListView.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="controls\NoNeighbourSelect.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="controls\SortableItems.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -715,6 +718,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\ClientIcons.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ClientSelection.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="utils\CountryFlags.h">

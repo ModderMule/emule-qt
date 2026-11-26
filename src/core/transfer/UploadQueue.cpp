@@ -574,31 +574,34 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
 
 bool UploadQueue::underfillAllowsSlot(uint64 curTick) const
 {
-    // USS sizes the line itself; unlimited has no "below the limit"
-    if (!thePrefs.uploadUnderfillSlots() || thePrefs.isDynUpEnabled())
-        return false;
-    const uint32 capKB = uploadCapKB();
-    if (capKB == UNLIMITED || m_underfillSince == 0 || curTick - m_underfillSince < kUnderfillSlotMs)
-        return false;
-    if (static_cast<uint64>(m_datarate) * 100 >= static_cast<uint64>(capKB) * 1024 * kUnderfillSlotPercent)
+    if (m_underfillSince == 0 || curTick - m_underfillSince < kUnderfillSlotMs)
         return false;
     // one per second: a new slot needs time to ramp up before it shows in the rate
     if (curTick < m_lastStartUpload + SEC2MS(1))
         return false;
+    return underfillHasRoom();
+}
 
-    const auto slotCount = static_cast<uint32>(m_uploadingList.size()) + static_cast<uint32>(m_foreignSlots);
-    const uint32 cap = std::min(2 * ladderSlotCount(m_datarate), static_cast<uint32>(MAX_UP_CLIENTS_ALLOWED));
-    if (slotCount >= cap)
+// ===========================================================================
+// slotRoomLeft — forceNewClient()'s verdict without its pacing
+// ===========================================================================
+
+bool UploadQueue::slotRoomLeft() const
+{
+    const int curUploadSlots = static_cast<int>(m_uploadingList.size());
+    if (curUploadSlots < MIN_UP_CLIENTS_ALLOWED)
+        return true;
+    if (!acceptNewClient())
+        return underfillHasRoom();
+    if (theApp.lastCommonRouteFinder && thePrefs.isDynUpEnabled()
+        && !theApp.lastCommonRouteFinder->hasGivenUp()
+        && !theApp.lastCommonRouteFinder->acceptNewClient())
         return false;
-
-    // Nearly all send buffers full: the line itself is the bottleneck, more slots would
-    // not help. A slow peer fills its own buffer too, so some busy sockets are normal.
-    size_t busy = 0;
-    for (const UpDownClient* cur : m_uploadingList) {
-        if (const EMSocket* sock = cur->getFileUploadSocket(); sock && sock->isBusyQuickCheck())
-            ++busy;
-    }
-    return m_uploadingList.empty() || busy * 10 < m_uploadingList.size() * 9;
+    if (slotLadderAllows(curUploadSlots + m_foreignSlots, m_datarate))
+        return true;
+    if (m_highestNumberOfFullyActivatedSlotsSinceLastCall > curUploadSlots)
+        return true;
+    return underfillHasRoom();
 }
 
 // ===========================================================================
@@ -1476,6 +1479,10 @@ void UploadQueue::recycleDeadSlots(uint64 curTick)
     }
     if (!dead || curTick < m_underfillSince + kUnderfillMs)
         return;
+    // A fast line opens a slot for the waiter instead: evicting there only swapped a peer
+    // pausing between requests for a cooldown of up to 16 min (report 64: 7 slots on 500 Mbit).
+    if (slotRoomLeft())
+        return;
 
     // Only for someone: with nobody to take it, the slot is no use to anyone freed.
     // A LowID we can call back counts too: findBestClientInQueue() asks it when nobody
@@ -1493,6 +1500,9 @@ void UploadQueue::recycleDeadSlots(uint64 curTick)
         return curTick - entry.second.lastStrike > kSlotStrikeMemoryMs;
     });
     SlotCooldown& cooldown = m_slotCooldowns[dead->userAddress()];
+    // a session that sent a part or more was worth its slot: no doubling for its pause
+    if (dead->queueSessionPayloadUp() >= PARTSIZE)
+        cooldown.strikes = 0;
     const uint64 wait = std::min<uint64>(uint64{kSlotCooldownMs} << std::min<uint32>(cooldown.strikes, 10),
                                          kSlotCooldownMaxMs);
     ++cooldown.strikes;
@@ -1792,6 +1802,32 @@ const uint8* UploadQueue::servedFileId(const UpDownClient* client)
 {
     return client->blockRequests().empty() ? client->reqUpFileId()
                                            : client->blockRequests().front()->fileID.data();
+}
+
+bool UploadQueue::underfillHasRoom() const
+{
+    // USS sizes the line itself; unlimited has no "below the limit"
+    if (!thePrefs.uploadUnderfillSlots() || thePrefs.isDynUpEnabled())
+        return false;
+    const uint32 capKB = uploadCapKB();
+    if (capKB == UNLIMITED)
+        return false;
+    if (static_cast<uint64>(m_datarate) * 100 >= static_cast<uint64>(capKB) * 1024 * kUnderfillSlotPercent)
+        return false;
+
+    const auto slotCount = static_cast<uint32>(m_uploadingList.size()) + static_cast<uint32>(m_foreignSlots);
+    const uint32 cap = std::min(2 * ladderSlotCount(m_datarate), static_cast<uint32>(MAX_UP_CLIENTS_ALLOWED));
+    if (slotCount >= cap)
+        return false;
+
+    // Nearly all send buffers full: the line itself is the bottleneck, more slots would
+    // not help. A slow peer fills its own buffer too, so some busy sockets are normal.
+    size_t busy = 0;
+    for (const UpDownClient* cur : m_uploadingList) {
+        if (const EMSocket* sock = cur->getFileUploadSocket(); sock && sock->isBusyQuickCheck())
+            ++busy;
+    }
+    return m_uploadingList.empty() || busy * 10 < m_uploadingList.size() * 9;
 }
 
 } // namespace eMule

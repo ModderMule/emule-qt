@@ -722,6 +722,9 @@ void IpcClientHandler::handleGetDownloads(const IpcMessage& msg)
                     if (const QCborValue v = row.value(key); !v.isUndefined())
                         kept.insert(key, v);
                 row = std::move(kept);
+            } else {
+                // joint download: its ed3k peers need the expand arrow too
+                Ed3kBridge::appendJointCounts(row, QByteArray(reinterpret_cast<const char*>(pf->fileHash()), 16));
             }
             files.append(row);
         }

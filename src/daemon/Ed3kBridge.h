@@ -46,6 +46,8 @@ void appendDownloadInfo(QCborMap& details, const QByteArray& md4);
 
 /// The ed3k root (32 B) a joint eD2K download of @p md4 fetches from; empty: none.
 [[nodiscard]] QByteArray jointRoot(const QByteArray& md4);
+/// Download row of @p md4: `ed3kSources`, `ed3kA4af` of its joint root, when above 0.
+void appendJointCounts(QCborMap& row, const QByteArray& md4);
 /// The same for a shared file: `ed3kEnabled` (sharing on), `ed3kRoot` once hashed,
 /// `ed3kAliasPublished`, `ed3kKeywordsPublished`, `ed3kKey` ("Node"/"Anonymous"),
 /// `ed3kJoins` (joinsOf; its eD2K row is the file's `ed2k` ALIAS here).

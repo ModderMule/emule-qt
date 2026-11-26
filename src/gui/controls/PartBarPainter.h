@@ -95,8 +95,9 @@ void paintPartBar(QPainter& painter, const QRect& rect, const QByteArray& parts,
 
 /// MFC's 3 px completion strip along the top of a file bar. Flat: green on a
 /// light grey track. Round: shaded green only, no track (PartFile.cpp DrawStatusBar).
-/// Skipped when the bar is too short to hold it.
-inline void paintProgressStrip(QPainter& painter, const QRect& rect, double percent)
+/// Skipped when the bar is too short to hold it. @p track: a grey track in round mode too,
+/// for a strip over an all-green bar (final hash/copy), where green alone would not show.
+inline void paintProgressStrip(QPainter& painter, const QRect& rect, double percent, bool track = false)
 {
     if (rect.height() <= kProgressStripHeight)
         return;
@@ -109,6 +110,8 @@ inline void paintProgressStrip(QPainter& painter, const QRect& rect, double perc
         painter.fillRect(QRect(strip.left(), strip.top(), filled, strip.height()),
                          QColor(0, 150, 0));
     } else {
+        if (track)
+            BarShader::fillBarRect(painter, strip, QColor(224, 224, 224), false, barDepth3D());
         BarShader::fillBarRect(painter, QRect(strip.left(), strip.top(), filled, strip.height()),
                                QColor(0, 224, 0), false, barDepth3D());
     }

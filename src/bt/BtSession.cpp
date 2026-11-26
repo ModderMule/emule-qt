@@ -2,6 +2,7 @@
 
 #include "add/BtAddSource.h"
 #include "session/BtJoinDiskIo.h"
+#include "session/BtLocateFiles.h"
 #include "session/BtPeerGate.h"
 #include "session/BtSettingsMap.h"
 #include "torrent/BtTorrentView.h"
@@ -34,12 +35,15 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPointer>
 #include <QSaveFile>
 #include <QSet>
 #include <QTcpServer>
+#include <QThreadPool>
 #include <QUdpSocket>
 
 #include <algorithm>
@@ -104,10 +108,15 @@ const QString kResumeSuffix = QStringLiteral(".fastresume");
 const QString kOptionsFile = QStringLiteral("torrent-options.json");
 /// the ed3k:file links torrents were added with (torrent.md §4.1)
 const QString kLinksFile = QStringLiteral("ed3k-links.json");
+/// #224: torrent files used where they were found
+const QString kLocatedFile = QStringLiteral("located-files.json");
+/// a partial moved off the torrent's path while its file is linked
+const QString kLocatedAside = QStringLiteral(".located-old");
 /// magnets to stop once their metadata is in (BtAddSource::applyStopAfterMetadata)
 const QString kStopsFile = QStringLiteral("stop-after-metadata.json");
 /// strict I2P only torrents: the clearnet trackers and web seeds set aside (BtSession::Impl::I2pOnly)
 const QString kI2pOnlyFile = QStringLiteral("i2p-only.json");
+const QString kI2pListWaitFile = QStringLiteral("i2p-list-wait.json");
 /// what a strict I2P only torrent switches off: peers it would find in the clear
 constexpr lt::torrent_flags_t kI2pOnlyOff = lt::torrent_flags::disable_dht | lt::torrent_flags::disable_pex
                                           | lt::torrent_flags::disable_lsd;
@@ -414,6 +423,9 @@ struct BtSession::Impl {
         const auto r = rows.find(id);
         if (r != rows.end() && r->second.i2p)
             return settings.i2pMixed ? BtI2pMode::Mixed : BtI2pMode::I2pOnly;
+        // list held until metadata: still mixed
+        if (settings.i2pEnabled && settings.i2pMixed && i2pListWait.contains(id))
+            return BtI2pMode::Mixed;
         const auto& trackers = ask(id, Ask::Trackers).trackers;
         const bool any = std::ranges::any_of(trackers, [](const lt::announce_entry& a) { return BtAddSource::isI2pTracker(a.url); });
         return any ? BtI2pMode::Mixed : BtI2pMode::Direct;
@@ -441,6 +453,180 @@ struct BtSession::Impl {
             root.insert(id, link);
         const QByteArray json = QJsonDocument(root).toJson(QJsonDocument::Compact);
         writeQueued(linksPath(), json);
+    }
+    /// #224: file index → path used in place (kLocatedFile)
+    std::map<QString, std::map<int, QString>> located;
+    /// a Locate Files run: scan on a worker, then pause, link, recheck
+    struct Locating {
+        quint64 run = 0;
+        std::shared_ptr<std::atomic<bool>> cancel = std::make_shared<std::atomic<bool>>(false);
+        std::function<void(std::optional<BtLocateReport>)> done;
+        BtLocateReport report;
+        std::map<int, QString> links;   ///< renames asked, or still to ask
+        std::map<int, QString> aside;   ///< file → its partial, moved off the path
+        std::map<int, BtLocateCopy> copies;   ///< not proved whole: pieces still to copy
+        std::map<int, int> copyWait;          ///< piece given to add_piece → its file
+        std::set<int> copiedFiles;
+        quint64 copyBatch = 0;
+        bool waitingPause = false;
+        bool wasPaused = false;
+        bool wasAuto = false;
+    };
+    std::map<QString, Locating> locating;
+    quint64 locateRuns = 0;
+    /// removed with files, some linked: libtorrent deleted only the part file, these go after
+    struct DeleteAfter {
+        QString savePath;
+        QStringList paths;
+    };
+    std::map<QString, DeleteAfter> deleteAfter;
+    [[nodiscard]] QString locatedPath() const { return QDir(settings.stateDir).filePath(kLocatedFile); }
+    void loadLocated()
+    {
+        located.clear();
+        const QJsonObject root = QJsonDocument::fromJson(readAll(locatedPath())).object();
+        for (auto it = root.begin(); it != root.end(); ++it) {
+            const QJsonObject files = it.value().toObject();
+            for (auto f = files.begin(); f != files.end(); ++f)
+                located[it.key()][f.key().toInt()] = f.value().toString();
+        }
+    }
+    void saveLocated() const
+    {
+        QJsonObject root;
+        for (const auto& [id, files] : located) {
+            QJsonObject o;
+            for (const auto& [f, path] : files)
+                o.insert(QString::number(f), path);
+            root.insert(id, o);
+        }
+        writeQueued(locatedPath(), QJsonDocument(root).toJson(QJsonDocument::Compact));
+    }
+    /// Where file @p f is: its found place, else under the save path.
+    [[nodiscard]] QString filePath(const QString& id, const lt::file_storage& fs, lt::file_index_t f, const QString& save) const
+    {
+        if (const auto it = located.find(id); it != located.end())
+            if (const auto l = it->second.find(int(f)); l != it->second.end())
+                return l->second;
+        return QString::fromStdString(fs.file_path(f, save.toStdString()));
+    }
+    /// Torrent stopped: partials off the path, libtorrent pointed at the found files.
+    void linkLocated(const QString& id)
+    {
+        const auto it = locating.find(id);
+        const auto h = handle(id);
+        const auto ti = torrentFile(id);
+        const auto row = rows.find(id);
+        if (it == locating.end())
+            return;
+        Locating& l = it->second;
+        l.waitingPause = false;
+        if (!h.is_valid() || !ti || row == rows.end()) {
+            l.report.failed += int(l.links.size());
+            l.links.clear();
+            finishLocate(id);
+            return;
+        }
+        const lt::file_storage& fs = ti->layout();
+        // was: rename_file straight on: refused (file_exists) while a partial is at the old path
+        for (auto link = l.links.begin(); link != l.links.end();) {
+            const QString old = filePath(id, fs, lt::file_index_t(link->first), row->second.savePath);
+            if (QFileInfo::exists(old)) {
+                const QString aside = old + kLocatedAside;
+                QFile::remove(aside);
+                if (!QFile::rename(old, aside)) {
+                    logWarning(QStringLiteral("BitTorrent: could not move \"%1\" aside").arg(old));
+                    ++l.report.failed;
+                    link = l.links.erase(link);
+                    continue;
+                }
+                l.aside[link->first] = aside;
+            }
+            ++link;
+        }
+        if (l.links.empty()) {
+            finishLocate(id);
+            return;
+        }
+        for (const auto& [f, path] : l.links)
+            h.rename_file(lt::file_index_t(f), path.toStdString());
+    }
+    void fileLinked(const QString& id, int file, bool ok)
+    {
+        const auto it = locating.find(id);
+        if (it == locating.end())
+            return;
+        Locating& l = it->second;
+        const auto link = l.links.find(file);
+        if (link == l.links.end())
+            return;
+        const auto aside = l.aside.find(file);
+        if (ok) {
+            located[id][file] = link->second;
+            ++l.report.linked;
+            if (aside != l.aside.end())
+                QFile::remove(aside->second);
+        } else {
+            ++l.report.failed;
+            if (aside != l.aside.end()) {
+                QString back = aside->second;
+                back.chop(kLocatedAside.size());
+                QFile::rename(aside->second, back);
+            }
+        }
+        if (aside != l.aside.end())
+            l.aside.erase(aside);
+        l.links.erase(link);
+        if (l.links.empty())
+            finishLocate(id);
+    }
+    void finishLocate(const QString& id)
+    {
+        auto node = locating.extract(id);
+        if (node.empty())
+            return;
+        Locating& l = node.mapped();
+        if (const auto h = handle(id); h.is_valid()) {
+            if (l.report.linked > 0) {
+                saveLocated();
+                h.clear_error();
+                h.force_recheck();
+                saveResume(h);
+            } else if (l.report.copied > 0) {
+                saveResume(h);
+            }
+            if (l.wasAuto)
+                h.set_flags(lt::torrent_flags::auto_managed);
+            if (!l.wasPaused)
+                h.resume();
+        }
+        if (l.done)
+            l.done(l.report);
+    }
+    /// A piece given to add_piece came back: the batch done, the next one.
+    void pieceCopied(BtSession* q, const QString& id, int piece, bool ok)
+    {
+        const auto it = locating.find(id);
+        if (it == locating.end())
+            return;
+        Locating& l = it->second;
+        const auto w = l.copyWait.find(piece);
+        if (w == l.copyWait.end())
+            return;
+        if (ok)
+            l.copiedFiles.insert(w->second);
+        l.copyWait.erase(w);
+        if (l.copyWait.empty())
+            QMetaObject::invokeMethod(q, [q, id] { q->locateCopyNext(id); }, Qt::QueuedConnection);
+    }
+    void cancelLocate(const QString& id)
+    {
+        auto node = locating.extract(id);
+        if (node.empty())
+            return;
+        node.mapped().cancel->store(true);
+        if (node.mapped().done)
+            node.mapped().done(std::nullopt);
     }
     /// ids stopped at metadata (kStopsFile); default_dont_download is not in the resume data
     QSet<QString> stopAtMeta;
@@ -533,6 +719,8 @@ struct BtSession::Impl {
         std::vector<lt::download_priority_t> priorities;
         std::vector<lt::peer_info> peers;
         std::vector<lt::announce_entry> trackers;
+        int trackerAsks = 0;            ///< post_trackers without their alert yet
+        int staleTrackerAsks = 0;       ///< of those, asked before our last edit: ignored
         std::vector<int> availability;
         std::array<QElapsedTimer, 4> asked;
     };
@@ -596,7 +784,10 @@ struct BtSession::Impl {
             h.post_file_priorities();
             break;
         case Ask::Peers: h.post_peer_info(); break;
-        case Ask::Trackers: h.post_trackers(); break;
+        case Ask::Trackers:
+            ++dt.trackerAsks;
+            h.post_trackers();
+            break;
         case Ask::Availability:
             // piece_availability asserts without metadata
             if (const auto ti = h.torrent_file(); ti && ti->is_valid())
@@ -604,6 +795,13 @@ struct BtSession::Impl {
             break;
         }
         return dt;
+    }
+    /// our list after replace_trackers: answers still on their way show the old one
+    void setCachedTrackers(const QString& id, std::vector<lt::announce_entry> trackers)
+    {
+        Detail& dt = details[id];
+        dt.trackers = std::move(trackers);
+        dt.staleTrackerAsks = dt.trackerAsks;
     }
     /// what an add knows already: trackers and priorities before libtorrent's first answer
     void seedDetail(const QString& id, const lt::add_torrent_params& p)
@@ -662,6 +860,64 @@ struct BtSession::Impl {
     [[nodiscard]] QString i2pOnlyPath() const { return QDir(settings.stateDir).filePath(kI2pOnlyFile); }
     void loadI2pOnly();
     void saveI2pOnly() const;
+    /// magnets without metadata: URLs of the I2P list added so far; empty = list held back
+    std::map<QString, QStringList> i2pListWait;
+    [[nodiscard]] QString i2pListWaitPath() const { return QDir(settings.stateDir).filePath(kI2pListWaitFile); }
+    void loadI2pListWait()
+    {
+        i2pListWait.clear();
+        const QJsonObject root = QJsonDocument::fromJson(readAll(i2pListWaitPath())).object();
+        for (auto it = root.begin(); it != root.end(); ++it) {
+            QStringList urls;
+            for (const QJsonValue& v : it.value().toArray())
+                urls << v.toString();
+            i2pListWait[it.key()] = urls;
+        }
+    }
+    void saveI2pListWait() const
+    {
+        if (i2pListWait.empty()) {
+            BackgroundFileWriter::instance().discard(i2pListWaitPath());
+            QFile::remove(i2pListWaitPath());
+            return;
+        }
+        QJsonObject root;
+        for (const auto& [id, urls] : i2pListWait)
+            root.insert(id, QJsonArray::fromStringList(urls));
+        writeQueued(i2pListWaitPath(), QJsonDocument(root).toJson(QJsonDocument::Compact));
+    }
+    void forgetI2pListWait(const QString& id)
+    {
+        if (i2pListWait.erase(id) > 0)
+            saveI2pListWait();
+    }
+    /// resume data with metadata, the wait not settled before the core stopped
+    void settleI2pList(lt::add_torrent_params& atp, const QString& id)
+    {
+        const auto it = i2pListWait.find(id);
+        if (!atp.ti || it == i2pListWait.end())
+            return;
+        atp.tracker_tiers.resize(atp.trackers.size(), 0);
+        if (atp.ti->priv()) {
+            for (std::size_t i = atp.trackers.size(); i-- > 0;) {
+                if (!it->second.contains(QString::fromStdString(atp.trackers[i])))
+                    continue;
+                atp.trackers.erase(atp.trackers.begin() + static_cast<std::ptrdiff_t>(i));
+                atp.tracker_tiers.erase(atp.tracker_tiers.begin() + static_cast<std::ptrdiff_t>(i));
+            }
+        } else if (it->second.isEmpty() && settings.i2pEnabled
+                   && (settings.i2pMixed || (atp.flags & lt::torrent_flags::i2p_torrent))) {
+            for (const QString& url : settings.i2pTrackers) {
+                const std::string u = url.trimmed().toStdString();
+                if (u.empty() || std::ranges::find(atp.trackers, u) != atp.trackers.end())
+                    continue;
+                atp.trackers.push_back(u);
+                atp.tracker_tiers.push_back(0);
+            }
+        }
+        i2pListWait.erase(it);
+        saveI2pListWait();
+    }
     /// a new torrent I2P only: clearnet trackers and web seeds out of @p atp into @p s
     static void stripForI2pOnly(lt::add_torrent_params& atp, I2pOnly& s);
     /// @p id (listed) becomes strict I2P only, or sets aside what came since. Sync calls
@@ -674,6 +930,11 @@ struct BtSession::Impl {
     /// switch @p wanted files of a listed torrent on, the others as they are
     void wantFiles(const lt::torrent_handle& h, const QString& id, const QList<int>& wanted);
     void enforceSeedLimits(const lt::torrent_status& st, const BtTorrentRow& row);
+    struct SeedLimitHit {
+        bool ratio = false;
+        bool time = false;
+    };
+    [[nodiscard]] SeedLimitHit seedLimitHit(const BtTorrentRow& row) const;
     /// tracker alerts of .i2p trackers: remember an INVALID_KEY, forget it on a reply
     void noteI2pName(const lt::alert* a);
     /// announce the remembered misses again, past libtorrent's backoff
@@ -792,7 +1053,9 @@ void BtSession::start(const BtSettings& settings)
 
     d->loadSeedLimits();
     d->loadI2pOnly();
+    d->loadI2pListWait();
     d->loadLinks();
+    d->loadLocated();
     d->loadStops();
     const qsizetype stopsAtLoad = d->stopAtMeta.size();
 
@@ -821,6 +1084,7 @@ void BtSession::start(const BtSettings& settings)
                 d->stopAtMeta.remove(id);
             }
         }
+        d->settleI2pList(atp, BtTorrentView::idOf(atp.ti ? atp.ti->info_hashes() : atp.info_hashes));
         // older runs put all I2P trackers in one tier: only the first one was asked
         BtAddSource::spreadI2pTiers(atp.trackers, atp.tracker_tiers);
         d->defaultConnections(atp);
@@ -846,6 +1110,8 @@ void BtSession::stop()
 {
     if (!d->ses)
         return;
+    while (!d->locating.empty())
+        d->cancelLocate(d->locating.begin()->first);
     d->timer->stop();
     d->ses->pause();
     // what alerts queued lands first: the writes below must not be overtaken
@@ -938,6 +1204,10 @@ void BtSession::applySettings(const BtSettings& settings)
     if (d->settings.i2pSamHost != settings.i2pSamHost || d->settings.i2pSamPort != settings.i2pSamPort
         || d->settings.i2pEnabled != settings.i2pEnabled)
         d->i2pError.clear();
+    // a new global limit is the user's word: it applies again
+    if (d->settings.seedRatioPercent != settings.seedRatioPercent
+        || d->settings.seedTimeLimitMinutes != settings.seedTimeLimitMinutes)
+        d->limitOverride.clear();
     d->settings = settings;
     if (!d->ses)
         return;
@@ -1138,7 +1408,25 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     if (!d->ses || (!h.is_valid() && pending == d->adding.end()))
         return false;
     const lt::info_hash_t hashes = d->hashesOf(id);
-    const lt::remove_flags_t flags = deleteFiles ? lt::session_handle::delete_files : lt::remove_flags_t{};
+    d->cancelLocate(id);
+    lt::remove_flags_t flags = deleteFiles ? lt::session_handle::delete_files : lt::remove_flags_t{};
+    // libtorrent's delete_files follows renames to absolute paths: it would delete the user's
+    // originals. Only what lies under the save path goes (torrent_deleted_alert).
+    if (const auto linked = d->located.find(id); linked != d->located.end()) {
+        const auto ti = d->torrentFile(id);
+        const auto row = d->rows.find(id);
+        if (deleteFiles && ti && ti->is_valid() && row != d->rows.end()) {
+            flags = lt::session_handle::delete_partfile;
+            Impl::DeleteAfter after{row->second.savePath, {}};
+            const lt::file_storage& fs = ti->layout();
+            for (const lt::file_index_t f : fs.file_range())
+                if (!fs.pad_file_at(f) && !linked->second.contains(int(f)))
+                    after.paths << QString::fromStdString(fs.file_path(f, after.savePath.toStdString()));
+            d->deleteAfter[id] = std::move(after);
+        }
+        d->located.erase(linked);
+        d->saveLocated();
+    }
     if (h.is_valid())
         d->ses->remove_torrent(h, flags);
     else
@@ -1162,6 +1450,7 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
         d->saveLinks();
     if (d->stopAtMeta.remove(id))
         d->saveStops();
+    d->forgetI2pListWait(id);
     if (auto* disk = d->io.load(); disk && d->joins.contains(id))
         disk->detach(hashes);
     d->joins.erase(id);
@@ -1188,14 +1477,18 @@ bool BtSession::pause(const QString& id)
     return true;
 }
 
-bool BtSession::resume(const QString& id)
+bool BtSession::resume(const QString& id, bool byUser)
 {
     const auto h = d->handle(id);
     if (!h.is_valid())
         return false;
-    // a seed the user resumes keeps seeding past the limits
-    if (auto it = d->rows.find(id); it != d->rows.end() && it->second.paused && it->second.size > 0 && it->second.done >= it->second.size)
-        d->limitOverride.insert(id);
+    // only a seed the user resumes at its limit seeds past it
+    if (auto it = d->rows.find(id); byUser && it != d->rows.end() && it->second.paused
+        && it->second.wantedDone) {
+        const auto hit = d->seedLimitHit(it->second);
+        if (hit.ratio || hit.time)
+            d->limitOverride.insert(id);
+    }
     d->metaStopped.remove(id);
     // a write error (disk full) is tried again
     h.clear_error();
@@ -1203,6 +1496,70 @@ bool BtSession::resume(const QString& id)
     h.set_flags(lt::torrent_flags::auto_managed);
     h.resume();
     return true;
+}
+
+void BtSession::locateFiles(const QString& id, const QStringList& folders, std::function<void(std::optional<BtLocateReport>)> done)
+{
+    const auto h = d->handle(id);
+    const auto ti = d->torrentFile(id);
+    const auto row = d->rows.find(id);
+    if (!h.is_valid() || !ti || !ti->is_valid() || row == d->rows.end() || d->locating.contains(id) || folders.isEmpty()) {
+        done(std::nullopt);
+        return;
+    }
+    const lt::file_storage& fs = ti->layout();
+    const QBitArray have = havePieces(id);
+    const auto linked = d->located.find(id);
+    std::vector<int> targets;
+    std::map<int, QString> current;
+    for (const lt::file_index_t f : fs.file_range()) {
+        if (fs.pad_file_at(f))
+            continue;
+        current[int(f)] = d->filePath(id, fs, f, row->second.savePath);
+        if (fs.file_size(f) <= 0 || (linked != d->located.end() && linked->second.contains(int(f))))
+            continue;
+        const int first = int(fs.map_file(f, 0, 0).piece);
+        const int last = int(fs.map_file(f, fs.file_size(f) - 1, 0).piece);
+        bool complete = have.size() > last;
+        for (int p = first; complete && p <= last; ++p)
+            complete = have.testBit(p);
+        if (!complete)
+            targets.push_back(int(f));
+    }
+    if (targets.empty()) {
+        done(BtLocateReport{});
+        return;
+    }
+    auto& l = d->locating[id];
+    l.run = ++d->locateRuns;
+    l.done = std::move(done);
+    const quint64 run = l.run;
+    const auto cancel = l.cancel;
+    QPointer<BtSession> self(this);
+    QThreadPool::globalInstance()->start([self, id, run, cancel, ti, folders, targets, current] {
+        BtLocateScan scan = locateTorrentFiles(*ti, folders, targets, current, cancel.get());
+        QMetaObject::invokeMethod(self.data(), [self, id, run, scan = std::move(scan)] {
+            if (!self)
+                return;
+            const auto it = self->d->locating.find(id);
+            if (it == self->d->locating.end() || it->second.run != run)
+                return;
+            auto& st = it->second;
+            st.report.files = scan.files;
+            st.report.candidates = scan.candidates;
+            st.report.hashed = scan.hashed;
+            st.report.partial = scan.partial;
+            st.links = scan.found;
+            st.copies = scan.copies;
+            self->locateCopyNext(id);
+        }, Qt::QueuedConnection);
+    });
+}
+
+std::map<int, QString> BtSession::locatedFiles(const QString& id) const
+{
+    const auto it = d->located.find(id);
+    return it == d->located.end() ? std::map<int, QString>{} : it->second;
 }
 
 bool BtSession::recheck(const QString& id)
@@ -1230,7 +1587,9 @@ QStringList BtSession::skipDeletedFile(const QString& path)
         if (!h.is_valid() || row == d->rows.end())
             continue;
         const QString savePath = QDir::cleanPath(QDir::fromNativeSeparators(row->second.savePath));
-        if (savePath.isEmpty() || !target.startsWith(savePath + u'/', kPathCase))
+        const auto linkedHere = d->located.find(id);
+        const bool hasLinks = linkedHere != d->located.end();
+        if (!hasLinks && (savePath.isEmpty() || !target.startsWith(savePath + u'/', kPathCase)))
             continue;
         const auto ti = d->torrentFile(id);
         if (!ti || !ti->is_valid())
@@ -1239,7 +1598,17 @@ QStringList BtSession::skipDeletedFile(const QString& path)
         const lt::file_storage& fs = ti->layout();
         std::optional<lt::file_index_t> hit;
         for (const lt::file_index_t f : fs.file_range()) {
-            if (!fs.pad_file_at(f)
+            // a file used in place is only at its found path
+            if (hasLinks) {
+                if (const auto l = linkedHere->second.find(int(f)); l != linkedHere->second.end()) {
+                    if (!fs.pad_file_at(f) && QDir::cleanPath(QDir::fromNativeSeparators(l->second)).compare(target, kPathCase) == 0) {
+                        hit = f;
+                        break;
+                    }
+                    continue;
+                }
+            }
+            if (!fs.pad_file_at(f) && target.startsWith(savePath + u'/', kPathCase)
                 && QDir::fromNativeSeparators(QString::fromStdString(fs.file_path(f))).compare(relative, kPathCase) == 0) {
                 hit = f;
                 break;
@@ -1397,11 +1766,30 @@ void BtSession::setI2pMode(const QString& id, BtI2pMode mode)
             if (BtAddSource::isI2pTracker(a.url))
                 i2pUrls << QString::fromStdString(a.url);
         removeTrackers(id, i2pUrls);
+        d->forgetI2pListWait(id);
         d->peerGate.drop(h.info_hashes(), BtPeerGate::Drop::I2p);
     } else {
         // private torrents keep their own trackers (as BtAddSource::applyI2p)
-        if (const auto ti = d->torrentFile(id); !ti || !ti->priv())
+        if (const auto ti = d->torrentFile(id); ti && !ti->priv()) {
             addTrackers(id, d->settings.i2pTrackers);
+        } else if (!ti) {
+            // no metadata: same rule as a new magnet
+            QStringList missing;
+            bool ownTracker = false;
+            const auto& current = d->ask(id, Impl::Ask::Trackers).trackers;
+            for (const auto& a : current)
+                ownTracker |= !d->settings.i2pTrackers.contains(QString::fromStdString(a.url));
+            for (const QString& url : d->settings.i2pTrackers)
+                if (std::ranges::find(current, url.toStdString(), &lt::announce_entry::url) == current.end())
+                    missing << url;
+            if (!flag && ownTracker) {
+                d->i2pListWait.try_emplace(id);
+            } else if (!missing.isEmpty()) {
+                addTrackers(id, missing);
+                d->i2pListWait[id] << missing;
+            }
+            d->saveI2pListWait();
+        }
         if (flag) {
             d->enterI2pOnly(id, h);
             d->peerGate.drop(h.info_hashes(), BtPeerGate::Drop::Direct);
@@ -1484,7 +1872,7 @@ std::optional<bool> BtSession::editTrackers(const QString& id, const BtTrackerEd
         added = true;
     }
     h.replace_trackers(next);
-    d->details[id].trackers = next;
+    d->setCachedTrackers(id, next);
     if (added)
         h.force_reannounce();
     d->saveResume(h);
@@ -1683,7 +2071,7 @@ std::optional<BtLayout> BtSession::layout(const QString& id) const
     out.pieces = ti->num_pieces();
     out.total = fs.total_size();
     for (const lt::file_index_t f : fs.file_range())
-        out.files.append({QString::fromStdString(fs.file_path(f, savePath)), fs.file_size(f), fs.file_offset(f), fs.pad_file_at(f)});
+        out.files.append({d->filePath(id, fs, f, row->second.savePath), fs.file_size(f), fs.file_offset(f), fs.pad_file_at(f)});
     return out;
 }
 
@@ -1724,7 +2112,7 @@ std::optional<BtStreamSpan> BtSession::streamFrom(const QString& id, int fileInd
     const lt::file_index_t file(fileIndex);
 
     BtStreamSpan out;
-    out.path = QString::fromStdString(fs.file_path(file, row->second.savePath.toStdString()));
+    out.path = d->filePath(id, fs, file, row->second.savePath);
     const auto name = fs.file_name(file);
     out.name = QString::fromUtf8(name.data(), qsizetype(name.size()));
     out.size = fs.file_size(file);
@@ -1902,6 +2290,7 @@ void BtSession::drainAlerts()
                         d->saveLinks();
                     if (d->stopAtMeta.remove(id))
                         d->saveStops();
+                    d->forgetI2pListWait(id);
                     d->i2pOnlySweep.remove(id);
                     if (d->i2pOnly.erase(id) > 0) {
                         d->peerGate.setStrict(pending.mapped().hashes, false);
@@ -1975,6 +2364,19 @@ void BtSession::drainAlerts()
             }
         } else if (auto* md = lt::alert_cast<lt::metadata_received_alert>(a)) {
             const QString id = BtTorrentView::idOf(md->handle.info_hashes());
+            if (const auto wait = d->i2pListWait.find(id); wait != d->i2pListWait.end()) {
+                const QStringList added = wait->second;
+                d->i2pListWait.erase(wait);
+                d->saveI2pListWait();
+                const auto ti = md->handle.torrent_file();
+                const auto row = d->rows.find(id);
+                const bool wantsList = d->settings.i2pEnabled
+                                    && (d->settings.i2pMixed || (row != d->rows.end() && row->second.i2p));
+                if (ti && ti->priv())
+                    removeTrackers(id, added);
+                else if (added.isEmpty() && wantsList)
+                    addTrackers(id, d->settings.i2pTrackers);
+            }
             if (d->stopAtMeta.contains(id))
                 d->stopAtMetadata(md->handle, id);
             d->saveResume(md->handle);
@@ -1988,6 +2390,7 @@ void BtSession::drainAlerts()
             d->unflushed[id].insert(int(pf->piece_index));
             if (d->joins.contains(id))
                 emit pieceResult(id, static_cast<int>(pf->piece_index), true);
+            d->pieceCopied(this, id, int(pf->piece_index), true);
         } else if (auto* tc = lt::alert_cast<lt::torrent_checked_alert>(a)) {
             // torrentChecked once the pieces of the check are in (post_status asks all flags)
             if (const QString id = BtTorrentView::idOf(tc->handle.info_hashes()); d->joins.contains(id)) {
@@ -2008,8 +2411,14 @@ void BtSession::drainAlerts()
             if (auto dt = d->details.find(BtTorrentView::idOf(pi->handle.info_hashes())); dt != d->details.end())
                 dt->second.peers = pi->peer_info;
         } else if (auto* tl = lt::alert_cast<lt::tracker_list_alert>(a)) {
-            if (auto dt = d->details.find(BtTorrentView::idOf(tl->handle.info_hashes())); dt != d->details.end())
-                dt->second.trackers = tl->trackers;
+            if (auto dt = d->details.find(BtTorrentView::idOf(tl->handle.info_hashes())); dt != d->details.end()) {
+                Impl::Detail& detail = dt->second;
+                detail.trackerAsks = std::max(detail.trackerAsks - 1, 0);
+                if (detail.staleTrackerAsks > 0)
+                    --detail.staleTrackerAsks;
+                else
+                    detail.trackers = tl->trackers;
+            }
         } else if (auto* pa = lt::alert_cast<lt::piece_availability_alert>(a)) {
             if (auto dt = d->details.find(BtTorrentView::idOf(pa->handle.info_hashes())); dt != d->details.end())
                 dt->second.availability = pa->piece_availability;
@@ -2078,6 +2487,31 @@ void BtSession::drainAlerts()
             d->saveResume(sm->handle);   // the new save_path survives a restart
             sm->handle.post_status();
             emit torrentChanged(id);
+        } else if (auto* tp = lt::alert_cast<lt::torrent_paused_alert>(a)) {
+            const QString id = BtTorrentView::idOf(tp->handle.info_hashes());
+            if (const auto l = d->locating.find(id); l != d->locating.end() && l->second.waitingPause)
+                d->linkLocated(id);
+        } else if (auto* fr = lt::alert_cast<lt::file_renamed_alert>(a)) {
+            d->fileLinked(BtTorrentView::idOf(fr->handle.info_hashes()), int(fr->index), true);
+        } else if (auto* ff = lt::alert_cast<lt::file_rename_failed_alert>(a)) {
+            logWarning(QStringLiteral("BitTorrent: %1").arg(message(a)));
+            d->fileLinked(BtTorrentView::idOf(ff->handle.info_hashes()), int(ff->index), false);
+        } else if (lt::alert_cast<lt::torrent_deleted_alert>(a) || lt::alert_cast<lt::torrent_delete_failed_alert>(a)) {
+            const auto* del = lt::alert_cast<lt::torrent_deleted_alert>(a);
+            const auto* bad = lt::alert_cast<lt::torrent_delete_failed_alert>(a);
+            auto after = d->deleteAfter.extract(BtTorrentView::idOf(del ? del->info_hashes : bad->info_hashes));
+            if (!after.empty()) {
+                // never the found files: only the torrent's own, then folders left empty
+                QThreadPool::globalInstance()->start([job = std::move(after.mapped())] {
+                    const QString base = QDir::cleanPath(job.savePath);
+                    for (const QString& path : job.paths) {
+                        QFile::remove(path);
+                        for (QString dir = QFileInfo(path).absolutePath();
+                             dir.startsWith(base + u'/') && QDir().rmdir(dir);
+                             dir = QFileInfo(dir).absolutePath()) {}
+                    }
+                });
+            }
         } else if (auto* mf = lt::alert_cast<lt::storage_moved_failed_alert>(a)) {
             d->moving.remove(BtTorrentView::idOf(mf->handle.info_hashes()));
             logError(QStringLiteral("BitTorrent: %1").arg(message(a)));
@@ -2098,6 +2532,7 @@ void BtSession::drainAlerts()
                     hf->handle.post_status();
                 if (d->joins.contains(id))
                     emit pieceResult(id, static_cast<int>(hf->piece_index), false);
+                d->pieceCopied(this, id, int(hf->piece_index), false);
             }
         }
     }
@@ -2160,7 +2595,8 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
         atp.flags &= ~lt::torrent_flags::paused;
     }
     defaultConnections(atp);
-    const bool i2p = BtAddSource::applyI2p(atp, settings, i2pOnly);
+    I2pListWait listWait;
+    const bool i2p = BtAddSource::applyI2p(atp, settings, i2pOnly, &listWait);
     // asked for I2P only (not just an .i2p tracker): strict, also while the session mixes
     const bool strict = i2p && i2pOnly.value_or(settings.i2pEnabled && settings.i2pOnlyNew);
     std::optional<I2pOnly> strictOf;
@@ -2195,6 +2631,13 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
     if (stopAtMetaPending) {
         stopAtMeta.insert(id);
         saveStops();
+    }
+    if (listWait.held || !listWait.added.empty()) {
+        QStringList urls;
+        for (const std::string& u : listWait.added)
+            urls << QString::fromStdString(u);
+        i2pListWait[id] = urls;
+        saveI2pListWait();
     }
     if (strictOf) {
         this->i2pOnly[id] = std::move(*strictOf);   // the member, not the parameter
@@ -2447,7 +2890,7 @@ void BtSession::Impl::enterI2pOnly(const QString& id, const lt::torrent_handle& 
     }
     if (moved) {
         h.replace_trackers(keep);
-        details[id].trackers = keep;
+        setCachedTrackers(id, keep);
     }
     for (const std::string& w : h.url_seeds()) {
         if (std::ranges::find(s.webSeeds, w) == s.webSeeds.end())
@@ -2484,7 +2927,7 @@ void BtSession::Impl::leaveI2pOnly(const QString& id, const lt::torrent_handle& 
     }
     std::ranges::stable_sort(trackers, {}, &lt::announce_entry::tier);
     h.replace_trackers(trackers);
-    details[id].trackers = trackers;
+    setCachedTrackers(id, trackers);
     for (const std::string& w : s.webSeeds)
         h.add_url_seed(w);
     h.force_reannounce();
@@ -2494,8 +2937,21 @@ void BtSession::Impl::leaveI2pOnly(const QString& id, const lt::torrent_handle& 
 
 void BtSession::Impl::enforceSeedLimits(const lt::torrent_status& st, const BtTorrentRow& row)
 {
-    if (!st.is_seeding || row.paused || limitOverride.contains(row.id))
+    // is_finished: a torrent with only some files wanted never is_seeding, yet uploads
+    const bool done = row.wantedDone
+                      && (st.state == lt::torrent_status::finished || st.state == lt::torrent_status::seeding);
+    if (!done || row.paused || limitOverride.contains(row.id))
         return;
+    const SeedLimitHit hit = seedLimitHit(row);
+    if (!hit.ratio && !hit.time)
+        return;
+    st.handle.unset_flags(lt::torrent_flags::auto_managed);
+    st.handle.pause();
+    logInfo(QStringLiteral("BitTorrent: seeding of %1 stopped, %2 reached").arg(row.name, hit.ratio ? QStringLiteral("ratio") : QStringLiteral("seed time")));
+}
+
+BtSession::Impl::SeedLimitHit BtSession::Impl::seedLimitHit(const BtTorrentRow& row) const
+{
     int ratioPercent = settings.seedRatioPercent;
     int seedMinutes = settings.seedTimeLimitMinutes;
     if (auto it = seedLimits.find(row.id); it != seedLimits.end()) {
@@ -2506,14 +2962,9 @@ void BtSession::Impl::enforceSeedLimits(const lt::torrent_status& st, const BtTo
     }
     // same ratio as the Torrents list shows (#218), pad bytes left out
     const double ratio = shareRatio(row.uploaded, row.downloaded, row.haveBytes);
-    const bool ratioReached = ratioPercent > 0 && ratio != kShareRatioNone
-                              && (ratio == kShareRatioInfinite || ratio * 100.0 >= ratioPercent);
-    const bool timeReached = seedMinutes > 0 && st.seeding_duration.count() >= qint64(seedMinutes) * 60;
-    if (!ratioReached && !timeReached)
-        return;
-    st.handle.unset_flags(lt::torrent_flags::auto_managed);
-    st.handle.pause();
-    logInfo(QStringLiteral("BitTorrent: seeding of %1 stopped, %2 reached").arg(row.name, ratioReached ? QStringLiteral("ratio") : QStringLiteral("seed time")));
+    return {ratioPercent > 0 && ratio != kShareRatioNone
+                && (ratio == kShareRatioInfinite || ratio * 100.0 >= ratioPercent),
+            seedMinutes > 0 && row.finishedSeconds >= qint64(seedMinutes) * 60};
 }
 
 lt::settings_pack BtSession::Impl::pack(const BtSettings& s) const
@@ -2583,6 +3034,134 @@ void BtSession::Impl::countSample(const RateSample* prev, const RateSample& now,
     // over the demand() window: one 500 ms interval is too spiky for a record
     raiseCounter(c->maxDownRate, static_cast<uint64>(rate(&RateSample::recvPayload, kRateWindowMs)));
     raiseCounter(c->maxUpRate, static_cast<uint64>(rate(&RateSample::sentPayload, kRateWindowMs)));
+}
+
+void BtSession::locateCopyNext(const QString& id)
+{
+    const auto it = d->locating.find(id);
+    if (it == d->locating.end())
+        return;
+    auto& l = it->second;
+    const auto h = d->handle(id);
+    const auto ti = d->torrentFile(id);
+    const QBitArray have = havePieces(id);
+    // the next pieces still missing, a batch in memory at a time
+    constexpr qint64 kCopyBatch = 16 * 1024 * 1024;
+    struct Job {
+        int piece;
+        int file;
+        QString path;
+    };
+    std::vector<Job> jobs;
+    qint64 bytes = 0;
+    if (h.is_valid() && ti) {
+        for (auto c = l.copies.begin(); c != l.copies.end() && bytes < kCopyBatch;) {
+            auto& pieces = c->second.pieces;
+            std::size_t k = 0;
+            for (; k < pieces.size() && bytes < kCopyBatch; ++k) {
+                const int p = pieces.at(k);
+                if (p < have.size() && have.testBit(p))
+                    continue;
+                jobs.push_back({p, c->first, c->second.path});
+                bytes += ti->piece_size(lt::piece_index_t(p));
+            }
+            pieces.erase(pieces.begin(), pieces.begin() + std::ptrdiff_t(k));
+            c = pieces.empty() ? l.copies.erase(c) : std::next(c);
+        }
+    }
+    if (jobs.empty()) {
+        l.copies.clear();
+        l.report.copied = int(l.copiedFiles.size());
+        if (l.report.copied > 0)
+            logInfo(QStringLiteral("BitTorrent: %1: proved pieces of %2 located file(s) copied into the download").arg(id).arg(l.report.copied));
+        locateLink(id);
+        return;
+    }
+    const quint64 run = l.run;
+    const quint64 batch = ++l.copyBatch;
+    const auto cancel = l.cancel;
+    QPointer<BtSession> self(this);
+    QThreadPool::globalInstance()->start([self, id, run, batch, cancel, ti, jobs = std::move(jobs)] {
+        std::vector<std::tuple<int, int, std::vector<char>>> data;
+        for (const auto& j : jobs) {
+            if (cancel->load())
+                return;
+            auto piece = readLocatedPiece(*ti, j.piece, j.file, j.path);
+            if (!piece.empty())
+                data.emplace_back(j.piece, j.file, std::move(piece));
+        }
+        QMetaObject::invokeMethod(self.data(), [self, id, run, batch, data = std::move(data)]() mutable {
+            if (!self)
+                return;
+            const auto it = self->d->locating.find(id);
+            if (it == self->d->locating.end() || it->second.run != run || it->second.copyBatch != batch)
+                return;
+            const auto h = self->d->handle(id);
+            if (!h.is_valid() || data.empty()) {
+                self->locateCopyNext(id);
+                return;
+            }
+            // libtorrent hashes each piece again before it writes it
+            for (auto& [piece, file, bytes] : data) {
+                it->second.copyWait[piece] = file;
+                h.add_piece(lt::piece_index_t(piece), std::move(bytes));
+            }
+            // add_piece says nothing while checking, or for a piece a peer brought meanwhile
+            constexpr int kCopyWaitMs = 60000;
+            QTimer::singleShot(kCopyWaitMs, self.data(), [self, id, run, batch] {
+                const auto w = self->d->locating.find(id);
+                if (w == self->d->locating.end() || w->second.run != run || w->second.copyBatch != batch || w->second.copyWait.empty())
+                    return;
+                auto& l = w->second;
+                const QBitArray have = self->havePieces(id);
+                std::erase_if(l.copyWait, [&](const auto& p) { return p.first < have.size() && have.testBit(p.first); });
+                if (!l.copyWait.empty()) {
+                    logWarning(QStringLiteral("BitTorrent: %1: pieces of located files not written; copy stopped").arg(id));
+                    l.copyWait.clear();
+                    l.copies.clear();
+                }
+                self->locateCopyNext(id);
+            });
+        }, Qt::QueuedConnection);
+    });
+}
+
+void BtSession::locateLink(const QString& id)
+{
+    const auto it = d->locating.find(id);
+    if (it == d->locating.end())
+        return;
+    auto& l = it->second;
+    const auto handle = d->handle(id);
+    if (l.links.empty() || !handle.is_valid()) {
+        // nothing linked: no stop, no recheck
+        l.wasPaused = true;
+        d->finishLocate(id);
+        return;
+    }
+    // stopped first: no write may land in a file while it changes place
+    const auto flags = handle.flags();
+    l.wasAuto = bool(flags & lt::torrent_flags::auto_managed);
+    l.wasPaused = bool(flags & lt::torrent_flags::paused);
+    handle.unset_flags(lt::torrent_flags::auto_managed);
+    if (l.wasPaused) {
+        d->linkLocated(id);
+        return;
+    }
+    l.waitingPause = true;
+    handle.pause();
+    constexpr int kPauseWaitMs = 30000;
+    const quint64 run = l.run;
+    QPointer<BtSession> self(this);
+    QTimer::singleShot(kPauseWaitMs, this, [self, id, run] {
+        const auto w = self->d->locating.find(id);
+        if (w == self->d->locating.end() || w->second.run != run || !w->second.waitingPause)
+            return;
+        logWarning(QStringLiteral("BitTorrent: %1 did not stop; files not linked").arg(id));
+        w->second.report.failed += int(w->second.links.size());
+        w->second.links.clear();
+        self->d->finishLocate(id);
+    });
 }
 
 } // namespace eMule::bt

@@ -246,6 +246,7 @@ std::optional<Ed3kEd2kJoin::FileInfo> Ed3kEd2kJoin::infoOf(const QByteArray& md4
     // was: FileInfo i{.root = f.root, .pair = f.pair, .searching = f.searching && !f.root, .bytes = f.bytes};
     FileInfo i{.root = f.root, .pair = f.pair, .searching = f.searching && !f.root, .bytes = f.bytes, .size = f.size};
     if (f.root) {
+        i.a4af = waitingFor(*f.root);
         if (const Download* d = downloadOf(*f.root)) {
             i.sources = int(d->streams.size());
             i.transferring = int(std::ranges::count_if(d->streams, [](const auto& s) { return s.second; }));

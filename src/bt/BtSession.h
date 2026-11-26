@@ -19,6 +19,8 @@
 #include <QStringList>
 
 #include <expected>
+#include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -92,12 +94,19 @@ public:
 
     bool remove(const QString& id, bool deleteFiles);
     bool pause(const QString& id);
-    bool resume(const QString& id);
+    /// @p byUser: resuming a seed at its limit keeps it seeding past the limit
+    bool resume(const QString& id, bool byUser = true);
     bool recheck(const QString& id);
     /// File @p path of a torrent was deleted outside libtorrent (Shared Files): skipped in
     /// every torrent holding it, then rechecked so its pieces are neither served nor fetched
     /// again. Call after the delete. Returns the torrents left with no wanted file.
     QStringList skipDeletedFile(const QString& path);
+    /// #224: unfinished files of the torrent looked for in @p folders (size, then the torrent's
+    /// own hashes). Proved ones are used where they are (not copied), then the torrent is
+    /// rechecked. Remove with files keeps them. @p done: nullopt = unknown id, busy or stopped.
+    void locateFiles(const QString& id, const QStringList& folders, std::function<void(std::optional<BtLocateReport>)> done);
+    /// Files used in place (file index → path).
+    [[nodiscard]] std::map<int, QString> locatedFiles(const QString& id) const;
     bool reannounce(const QString& id);
     /// Moves the torrent's data to @p dir (#187); an errored torrent (disk full) restarts
     /// there. Async: storage_moved(_failed)_alert finishes it. false: unknown id.
@@ -188,6 +197,10 @@ private slots:
 private:
     /// I2P flag, I2P trackers and the peers of the dropped kind (setOptions)
     void setI2pMode(const QString& id, BtI2pMode mode);
+    /// Locate Files: the next batch of proved pieces read and given to libtorrent, then the links
+    void locateCopyNext(const QString& id);
+    /// Locate Files: stopped, then the found files linked (linkLocated)
+    void locateLink(const QString& id);
 
     struct Impl;
     std::unique_ptr<Impl> d;

@@ -18,6 +18,12 @@
 
 namespace eMule::bt {
 
+/// I2P tracker list of a magnet without metadata
+struct I2pListWait {
+    bool held = false;                 ///< not added yet: public torrents get it at metadata
+    std::vector<std::string> added;    ///< added already: removed if it turns out private
+};
+
 class BtAddSource {
 public:
     /// A .torrent larger than this is refused (libtorrent's own limit is 100 MiB).
@@ -42,7 +48,10 @@ public:
     /// settings' i2pOnlyNew), or when it has an .i2p tracker: then i2p_torrent is set.
     /// While I2P is on, an I2P torrent gets the I2P trackers, and in mixed mode any
     /// non-private one does. Returns whether the torrent is I2P only.
-    static bool applyI2p(libtorrent::add_torrent_params& atp, const BtSettings& s, std::optional<bool> i2pOnly);
+    /// Magnet = private unknown: with own trackers the list waits for metadata (@p wait
+    /// held), unless I2P only was asked; then @p wait names what to take back if private.
+    static bool applyI2p(libtorrent::add_torrent_params& atp, const BtSettings& s, std::optional<bool> i2pOnly,
+                         I2pListWait* wait = nullptr);
 
     /// Stop after metadata, so files can be picked before anything downloads. When asked
     /// (@p stop; nullopt = the settings' stopAfterMetadata): a magnet without metadata

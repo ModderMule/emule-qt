@@ -25,6 +25,7 @@
 #include "utils/ListActivation.h"
 #include "utils/Log.h"
 #include "utils/MenuUtils.h"
+#include "utils/LocateFilesAction.h"
 #include "utils/MoveDownloadsAction.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/PanelPoller.h"
@@ -338,6 +339,15 @@ void TorrentPanel::setupUi()
     connect(m_optionsAction, &QAction::triggered, this, &TorrentPanel::onEditOptions);
     m_moveAction = new QAction(menuIcon("Folders.ico"), MoveDownloadsAction::menuText(), this);
     connect(m_moveAction, &QAction::triggered, this, &TorrentPanel::onMoveToFolder);
+    m_locateAction = new QAction(menuIcon("Folders.ico"), LocateFilesAction::menuText(), this);
+    connect(m_locateAction, &QAction::triggered, this, [this] {
+        const TorrentRow* first = currentRow();
+        QPointer<TorrentPanel> self(this);
+        LocateFilesAction::runTorrents(this, m_ipc, selectedIds(), first ? first->savePath : QString(), [self] {
+            if (self)
+                self->m_poller->refreshNow();
+        });
+    });
     m_openFolderAction = new QAction(menuIcon("FolderOpen.ico"), tr("Open Folder"), this);
     connect(m_openFolderAction, &QAction::triggered, this, &TorrentPanel::onOpenFolder);
     m_previewAction = new QAction(menuIcon("Preview.ico"), tr("Preview"), this);
@@ -562,6 +572,7 @@ void TorrentPanel::onContextMenu(const QPoint& pos)
         menu.addSeparator();
         if (thePrefs.showExtControls())
             menu.addAction(m_moveAction);   // #187
+        menu.addAction(m_locateAction);     // #224
         menu.addAction(m_openFolderAction);
         menu.addAction(m_previewAction);
         menu.addAction(m_copyMagnetAction);
@@ -1017,6 +1028,7 @@ void TorrentPanel::updateActions()
     m_editTrackersAction->setEnabled(running && any);
     m_optionsAction->setEnabled(running && any);
     m_moveAction->setEnabled(running && any);
+    m_locateAction->setEnabled(running && any);
     m_openFolderAction->setEnabled(any);
     const TorrentRow* one = ids.size() == 1 ? m_model->findById(ids.first()) : nullptr;
     m_previewAction->setEnabled(running && one && one->hasMetadata);

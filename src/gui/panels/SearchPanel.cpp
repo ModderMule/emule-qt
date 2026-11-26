@@ -403,7 +403,7 @@ void SearchPanel::setupUi()
     // :1465), Ctrl+F/F3 find. The tab-level Ctrl+W lives in setupUi's shortcut.
     ListKeyHandlers keys;
     keys.activate = [this](const QModelIndex& index) {
-        const auto rows = m_resultView->selectionModel()->selectedRows();
+        const auto rows = selectedResultRows();
         downloadResults(rows.isEmpty() ? QModelIndexList{index} : rows);
     };
     keys.details = [this](const QModelIndex& index) { showResultDetails(index); };
@@ -429,9 +429,7 @@ void SearchPanel::setupUi()
     m_downloadBtn = new QPushButton(tr("Download"), this);
     m_downloadBtn->setEnabled(false);
     connect(m_downloadBtn, &QPushButton::clicked, this, [this] {
-        downloadResults(m_resultView->selectionModel()
-                            ? m_resultView->selectionModel()->selectedRows()
-                            : QModelIndexList{});
+        downloadResults(selectedResultRows());
     });
     bottomLayout->addWidget(m_downloadBtn);
     // The category a download goes to (MFC IDC_STATIC_DLTOof + IDC_CATTAB2, emule.rc:130-132),
@@ -1541,9 +1539,7 @@ void SearchPanel::onSearchResultPush(const IpcMessage& msg)
 
 void SearchPanel::onResultContextMenu(const QPoint& pos)
 {
-    const auto selection = m_resultView->selectionModel()
-                               ? m_resultView->selectionModel()->selectedRows()
-                               : QModelIndexList{};
+    const auto selection = selectedResultRows();
     const bool hasSelection = !selection.isEmpty();
     const bool singleSel    = (selection.size() == 1);
     m_contextMenu->clear();
@@ -1556,7 +1552,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         grab->setEnabled(hasSelection);
         // read at trigger time: a result push may reset the model while the menu is up
         connect(grab, &QAction::triggered, this,
-                [this] { downloadResults(m_resultView->selectionModel()->selectedRows()); });
+                [this] { downloadResults(selectedResultRows()); });
 
         // One click for "just download it", one submenu for "and file it there".
         // Priority and paused are not offered here: the queue's own menu covers
@@ -1567,7 +1563,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             for (int i = 1; i < m_categoryTitles.size(); ++i) {
                 const QString title = m_categoryTitles.at(i);
                 connect(toMenu->addAction(title), &QAction::triggered, this,
-                        [this, i] { downloadResults(m_resultView->selectionModel()->selectedRows(), i); });
+                        [this, i] { downloadResults(selectedResultRows(), i); });
             }
         }
 
@@ -1586,7 +1582,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             if (!tab || !tab->isIndexer())
                 return;
             QList<MetaResultActions::IndexerFile> rows;
-            for (const auto& idx : m_resultView->selectionModel()->selectedRows()) {
+            for (const auto& idx : selectedResultRows()) {
                 const auto* r = tab->indexerModel->resultAt(tab->proxy->mapToSource(idx).row());
                 if (!r)
                     continue;
@@ -1622,7 +1618,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             // a magnet-only Torznab row has no file to show
             details->setEnabled(singleSel && hasFile);
             connect(details, &QAction::triggered, this, [this] {
-                const auto rows = m_resultView->selectionModel()->selectedRows();
+                const auto rows = selectedResultRows();
                 if (rows.size() == 1)
                     showResultDetails(rows.first());
             });
@@ -1632,7 +1628,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         copyName->setEnabled(singleSel);
         connect(copyName, &QAction::triggered, this, [this] {
             auto* tab = currentTab();
-            const auto selection = m_resultView->selectionModel()->selectedRows();
+            const auto selection = selectedResultRows();
             if (!tab || !tab->isIndexer() || selection.isEmpty())
                 return;
             const auto src = tab->proxy->mapToSource(selection.first());
@@ -1721,7 +1717,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // (MFC SearchListCtrl.cpp:727, :791-796, :907-911).
     const bool ext = thePrefs.showExtControls();
     connect(downloadAction, &QAction::triggered, this, [this, ext] {
-        downloadResults(m_resultView->selectionModel()->selectedRows(), -1,
+        downloadResults(selectedResultRows(), -1,
                         ext ? std::optional<bool>(false) : std::nullopt);
     });
     QAction* defaultAction = downloadAction->isEnabled() ? downloadAction : nullptr;
@@ -1730,7 +1726,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         auto* watchAction = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Ed3k.ico")), tr("Watch"));
         watchAction->setEnabled(hasSelection);
         connect(watchAction, &QAction::triggered, this,
-                [this] { watchEd3kLiveResults(m_resultView->selectionModel()->selectedRows()); });
+                [this] { watchEd3kLiveResults(selectedResultRows()); });
         defaultAction = watchAction;
     }
     if (ext && (anyEd2k || anyEd3k)) {
@@ -1738,7 +1734,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             menuIcon("Download.ico"), tr("%1 (%2)").arg(tr("Download"), tr("Paused")));
         pausedAction->setEnabled(downloadAction->isEnabled());
         connect(pausedAction, &QAction::triggered, this, [this] {
-            downloadResults(m_resultView->selectionModel()->selectedRows(), -1, true);
+            downloadResults(selectedResultRows(), -1, true);
         });
         if (pausedAction->isEnabled() && thePrefs.addNewFilesPaused())
             defaultAction = pausedAction;
@@ -1763,7 +1759,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                                                     tr("Copy Magnet Link"));
         connect(copyAction, &QAction::triggered, this, [this] {
             QList<MetaResultActions::Row> rows;
-            for (const auto& idx : m_resultView->selectionModel()->selectedRows())
+            for (const auto& idx : selectedResultRows())
                 if (const auto* r = refAt(idx).row; r && r->isMagnetOnly())
                     rows.append(metaRow(*r));
             MetaResultActions::copyMagnets(rows);
@@ -1787,7 +1783,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         detailsAction->setEnabled(tab && ((singleSel && singleHasDetails) || allWeb));
         connect(detailsAction, &QAction::triggered, this, [this] {
             auto* tab = currentTab();
-            const auto rows = m_resultView->selectionModel()->selectedRows();
+            const auto rows = selectedResultRows();
             if (!tab || rows.isEmpty())
                 return;
             if (rows.size() == 1) {
@@ -1827,7 +1823,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     copyHtmlAction->setVisible(thePrefs.showExtControls());   // advanced mode only
     connect(copyHtmlAction, &QAction::triggered, this, [this] {
         QStringList links;
-        for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
+        for (const auto& i : selectedResultRows()) {
             const QString link = buildEd2kLink(i);
             if (link.isEmpty()) continue;
             if (const SearchResultRef ref = refAt(i))
@@ -1842,7 +1838,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     copyMagnetAction->setEnabled(hasSelection && anyMagnet);
     connect(copyMagnetAction, &QAction::triggered, this, [this] {
         QStringList links;
-        for (const auto& i : m_resultView->selectionModel()->selectedRows())
+        for (const auto& i : selectedResultRows())
             if (const QString link = buildMagnetLink(i); !link.isEmpty())
                 links << link;
         if (!links.isEmpty())
@@ -1878,7 +1874,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         connect(spamAction, &QAction::triggered, this, [this, markAsSpam] {
             auto* tab = currentTab();
             if (!tab || !m_ipc) return;
-            for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
+            for (const auto& i : selectedResultRows()) {
                 const auto srcIdx = tab->proxy->mapToSource(i);
                 const auto* result = tab->model->resultAt(srcIdx).row;
                 if (!result) continue;
@@ -1978,7 +1974,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         }
         QStringList hashes;
         QStringList names;
-        for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
+        for (const auto& i : selectedResultRows()) {
             const SearchResultRef ref = refAt(i);
             if (ref && !ref.row->isMeta() && !hashes.contains(ref.row->hash)) {
                 hashes << ref.row->hash;
@@ -2441,7 +2437,7 @@ void SearchPanel::saveMetaFiles(int kind)
     if (!tab || tab->isIndexer() || !tab->model)
         return;
     QList<MetaResultActions::Row> rows;
-    for (const auto& idx : m_resultView->selectionModel()->selectedRows()) {
+    for (const auto& idx : selectedResultRows()) {
         const auto* r = refAt(idx).row;
         // a magnet-only torrent has no .torrent to fetch
         const bool match = r && (kind == 1 ? r->isTorrent() && !r->isMagnetOnly() : r->metaKind == kind);
@@ -3590,7 +3586,7 @@ void SearchPanel::removeSelectedResults()
     // Last row first, so the indexes still to go stay valid
     std::set<int, std::greater<>> fileRows;
     std::set<std::pair<int, int>, std::greater<>> nameRows;
-    for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
+    for (const auto& i : selectedResultRows()) {
         const QModelIndex src = tab->proxy->mapToSource(i);
         if (src.parent().isValid())
             nameRows.insert({src.parent().row(), src.row()});
@@ -3631,7 +3627,7 @@ void SearchPanel::copySelectedEd2kLinks()
     if (!m_resultView->selectionModel())
         return;
     // selectedRows() is click order; the clipboard wants view order.
-    QModelIndexList rows = m_resultView->selectionModel()->selectedRows();
+    QModelIndexList rows = selectedResultRows();
     std::ranges::sort(rows, {}, &QModelIndex::row);
     QStringList links;
     for (const auto& i : rows)
@@ -3808,7 +3804,7 @@ void SearchPanel::addEd3kFilterMenu(SearchTab& tab)
     bool anyHidden = false;
     bool anyShown = false;
     bool anyAuthor = false;
-    for (const auto& idx : m_resultView->selectionModel()->selectedRows())
+    for (const auto& idx : selectedResultRows())
         if (const auto* r = refAt(idx).row; r && r->isEd3k() && r->ed3kRoot.size() == 64) {
             rows.push_back(r);
             anyHidden |= r->ed3kHidden;
@@ -4034,6 +4030,12 @@ QString SearchPanel::resultFileName(const QString& hash) const
         }
     }
     return {};
+}
+
+QModelIndexList SearchPanel::selectedResultRows() const
+{
+    const auto* sm = m_resultView->selectionModel();
+    return sm ? sm->selectedRows() : QModelIndexList{};
 }
 
 } // namespace eMule

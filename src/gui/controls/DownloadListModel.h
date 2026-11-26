@@ -103,6 +103,8 @@ struct DownloadRow {
     int transferringSrcCount = 0;
     int availableSrcCount = 0;   ///< sources on queue or downloading
     int a4afSrcCount = 0;
+    int jointSrcCount = 0;       ///< ed3k peers of a joint eD2K download
+    int jointA4afCount = 0;      ///< of a joint download, serving another file first
     bool isPaused = false;
     bool isStopped = false;
     /// PartFileOp ordinal: 0 none, 1 hashing, 2 copying, 3 uncompressing, 4 importing, 5 moving.
@@ -110,6 +112,7 @@ struct DownloadRow {
     /// CompletionFailure ordinal: 0 none, 1 other, 2 disk space, 3 name too long,
     /// 4 cannot write, 5 cannot read.
     int completionError = 0;
+    int completionPermille = -1;   ///< final hash/copy, 0-1000; -1 none
     bool isAutoDownPriority = false;
     int64_t category = 0;
     int64_t lastSeenComplete = 0;
@@ -199,6 +202,8 @@ public:
     static constexpr int BarDataRole = Qt::UserRole + 3;
     /// True on a source row that asked for another file.
     static constexpr int A4afRole    = Qt::UserRole + 4;
+    /// Percent of the final hash/copy on a file row's progress cell; invalid when none runs.
+    static constexpr int CompletionPercentRole = Qt::UserRole + 5;
 
     enum Column {
         ColFileName = 0,

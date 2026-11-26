@@ -111,16 +111,24 @@ QString BtAddSource::ed3kLinkOf(const QString& uri)
     return {};
 }
 
-bool BtAddSource::applyI2p(lt::add_torrent_params& atp, const BtSettings& s, std::optional<bool> i2pOnly)
+bool BtAddSource::applyI2p(lt::add_torrent_params& atp, const BtSettings& s, std::optional<bool> i2pOnly,
+                           I2pListWait* wait)
 {
     // load_torrent_buffer moved the .torrent's trackers into atp.trackers
     const bool hasI2pTracker = std::ranges::any_of(atp.trackers, &BtAddSource::isI2pTracker);
-    const bool i2p = i2pOnly.value_or(s.i2pEnabled && s.i2pOnlyNew) || hasI2pTracker;
+    const bool asked = i2pOnly.value_or(s.i2pEnabled && s.i2pOnlyNew);
+    const bool i2p = asked || hasI2pTracker;
     if (i2p)
         atp.flags |= lt::torrent_flags::i2p_torrent;
     const bool isPrivate = atp.ti && atp.ti->priv();
     if (!s.i2pEnabled || isPrivate || (!i2p && !s.i2pMixed))
         return i2p;
+    // may be private: don't announce its hash to public trackers before metadata
+    if (!atp.ti && !asked && !atp.trackers.empty()) {
+        if (wait)
+            wait->held = true;
+        return i2p;
+    }
     atp.tracker_tiers.resize(atp.trackers.size(), 0);
     for (const QString& url : s.i2pTrackers) {
         const std::string u = url.trimmed().toStdString();
@@ -128,6 +136,8 @@ bool BtAddSource::applyI2p(lt::add_torrent_params& atp, const BtSettings& s, std
             continue;
         atp.trackers.push_back(u);
         atp.tracker_tiers.push_back(0);
+        if (wait && !atp.ti)
+            wait->added.push_back(u);
     }
     spreadI2pTiers(atp.trackers, atp.tracker_tiers);
     return i2p;

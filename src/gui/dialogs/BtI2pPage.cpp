@@ -59,7 +59,7 @@ public:
         m_edit->setPlainText(trackers.join(QLatin1Char('\n')));
         layout->addWidget(m_edit, 1);
         auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
-        auto* defaults = buttons->addButton(BtI2pPage::tr("Defaults"), QDialogButtonBox::ResetRole);
+        auto* defaults = buttons->addButton(BtI2pPage::tr("Reset Defaults"), QDialogButtonBox::ResetRole);
         defaults->setToolTip(BtI2pPage::tr("The public I2P trackers this version ships with"));
         connect(defaults, &QPushButton::clicked, this,
                 [this] { m_edit->setPlainText(Preferences::defaultBtI2pTrackers().join(QLatin1Char('\n'))); });

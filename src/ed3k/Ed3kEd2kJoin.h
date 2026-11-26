@@ -74,6 +74,7 @@ public:
         std::uint64_t bytes = 0;
         int sources = 0;          ///< ed3k streams of the root
         int transferring = 0;     ///< of them holding a slot
+        int a4af = 0;             ///< peers serving another file first (§12.5)
         std::uint64_t size = 0;   ///< size of the ed2k alias (md4 ‖ size) looked up
     };
     /// nullopt: not tracked (paused, stopped, complete, join off).

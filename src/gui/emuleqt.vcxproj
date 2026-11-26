@@ -408,6 +408,7 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="controls\AbstractListView.h" />
+    <ClInclude Include="controls\NoNeighbourSelect.h" />
     <ClInclude Include="panels\ChatNetwork.h" />
     <ClInclude Include="controls\SortableItems.h" />
     <ClInclude Include="controls\Ed3kDownloadRows.h" />
@@ -489,6 +490,7 @@
     <QtMoc Include="utils\PanelPoller.h" />
     <QtMoc Include="utils\CountryFlags.h" />
     <ClInclude Include="utils\ClientIcons.h" />
+    <ClInclude Include="utils\ClientSelection.h" />
     <ClInclude Include="utils\PreviewLauncher.h" />
     <ClInclude Include="utils\TextLinks.h" />
     <ClInclude Include="utils\StatusBarNotifier.h" />

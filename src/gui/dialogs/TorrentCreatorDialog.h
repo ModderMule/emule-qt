@@ -41,6 +41,7 @@ public:
 
 protected:
     void reject() override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private slots:
     void onCreate();
@@ -52,6 +53,8 @@ private:
     void selectFile();
     void selectFolder();
     void updateEd3kNote();
+    void updatePublicTrackers();
+    [[nodiscard]] bool takesDrops() const;
     void setBusy(bool busy);
     void loadSettings();
     void saveSettings() const;

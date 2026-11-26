@@ -2412,7 +2412,18 @@ void tst_PartFile::copyThenRename_deliversAndLeavesNoStagedFile()
     stale.write(QByteArray(4 * 1024 * 1024, 'x'));
     stale.close();
 
-    QVERIFY(FileMoveThread::copyThenRename(src, dest, [] { return true; }));
+    qint64 lastDone = 0;
+    int reports = 0;
+    bool rising = true;
+    QVERIFY(FileMoveThread::copyThenRename(src, dest, [] { return true; },
+                                           [&](qint64 done, qint64 total) {
+                                               rising = rising && done > lastDone && total == qint64(data.size());
+                                               lastDone = done;
+                                               ++reports;
+                                           }));
+    QVERIFY(rising);
+    QVERIFY(reports > 1);
+    QCOMPARE(lastDone, qint64(data.size()));
 
     QVERIFY(!QFile::exists(staged));
     QVERIFY(!QFile::exists(src));

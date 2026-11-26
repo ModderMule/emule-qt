@@ -33,10 +33,13 @@ namespace eMule {
 namespace {
 
 /// Gets an expand arrow: unfinished and with sources, loaded or not.
-/// Completed downloads have no live sources.
+/// Completed downloads have no live sources. A4AF peers count: on ed3k every
+/// peer of a file may be serving another one first (§12.5). Advanced-mode rows.
 bool isExpandable(const DownloadRow& d)
 {
-    return !d.isComplete() && (!d.sources.empty() || d.sourceCount > 0);
+    return !d.isComplete()
+        && (!d.sources.empty() || d.sourceCount > 0 || d.jointSrcCount > 0
+            || ((d.a4afSrcCount > 0 || d.jointA4afCount > 0) && thePrefs.showExtControls()));
 }
 
 /// MFC's Remaining cell, "<time> (<bytes left>)" for every unfinished file
@@ -505,7 +508,9 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColSize:       return formatByteSize(d.fileSize);
         case ColCompleted:  return formatByteSize(d.completedSize);
         case ColSpeed:      return d.datarate > 0 ? formatByteRate(d.datarate) : QString{};
-        case ColProgress:   return QStringLiteral("%1%").arg(d.percentCompleted, 0, 'f', 1);
+        case ColProgress:   // while completing: how far the final hash/copy is
+            return QStringLiteral("%1%").arg(d.completionPermille >= 0 ? d.completionPermille / 10.0
+                                                                       : d.percentCompleted, 0, 'f', 1);
         case ColSources:    return sourcesText(d);
         // The wire token, not a label: the column read "veryHigh" / "Auto [normal]".
         case ColPriority:   return downloadPriorityText(d.priority, d.isAutoDownPriority);
@@ -653,6 +658,9 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
 
     if (role == PausedRole && index.column() == ColProgress)
         return d.isPaused || d.isStopped;
+
+    if (role == CompletionPercentRole && index.column() == ColProgress && d.completionPermille >= 0)
+        return d.completionPermille / 10.0;
 
     if (role == BarDataRole && index.column() == ColProgress) {
         if (!d.hasBarRanges)

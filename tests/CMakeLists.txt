@@ -233,7 +233,7 @@ if(TARGET specialdlp)
     target_compile_definitions(tst_Dlp PRIVATE SPECIALDLP_LIB_PATH="$<TARGET_FILE:specialdlp>")
 endif()
 emule_add_test(tst_ClientList         FOLDER "Client")
-emule_add_test(tst_URLClient          FOLDER "Client")
+emule_add_test(tst_URLClient          FOLDER "Client" LIBRARIES OpenSSL::Crypto)
 
 # Module 29j: File management
 emule_add_test(tst_AbstractFile       FOLDER "Files")
@@ -457,6 +457,8 @@ if(EMULE_BITTORRENT)
     # two sessions on loopback: no network, so no "live" label
     emule_add_test(tst_BtLocalSwarm FOLDER "BitTorrent" LIBRARIES eMule::Bt)
     set_tests_properties(tst_BtLocalSwarm PROPERTIES TIMEOUT 240)
+    # Locate Files: found files used in place (#224)
+    emule_add_test(tst_BtLocateFiles FOLDER "BitTorrent" LIBRARIES eMule::Bt)
     # unfinished torrents kept out of the share (#124)
     emule_add_test(tst_BtShareGuard FOLDER "BitTorrent"
         SOURCES tst_BtShareGuard.cpp "${CMAKE_SOURCE_DIR}/src/daemon/BtShareGuard.cpp"
@@ -1118,6 +1120,32 @@ target_include_directories(tst_CategoryFilterProxy PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_CategoryFilterProxy PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
+
+# Client list selection across a poll refresh: a leaving client must not make Qt
+# select its neighbour (issue #253). Real ClientListModel, no panel.
+emule_add_test(tst_ClientSelection FOLDER "Gui"
+    SOURCES tst_ClientSelection.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ClientListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc"
+            "${CMAKE_SOURCE_DIR}/resources/flags.qrc")
+target_include_directories(tst_ClientSelection PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_ClientSelection PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# Any list (Kad contacts, friends, IRC nicks, ...): removing the current row
+# selects nothing else, as MFC DeleteItem.
+emule_add_test(tst_NoNeighbourSelect FOLDER "Gui"
+    SOURCES tst_NoNeighbourSelect.cpp)
+target_include_directories(tst_NoNeighbourSelect PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
+target_link_libraries(tst_NoNeighbourSelect PRIVATE Qt6::Widgets)
 
 # Columns that hold numbers must sort like numbers. Covers both halves of the
 # fix: the shared item classes in controls/SortableItems.h, and the Qt::UserRole

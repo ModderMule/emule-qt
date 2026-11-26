@@ -45,15 +45,16 @@
 #include "app/SkinColors.h"
 #include "app/UiState.h"
 #include "controls/ListSortClick.h"
+#include "controls/NoNeighbourSelect.h"
 #include "controls/SortArrowStyle.h"
 
 namespace eMule {
 
 /// Column-layout persistence shared by every list control.
 template<class Base>
-class AbstractListView : public Base {
+class AbstractListView : public NoNeighbourSelect<Base> {
 public:
-    using Base::Base;
+    using NoNeighbourSelect<Base>::NoNeighbourSelect;
 
     /// Own drag payload instead of the model's mimeData() (downloads → category tab).
     /// Needs setDragEnabled(true) and ItemIsDragEnabled rows; null payload = no drag.

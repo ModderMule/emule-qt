@@ -2568,8 +2568,12 @@ void UpDownClient::connect(std::shared_ptr<StreamTransport> transport)
             hashHex += QStringLiteral("%1").arg(userHash()[i], 2, 16, QLatin1Char('0'));
         logDebug([&]() -> QString { return QStringLiteral("connect: targetHash=%1").arg(hashHex); });
     }
-    if (hasValidHash() && supportsCryptLayer() && thePrefs.cryptLayerSupported()
-        && (requestsCryptLayer() || thePrefs.cryptLayerRequested())) {
+    // Browse retry: peer closed our plain hello, its crypt flags are still unknown
+    const bool browseRetry = std::exchange(m_browseObfuscatedDial, false)
+                          && hasValidHash() && thePrefs.cryptLayerSupported();
+    if (browseRetry
+        || (hasValidHash() && supportsCryptLayer() && thePrefs.cryptLayerSupported()
+            && (requestsCryptLayer() || thePrefs.cryptLayerRequested()))) {
         reqSocket->setConnectionEncryption(true, userHash(), false);
         encrypted = true;
     } else {
@@ -2577,6 +2581,7 @@ void UpDownClient::connect(std::shared_ptr<StreamTransport> transport)
         // doesn't warn about an unknown encryption state.
         reqSocket->setConnectionEncryption(false, nullptr, false);
     }
+    m_dialedPlain = !encrypted;
 
     if (transport) {
         // already connected end to end: the socket reads as connected and says so
@@ -2891,6 +2896,14 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
                                 || m_downloadState == DownloadState::WaitCallbackKad;
     m_connectingState = ConnectingState::None;
 
+    // Browse of a peer never met: it took the TCP dial, then closed our plain hello
+    // unanswered. Likely requires obfuscation, so try once obfuscated. Not MFC.
+    const bool retryBrowseObfuscated = m_fileListRequested == 1 && m_dialedPlain
+        && !connectFailed && !proxyFailed && !m_incomingConnection
+        && m_infoPacketsReceived == InfoPacketState::None
+        && !m_supportsCryptLayer && hasValidHash() && thePrefs.cryptLayerSupported();
+    m_dialedPlain = false;
+
     // The preview we were waiting for is not coming.
     if (m_previewReqPending) {
         m_previewReqPending = false;
@@ -2950,7 +2963,18 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     // A shared-file-list request died with the connection. Reset the counter, or
     // requestSharedFileList()'s "already in progress" refusal would latch forever.
     // MFC BaseClient.cpp:1152-1155.
-    if (m_fileListRequested) {
+    if (retryBrowseObfuscated) {
+        logDebug([&]() -> QString { return QStringLiteral("Browse: %1 closed plain hello, retrying obfuscated")
+                     .arg(dbgGetClientInfo()); });
+        // Queued: the socket is still being torn down
+        QTimer::singleShot(0, this, [this] {
+            if (m_fileListRequested != 1 || m_socket)
+                return;
+            m_browseObfuscatedDial = true;
+            tryToConnect(true);     // a refused dial lands in disconnected(), which reports it
+            m_browseObfuscatedDial = false;
+        });
+    } else if (m_fileListRequested) {
         m_fileListRequested = 0;
         logStatusWarning(QStringLiteral("Failed to retrieve shared files from user %1")
                              .arg(statusName()));

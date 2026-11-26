@@ -28,6 +28,7 @@
 ## ed3k
 - for file hosting & decrypt crawler implementations, compare with JDownloader at `/Volumes/MySSD/Coding/Java/JDownloader` and `/Volumes/MySSD/Coding/Java/JDBrowser`
 - when writing protocol spec: be token efficient and relax on grammar
+- don't implement `chaintube` and `market` extension in eMuleQt. These belong in other repos
 
 ## Testing
 - open ports: TCP + UDP `5662` for ed2k, `6588` for BitTorrent

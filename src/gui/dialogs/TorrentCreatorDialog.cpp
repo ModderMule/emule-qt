@@ -23,6 +23,8 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -32,6 +34,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMimeData>
 #include <QPlainTextEdit>
 #include <QPointer>
 #include <QProgressBar>
@@ -95,6 +98,35 @@ QPlainTextEdit* textBox(QWidget* parent, int lines, bool grow)
     return e;
 }
 
+struct DropSource {
+    QString path;
+    QStringList onlyFiles;
+};
+
+/// One file or folder, or several files of one folder; else nothing.
+std::optional<DropSource> dropSource(const QMimeData* mime)
+{
+    if (!mime || !mime->hasUrls() || mime->urls().isEmpty())
+        return std::nullopt;
+    QStringList paths;
+    for (const QUrl& url : mime->urls()) {
+        if (!url.isLocalFile())
+            return std::nullopt;
+        paths.append(QDir::cleanPath(url.toLocalFile()));   // a folder URL ends in /
+    }
+    if (paths.size() == 1)
+        return QFileInfo::exists(paths.first()) ? std::optional(DropSource{paths.first(), {}}) : std::nullopt;
+    const QString folder = QFileInfo(paths.first()).absolutePath();
+    DropSource out{folder, {}};
+    for (const QString& p : paths) {
+        const QFileInfo fi(p);
+        if (!fi.isFile() || fi.absolutePath() != folder)
+            return std::nullopt;
+        out.onlyFiles.append(fi.fileName());
+    }
+    return out;
+}
+
 } // namespace
 
 TorrentCreatorDialog::TorrentCreatorDialog(IpcClient* ipc, const QString& path, const QStringList& onlyFiles,
@@ -114,6 +146,7 @@ TorrentCreatorDialog::TorrentCreatorDialog(IpcClient* ipc, const QString& path, 
     m_pathEdit = new QLineEdit(sourceBox);
     m_pathEdit->setToolTip(tr("File or folder to make the torrent of, as a path on the core's disk. "
                               "A folder becomes one torrent with all its files."));
+    m_pathEdit->setPlaceholderText(tr("Drop a file or folder here"));
     connect(m_pathEdit, &QLineEdit::textEdited, this, [this] { m_onlyFiles.clear(); m_selectionLabel->hide(); });
     pathRow->addWidget(m_pathEdit, 1);
     sourceLayout->addLayout(pathRow);
@@ -241,9 +274,19 @@ TorrentCreatorDialog::TorrentCreatorDialog(IpcClient* ipc, const QString& path, 
         connect(m_ipc, &IpcClient::torrentCreated, this, &TorrentCreatorDialog::onCreated);
     }
 
+    connect(m_private, &QCheckBox::toggled, this, &TorrentCreatorDialog::updatePublicTrackers);
+
+    // text boxes would paste a dropped file's URL: the dialog takes it first
+    setAcceptDrops(true);
+    installEventFilter(this);
+    for (QWidget* w : std::initializer_list<QWidget*>{m_pathEdit, m_source, m_trackers->viewport(), m_webSeeds->viewport(),
+                                                      m_comment->viewport()})
+        w->installEventFilter(this);
+
     loadSettings();
     setPath(path, onlyFiles);
     updateEd3kNote();
+    updatePublicTrackers();
     DialogSizing::applySize(this, QSize(480, 0), QSize(560, 600));
 }
 
@@ -274,6 +317,22 @@ void TorrentCreatorDialog::reject()
         return;
     }
     RememberedSizeDialog::reject();
+}
+
+bool TorrentCreatorDialog::eventFilter(QObject* watched, QEvent* event)
+{
+    const QEvent::Type type = event->type();
+    if (type == QEvent::DragEnter || type == QEvent::DragMove || type == QEvent::Drop) {
+        auto* drop = static_cast<QDropEvent*>(event);
+        if (const auto source = takesDrops() ? dropSource(drop->mimeData()) : std::nullopt) {
+            drop->setDropAction(Qt::CopyAction);
+            drop->accept();
+            if (type == QEvent::Drop)
+                setPath(source->path, source->onlyFiles);
+            return true;
+        }
+    }
+    return RememberedSizeDialog::eventFilter(watched, event);
 }
 
 void TorrentCreatorDialog::onCreate()
@@ -411,12 +470,25 @@ void TorrentCreatorDialog::updateEd3kNote()
     m_ed3kNote->setVisible(!text.isEmpty());
 }
 
+/// Private: the remembered picks stay, but off; they come back when unticked.
+void TorrentCreatorDialog::updatePublicTrackers()
+{
+    m_publicTrackers->setEnabled(m_createButton->isEnabled() && !m_private->isChecked());
+}
+
+/// A dropped path is on this machine: a remote core can't read it.
+bool TorrentCreatorDialog::takesDrops() const
+{
+    return m_createButton->isEnabled() && (!m_ipc || m_ipc->isLocalConnection());
+}
+
 void TorrentCreatorDialog::setBusy(bool busy)
 {
     for (QWidget* w : std::initializer_list<QWidget*>{m_pathEdit, m_folderButton, m_format, m_pieceSize, m_private,
-                                                      m_ignoreDotfiles, m_startSeeding, m_publicTrackers, m_trackers, m_webSeeds,
+                                                      m_ignoreDotfiles, m_startSeeding, m_trackers, m_webSeeds,
                                                       m_comment, m_source, m_createButton})
         w->setEnabled(!busy);
+    updatePublicTrackers();
     m_fileButton->setEnabled(!busy && m_ipc && m_ipc->isLocalConnection());
     setCursor(busy ? Qt::BusyCursor : Qt::ArrowCursor);
 }
@@ -488,7 +560,8 @@ QCborMap TorrentCreatorDialog::params() const
 /// Checked public trackers, one tier each, then the custom box (its own tiers kept).
 QString TorrentCreatorDialog::trackerText() const
 {
-    const QStringList picked = m_publicTrackers->checkedValues();
+    // never a public tracker in a private torrent
+    const QStringList picked = m_private->isChecked() ? QStringList{} : m_publicTrackers->checkedValues();
     QStringList custom;
     for (const QString& raw : m_trackers->toPlainText().split(u'\n')) {
         const QString line = raw.trimmed();

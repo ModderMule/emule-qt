@@ -18,6 +18,9 @@
 #include <algorithm>
 #include <optional>
 
+#include <filesystem>
+#include <system_error>
+
 namespace eMule {
 
 namespace {
@@ -95,6 +98,15 @@ void retryRemove(const QString& path, const QDateTime& born, int left)
 }
 
 } // namespace
+
+bool renameOnVolume(const QString& src, const QString& dst)
+{
+    if (QFile::exists(dst))
+        return false;   // std::filesystem::rename would replace it
+    std::error_code ec;
+    std::filesystem::rename(std::filesystem::path(src.toStdU16String()), std::filesystem::path(dst.toStdU16String()), ec);
+    return !ec;
+}
 
 QString relocateFile(const QString& src, const QString& dst, std::uint64_t floor, bool removeSource, bool* renamed,
                      std::uint64_t dataSize)

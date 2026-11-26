@@ -401,17 +401,35 @@ void tst_BtSmoke::i2pAddPolicy()
     QVERIFY(!BtAddSource::applyI2p(atp, s, false));
     s.i2pOnlyNew = false;
 
-    // mixed: a clearnet torrent gets the I2P trackers, unflagged
+    // mixed: magnet with own tracker may be private, list waits for metadata
     s.i2pMixed = true;
     atp = *BtAddSource::fromMagnet(magnet);
-    QVERIFY(!BtAddSource::applyI2p(atp, s, std::nullopt));
+    I2pListWait wait;
+    QVERIFY(!BtAddSource::applyI2p(atp, s, std::nullopt, &wait));
     QVERIFY(!(atp.flags & lt::torrent_flags::i2p_torrent));
-    QCOMPARE(atp.trackers.size(), std::size_t(3));
+    QCOMPARE(atp.trackers.size(), std::size_t(1));
+    QVERIFY(wait.held);
 
-    // an .i2p tracker of its own makes it an I2P torrent, and no tracker is added twice
+    // mixed, no tracker of its own: can't be a tracker-only private swarm, list at once
+    atp = *BtAddSource::fromMagnet(QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"));
+    wait = {};
+    QVERIFY(!BtAddSource::applyI2p(atp, s, std::nullopt, &wait));
+    QCOMPARE(atp.trackers.size(), std::size_t(2));
+    QVERIFY(!wait.held);
+    QCOMPARE(wait.added.size(), std::size_t(2));
+
+    // an .i2p tracker of its own makes it an I2P torrent; may be a private one too
     atp = *BtAddSource::fromMagnet(QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=")
                                    + QString::fromLatin1(QUrl::toPercentEncoding(i2pTracker)));
-    QVERIFY(BtAddSource::applyI2p(atp, s, std::nullopt));
+    wait = {};
+    QVERIFY(BtAddSource::applyI2p(atp, s, std::nullopt, &wait));
+    QCOMPARE(atp.trackers.size(), std::size_t(1));
+    QVERIFY(wait.held);
+
+    // asked for I2P only: no tracker is added twice
+    atp = *BtAddSource::fromMagnet(QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=")
+                                   + QString::fromLatin1(QUrl::toPercentEncoding(i2pTracker)));
+    QVERIFY(BtAddSource::applyI2p(atp, s, true));
     QCOMPARE(atp.trackers.size(), std::size_t(2));
 
     QVERIFY(BtAddSource::isI2pTracker("http://opentracker.dg2.i2p:80/a"));

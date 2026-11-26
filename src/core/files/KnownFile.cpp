@@ -1624,7 +1624,8 @@ bool KnownFile::createAICHHashSetOnly()
 }
 
 bool KnownFile::buildAICHHashSet(const QString& path, uint64 expectedSize,
-                                 AICHRecoveryHashSet& out, const std::atomic<bool>* cancel)
+                                 AICHRecoveryHashSet& out, const std::atomic<bool>* cancel,
+                                 const std::function<void(uint64, uint64)>& onProgress)
 {
     if (path.isEmpty() || expectedSize == 0)
         return false;
@@ -1645,6 +1646,8 @@ bool KnownFile::buildAICHHashSet(const QString& path, uint64 expectedSize,
         if (!createHash(file, partLength, dummyHash, partTree, cancel))
             return false;
         remaining -= partLength;
+        if (onProgress)
+            onProgress(expectedSize - remaining, expectedSize);
     }
 
     out.reCalculateHash(false);

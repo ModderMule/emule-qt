@@ -126,6 +126,9 @@ struct Ed3kDownloadInfo {
     bool previewPossible = false;
     /// HTTP sources (ws=) left out: the file is under the anonymous key (hops.md §1); 0: none
     int webDropped = 0;
+    /// Verifying: the final hash or copy, 0-1000; -1 none
+    int completionPermille = -1;
+    bool copying = false;          ///< Verifying: hashed, being copied to another volume
 };
 
 class Ed3kDownloads : public Ed3kJoinBase {
@@ -298,6 +301,7 @@ private:
         /// whole read: bytes [0, wholeAt) on disk, root not checked yet (kept in the .met)
         std::uint64_t wholeAt = 0;
         bool prefixChecking = false;     ///< webCheckPrefix() runs on a worker
+        std::shared_ptr<FileStep> completion;   ///< final hash/copy running
         Web web;
     };
 
@@ -314,7 +318,11 @@ private:
     void verify(Entry& e);
     void verified(const ::ed3k::Root& root, const std::optional<FileHash>& hashed);
     /// Moves the part file to its target; the path taken, empty on failure.
-    QString moveToTarget(const Entry& e, QString* error);
+    /// Free final path of @p e, its folder made.
+    QString targetOf(const Entry& e);
+    /// The file is at @p path: complete and shared.
+    void delivered(Entry& e, const QString& path, std::span<const std::byte> hashes);
+    void endCompletion(Entry& e);
     void shareComplete(Entry& e, std::span<const std::byte> hashes);
     /// The 4 MiB pieces held while it runs (with block values).
     void sharePieces(Entry& e);

@@ -467,6 +467,11 @@ protected:
 
     // -- hashing -----------------------------------------------------------
 
+    /// A worker's hash or copy: progress 0-1000, and a stop from this thread.
+    struct FileStep {
+        std::atomic<int> permille{0};
+        std::atomic<bool> stop{false};
+    };
     struct FileHash {
         ffi::Root root;
         std::uint64_t size = 0;
@@ -474,8 +479,9 @@ protected:
         QByteArray ed2k;   ///< eD2K MD4 (16 B) when asked for, in the same read; else empty
     };
     /// Hashes @p path on a worker; @p done on this thread (nullopt: unreadable), not at
-    /// all once stopped or destroyed. @p withEd2k: its eD2K hash too.
-    void hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done, bool withEd2k = false);
+    /// all once stopped or destroyed. @p withEd2k: its eD2K hash too. @p step: its progress.
+    void hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done, bool withEd2k = false,
+                          std::shared_ptr<FileStep> step = {});
     /// Runs @p work on the hash pool (disk load lowered); the step it returns runs on this
     /// thread, not at all once stopped or destroyed.
     void runHashJob(std::function<std::function<void()>(const std::atomic<bool>& cancel)> work);
@@ -497,6 +503,10 @@ protected:
     /// once stopped or destroyed. The caller writes its .met beside the new place.
     void relocateInBackground(const QString& src, const QString& dst, std::uint64_t dataSize,
                               std::function<void(QString error)> done);
+    /// Delivers @p src to @p dst across volumes on a worker (FileMoveThread::copyThenRename).
+    /// @p done on this thread, true = there and @p src gone; not at all once stopped or destroyed.
+    void copyInBackground(const QString& src, const QString& dst, std::shared_ptr<FileStep> step,
+                          std::function<void(bool ok)> done);
 
     // -- reads ---------------------------------------------------------------
 

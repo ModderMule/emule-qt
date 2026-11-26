@@ -6,6 +6,7 @@
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 
+#include "files/PartFile.h"
 #include "prefs/Preferences.h"
 #include "utils/DiskLoadLimiter.h"
 #include "utils/FileRelocate.h"
@@ -117,7 +118,8 @@ private:
 
 /// Hashes a file on a worker; nullopt when unreadable or cancelled. @p ed2k: its eD2K hash too.
 std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, const std::atomic<bool>& cancel,
-                                                          QByteArray* ed2k = nullptr)
+                                                          QByteArray* ed2k = nullptr,
+                                                          std::atomic<int>* permille = nullptr)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
@@ -143,6 +145,8 @@ std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, 
         if (ed2k)
             md4.update(chunk.constData(), chunk.size());
         readOnce.readUpTo(f.pos());
+        if (permille && f.size() > 0)
+            permille->store(int(f.pos() * 1000 / f.size()), std::memory_order_relaxed);
     }
     if (ed2k)
         *ed2k = md4.finish();
@@ -1369,14 +1373,15 @@ void Ed3kJoinBase::runHashJob(std::function<std::function<void()>(const std::ato
     });
 }
 
-void Ed3kJoinBase::hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done, bool withEd2k)
+void Ed3kJoinBase::hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done, bool withEd2k,
+                                    std::shared_ptr<FileStep> step)
 {
     QPointer<Ed3kJoinBase> self(this);
     const auto cancel = m_cancel;
-    hashPool()->start([self, cancel, path, withEd2k, done = std::move(done)]() mutable {
+    hashPool()->start([self, cancel, path, withEd2k, step = std::move(step), done = std::move(done)]() mutable {
         DiskLoadLimiter::lowerThisThread();
         QByteArray ed2k;
-        auto hashed = hashFile(path, *cancel, withEd2k ? &ed2k : nullptr);
+        auto hashed = hashFile(path, *cancel, withEd2k ? &ed2k : nullptr, step ? &step->permille : nullptr);
         if (cancel->load())
             return;
         // owned copies into the lambda; ffi::Hashed holds a move-only Buffer
@@ -1448,6 +1453,27 @@ void Ed3kJoinBase::relocateInBackground(const QString& src, const QString& dst, 
             [self, cancel, error, done = std::move(done)] {
                 if (self && !cancel->load())
                     done(error);
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void Ed3kJoinBase::copyInBackground(const QString& src, const QString& dst, std::shared_ptr<FileStep> step,
+                                    std::function<void(bool ok)> done)
+{
+    QPointer<Ed3kJoinBase> self(this);
+    const auto cancel = m_cancel;
+    QThreadPool::globalInstance()->start([self, cancel, src, dst, step = std::move(step), done = std::move(done)]() mutable {
+        const bool ok = FileMoveThread::copyThenRename(
+            src, dst, [&] { return !cancel->load() && !step->stop.load(); },
+            [&](qint64 copied, qint64 total) {
+                step->permille.store(total > 0 ? int(copied * 1000 / total) : 1000, std::memory_order_relaxed);
+            });
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, cancel, ok, done = std::move(done)] {
+                if (self && !cancel->load())
+                    done(ok);
             },
             Qt::QueuedConnection);
     });

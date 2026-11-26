@@ -89,6 +89,17 @@ struct BtSettings {
     [[nodiscard]] bool hasSam() const { return i2pEnabled && i2pSamPort != 0 && !i2pSamHost.isEmpty(); }
 };
 
+/// What a Locate Files run did (BtSession::locateFiles).
+struct BtLocateReport {
+    int files = 0;        ///< files looked at
+    int candidates = 0;   ///< of a wanted size
+    int hashed = 0;       ///< candidates hashed
+    int linked = 0;       ///< torrent files now pointing at a found file
+    int partial = 0;      ///< found by size, nothing proved: left alone
+    int copied = 0;       ///< not proved whole: its proved pieces copied into the download
+    int failed = 0;       ///< proved, but the link failed
+};
+
 /// One file of a torrent as a player reads it (BtSession::streamFrom).
 struct BtStreamSpan {
     QString path;   ///< on disk
@@ -147,6 +158,8 @@ struct BtTorrentRow {
     qint64 addedAt = 0;      ///< Unix seconds
     qint64 completedAt = 0;  ///< Unix seconds, 0 = not yet
     qint64 seedingSeconds = 0;
+    qint64 finishedSeconds = 0;   // all wanted files done, partial torrents too
+    bool wantedDone = false;      // every wanted piece here; true while paused too
     int queuePosition = -1;
     /// part map: up to 256 buckets, each 0..255 = share of its pieces done
     QByteArray pieceMap;

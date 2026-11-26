@@ -41,7 +41,30 @@ private slots:
     void anOlderCoreDrawsOneRun();
     void theBarIsPaintedByPiece();
     void aNetworkJobRow();
+    void aCompletingRowShowsItsStep();
 };
+
+void tst_Ed3kDownloadRows::aCompletingRowShowsItsStep()
+{
+    QCborMap m;
+    m.insert(QStringLiteral("root"), QStringLiteral("ab"));
+    m.insert(QStringLiteral("size"), qint64(1000));
+    m.insert(QStringLiteral("done"), qint64(1000));
+    m.insert(QStringLiteral("state"), 2);
+    m.insert(QStringLiteral("completionPermille"), 425);
+    QCborMap list;
+    list.insert(QStringLiteral("downloads"), QCborArray{m});
+    QCOMPARE(ed3kDownloadRows(list).at(0).fileOp, 1);   // hashing
+    QCOMPARE(ed3kDownloadRows(list).at(0).completionPermille, 425);
+
+    m.insert(QStringLiteral("copying"), true);
+    list.insert(QStringLiteral("downloads"), QCborArray{m});
+    QCOMPARE(ed3kDownloadRows(list).at(0).fileOp, 2);
+
+    m.insert(QStringLiteral("state"), 3);   // complete: no step left
+    list.insert(QStringLiteral("downloads"), QCborArray{m});
+    QCOMPARE(ed3kDownloadRows(list).at(0).completionPermille, -1);
+}
 
 void tst_Ed3kDownloadRows::runsRoundTrip()
 {

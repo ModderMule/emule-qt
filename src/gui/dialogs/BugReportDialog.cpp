@@ -12,6 +12,7 @@
 
 #include "utils/CrashHandler.h"
 #include "utils/DialogSizing.h"
+#include "utils/Log.h"
 #include "utils/ScrollMessageBox.h"
 
 #include <QApplication>
@@ -48,6 +49,7 @@ namespace eMule {
 static constexpr auto kBugReportApiKey = "tKBLaiRDQ8QA5Sp5HxSfpA2zo4xdI9Zr"; // live tKBLaiRDQ8QA5Sp5HxSfpA2zo4xdI9Zr // local 1YwgLj72qVYs71CGSFFUWmSihF1zYcxb
 static constexpr int kMaxLogChars = 60000; // MySQL TEXT column limit is 65,535 bytes; leave margin for UTF-8
 static constexpr auto kBaseUrl = "https://emule-qt.org";
+static constexpr auto kSentSuffix = ".sent"; // marker next to a dump already submitted
 static constexpr auto kBugReportWebUrl = "https://emule-qt.org/submit-bug-report/";
 
 BugReportDialog::BugReportDialog(LogWidget* logWidget, const QString& coreVersion,
@@ -326,11 +328,12 @@ void BugReportDialog::onSubmitClicked()
     QNetworkReply* reply = m_nam->post(req, multiPart);
     multiPart->setParent(reply); // ensure cleanup
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, dumpPath = m_crashDumpEdit->text()]() {
         reply->deleteLater();
         m_progressBar->hide();
 
         if (reply->error() == QNetworkReply::NoError) {
+            markDumpSent(dumpPath);
             const QByteArray data = reply->readAll();
             const QJsonDocument doc = QJsonDocument::fromJson(data);
             const QJsonObject root = doc.object();
@@ -422,15 +425,32 @@ void BugReportDialog::prefillCrashDump()
 
     // .stall: the core's main-thread stack when its event loop stopped (StallWatchdog)
     // was: the newest of all three; a stall at the restart after a crash hid the crash (report 58)
-    const QFileInfoList crashes = crashDir.entryInfoList({QStringLiteral("*.crash"), QStringLiteral("*.dmp")},
-                                                         QDir::Files, QDir::Time);
-    const QFileInfoList stalls = crashDir.entryInfoList({QStringLiteral("*.stall")}, QDir::Files, QDir::Time);
+    // skip dumps already sent: one old crash rode along on every later report
+    const auto unsent = [&crashDir](const QStringList& globs) {
+        QFileInfoList out;
+        for (const QFileInfo& fi : crashDir.entryInfoList(globs, QDir::Files, QDir::Time))
+            if (!QFileInfo::exists(fi.absoluteFilePath() + QLatin1StringView(kSentSuffix)))
+                out << fi;
+        return out;
+    };
+    const QFileInfoList crashes = unsent({QStringLiteral("*.crash"), QStringLiteral("*.dmp")});
+    const QFileInfoList stalls = unsent({QStringLiteral("*.stall")});
     const QDateTime dayAgo = QDateTime::currentDateTime().addDays(-1);
     if (!crashes.isEmpty() && (stalls.isEmpty() || crashes.first().lastModified() >= dayAgo
                                || crashes.first().lastModified() >= stalls.first().lastModified()))
         m_crashDumpEdit->setText(crashes.first().absoluteFilePath());
     else if (!stalls.isEmpty())
         m_crashDumpEdit->setText(stalls.first().absoluteFilePath());
+}
+
+/// Empty "<dump>.sent" next to a submitted dump so the next report doesn't prefill it.
+void BugReportDialog::markDumpSent(const QString& path)
+{
+    if (path.isEmpty())
+        return;
+    QFile marker(path + QLatin1StringView(kSentSuffix));
+    if (!marker.open(QIODevice::WriteOnly))
+        logWarning(QStringLiteral("Bug report: can't mark crash dump as sent: %1").arg(marker.errorString()));
 }
 
 /// "eMule Qt v0.7.21, core v0.7.21, macOS 26.1 (arm64)"

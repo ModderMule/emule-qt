@@ -164,6 +164,7 @@ private:
     QAction* m_editTrackersAction = nullptr;
     QAction* m_optionsAction = nullptr;
     QAction* m_moveAction = nullptr;
+    QAction* m_locateAction = nullptr;   // #224
     QAction* m_openFolderAction = nullptr;
     QAction* m_previewAction = nullptr;
     QAction* m_copyMagnetAction = nullptr;

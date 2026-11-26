@@ -1580,6 +1580,8 @@ private:
     // -- Misc ---------------------------------------------------------------
     uint32 m_searchID = 0;
     int m_fileListRequested = 0;
+    bool m_dialedPlain = false;             // last outgoing dial had no obfuscation
+    bool m_browseObfuscatedDial = false;    // next dial: obfuscated browse retry
     uint8 m_supportSecIdent = 0;
     bool m_friendSlot = false;
     bool m_commentDirty = false;

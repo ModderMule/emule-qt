@@ -13,6 +13,7 @@
 #include "controls/FitTextTabBar.h"
 #include "controls/FriendListModel.h"
 #include "controls/LogTextView.h"
+#include "controls/NoNeighbourSelect.h"
 #include "utils/Appearance.h"
 #include "dialogs/AddFriendDialog.h"
 #include "utils/StringUtils.h"
@@ -320,7 +321,7 @@ void MessagesPanel::setupUi()
 
     // Friend list view
     m_friendModel = new FriendListModel(this);
-    m_friendListView = new QListView(leftWidget);
+    m_friendListView = new NoNeighbourSelect<QListView>(leftWidget);
     m_friendListView->setModel(m_friendModel);
     SkinColors::bind(m_friendListView, {QStringLiteral("FriendsLv"), QStringLiteral("DefLv")}, true);
     m_friendListView->setSelectionMode(QAbstractItemView::SingleSelection);

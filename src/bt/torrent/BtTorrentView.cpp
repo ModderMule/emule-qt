@@ -172,6 +172,8 @@ BtTorrentRow BtTorrentView::row(const lt::torrent_status& st)
     r.addedAt = st.added_time;
     r.completedAt = st.completed_time;
     r.seedingSeconds = st.seeding_duration.count();
+    r.finishedSeconds = st.finished_duration.count();
+    r.wantedDone = st.is_finished && st.has_metadata && st.total_wanted_done > 0;
     r.queuePosition = static_cast<int>(st.queue_position);
     r.pieceMap = pieceMap(st.pieces);
     r.pieces = st.num_pieces;

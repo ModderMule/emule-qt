@@ -24,6 +24,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 
 using namespace eMule;
 using namespace eMule::ed3k;
@@ -143,6 +144,7 @@ class tst_Ed3kDownloads : public QObject {
 private slots:
     void aFileIsDownloadedVerifiedAndShared();
     void pauseAndResume();
+    void aCopyToAnotherVolumeRunsOnAWorker();
     void aPartFileIsTakenUpAfterARestart();
     void uncheckedHttpBytesAreCheckedByPeerValues();
     void aCopiedPartFileGoesOnElsewhere();
@@ -206,6 +208,55 @@ void tst_Ed3kDownloads::aFileIsDownloadedVerifiedAndShared()
     QVERIFY(hooked && hooked->path == info->path);
     // shared and kept for a restart
     QVERIFY(d.sharesRoot(a.root));
+    d.stop();
+    a.shared->stop();
+}
+
+// EMULE_TEST_OTHER_VOLUME: a writable folder on another volume than the temp dir
+void tst_Ed3kDownloads::aCopyToAnotherVolumeRunsOnAWorker()
+{
+    const QString other = qEnvironmentVariable("EMULE_TEST_OTHER_VOLUME");
+    if (other.isEmpty())
+        QSKIP("EMULE_TEST_OTHER_VOLUME not set");
+    QTemporaryDir incoming(QDir(other).filePath(QStringLiteral("ed3k-copy-XXXXXX")));
+    QVERIFY(incoming.isValid());
+    const QByteArray data = payload(int(40 * kBlock + 5), 9);
+    Seeder a;
+    QVERIFY(a.start(data, QStringLiteral("c.bin")));
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), incoming.path());
+    d.start();
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+
+    Ed3kDownloadSpec spec;
+    spec.root = a.root;
+    spec.size = std::uint64_t(data.size());
+    spec.name = QStringLiteral("c.bin");
+    QVERIFY(d.add(spec).has_value());
+    d.addSourceTo(a.root, sourceOf(a.session));
+    bool sawCopying = false;
+    QTimer poll;
+    poll.setInterval(0);
+    QObject::connect(&poll, &QTimer::timeout, &d, [&] {
+        if (const auto i = d.info(a.root); i && i->copying)
+            sawCopying = true;
+    });
+    poll.start();
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 60000);
+    poll.stop();
+
+    QVERIFY(sawCopying);
+    const auto info = d.info(a.root);
+    QVERIFY(info);
+    QCOMPARE(info->state, Ed3kDownloadInfo::State::Complete);
+    QCOMPARE(info->completionPermille, -1);
+    QVERIFY(readFile(info->path) == data);
+    QVERIFY(!QFile::exists(info->partPath));
+    QVERIFY(!QFile::exists(info->path + QStringLiteral(".completing")));
     d.stop();
     a.shared->stop();
 }

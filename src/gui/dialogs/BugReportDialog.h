@@ -39,6 +39,7 @@ private slots:
 
 private:
     void prefillCrashDump();
+    static void markDumpSent(const QString& path);
     [[nodiscard]] QString versionLine() const;
 
     QString m_coreVersion;

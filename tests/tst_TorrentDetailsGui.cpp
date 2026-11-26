@@ -18,17 +18,25 @@
 #include <QCborArray>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDir>
 #include <QDoubleSpinBox>
+#include <QDropEvent>
+#include <QFile>
+#include <QFileInfo>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QTimer>
 #include <QPlainTextEdit>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QTemporaryDir>
 #include <QToolButton>
 #include <QTest>
 #include <QTreeWidget>
+#include <QUrl>
 
 using namespace eMule;
 
@@ -124,6 +132,7 @@ class tst_TorrentDetailsGui : public QObject {
 
 private slots:
     void torrentCreatorDialog();
+    void torrentCreatorPrivateAndDrop();
     void filterBuckets();
     void filterProxyHidesRows();
     void filesTree();
@@ -479,6 +488,59 @@ void tst_TorrentDetailsGui::pieceGridColours()
 }
 
 // #191: the fields reach CreateTorrent's map; a folder subset shows its note
+void tst_TorrentDetailsGui::torrentCreatorPrivateAndDrop()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString a = dir.filePath(QStringLiteral("a.bin"));
+    const QString b = dir.filePath(QStringLiteral("b.bin"));
+    for (const QString& p : {a, b}) {
+        QFile f(p);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("x");
+    }
+    TorrentCreatorDialog dlg(nullptr, QStringLiteral("/data/set"), {});
+    QLineEdit* path = nullptr;
+    for (auto* e : dlg.findChildren<QLineEdit*>())
+        if (!e->placeholderText().isEmpty() && e->text() == QDir::toNativeSeparators(QStringLiteral("/data/set")))
+            path = e;
+    QVERIFY(path);
+    QCheckBox* priv = nullptr;
+    for (auto* c : dlg.findChildren<QCheckBox*>())
+        if (c->text().startsWith(QStringLiteral("Private")))
+            priv = c;
+    QVERIFY(priv);
+    auto* trackers = dlg.findChild<CheckComboBox*>();
+    QVERIFY(trackers);
+
+    // private: remembered picks stay but are off
+    priv->setChecked(false);
+    trackers->setCheckedValues({trackers->itemData(0).toString()});
+    QVERIFY(trackers->isEnabled());
+    priv->setChecked(true);
+    QVERIFY(!trackers->isEnabled());
+    QCOMPARE(trackers->checkedValues().size(), 1);
+    priv->setChecked(false);
+    QVERIFY(trackers->isEnabled());
+    trackers->setCheckedValues({});
+
+    const auto dropOn = [&](const QList<QUrl>& urls) {
+        QMimeData mime;
+        mime.setUrls(urls);
+        QDropEvent ev(QPointF(1, 1), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        // sendEvent routes a drop only during a real drag
+        return static_cast<QObject&>(dlg).eventFilter(path, &ev) && ev.isAccepted();
+    };
+    QVERIFY(dropOn({QUrl::fromLocalFile(a)}));
+    QCOMPARE(QDir::fromNativeSeparators(path->text()), a);
+    QVERIFY(dropOn({QUrl::fromLocalFile(a), QUrl::fromLocalFile(b)}));
+    QCOMPARE(QFileInfo(QDir::fromNativeSeparators(path->text())).canonicalFilePath(), QFileInfo(dir.path()).canonicalFilePath());
+    // a web link is no source
+    const QString before = path->text();
+    dropOn({QUrl(QStringLiteral("https://example.com/a.bin"))});
+    QCOMPARE(path->text(), before);
+}
+
 void tst_TorrentDetailsGui::torrentCreatorDialog()
 {
     TorrentCreatorDialog dlg(nullptr, QStringLiteral("/data/set"), {QStringLiteral("a.bin"), QStringLiteral("b.bin")});

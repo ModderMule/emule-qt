@@ -296,10 +296,11 @@ public:
     static inline std::atomic<uint64> aichPipeFrom = 16ull << 20;
     bool createAICHHashSetOnly();
     /// Read @p path and build its complete AICH recovery set into @p out. Touches no
-    /// KnownFile, so it is safe on a worker thread.
+    /// KnownFile, so it is safe on a worker thread. @p onProgress: bytes read, per part.
     static bool buildAICHHashSet(const QString& path, uint64 expectedSize,
                                  AICHRecoveryHashSet& out,
-                                 const std::atomic<bool>* cancel = nullptr);
+                                 const std::atomic<bool>* cancel = nullptr,
+                                 const std::function<void(uint64, uint64)>& onProgress = {});
 
     // Core hash computation
     /// @param cancel  checked before every read; a cancelled call returns false

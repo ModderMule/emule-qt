@@ -13,6 +13,8 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QScopeGuard>
+#include "TestTlsCert.h"
+
 #include <QSslCertificate>
 #include <QSslConfiguration>
 #include <QSslKey>
@@ -37,7 +39,7 @@ public:
 /// Minimal range-serving web server. "/moved" answers 302 to "/file".
 class RangeServer : public QObject {
 public:
-    /// @p tls: serve https with the self-signed certificate in tests/data/tls.
+    /// @p tls: serve https with a self-signed certificate (TestTlsCert.h).
     explicit RangeServer(QByteArray content, bool tls = false,
                          const QHostAddress& listenOn = QHostAddress(QHostAddress::LocalHost))
         : m_content(std::move(content))
@@ -47,9 +49,7 @@ public:
             m_server = sslServer;
             QSslConfiguration config = QSslConfiguration::defaultConfiguration();
             config.setLocalCertificate(testCertificate());
-            QFile keyFile(eMule::testing::testDataDir() + QStringLiteral("/tls/localhost-key.pem"));
-            if (keyFile.open(QIODevice::ReadOnly))
-                config.setPrivateKey(QSslKey(&keyFile, QSsl::Rsa));
+            config.setPrivateKey(eMule::testing::localhostKey());
             config.setPeerVerifyMode(QSslSocket::VerifyNone);
             sslServer->setSslConfiguration(config);
         } else {
@@ -69,8 +69,7 @@ public:
 
     [[nodiscard]] static QSslCertificate testCertificate()
     {
-        QFile file(eMule::testing::testDataDir() + QStringLiteral("/tls/localhost-cert.pem"));
-        return file.open(QIODevice::ReadOnly) ? QSslCertificate(&file) : QSslCertificate();
+        return eMule::testing::localhostCertificate();
     }
     QList<QByteArray> ranges;   ///< every Range value asked for, in order
     int redirects = 0;

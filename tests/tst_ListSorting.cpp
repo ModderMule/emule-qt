@@ -21,6 +21,7 @@
 #include "controls/KadContactsModel.h"
 #include "controls/KadSearchesModel.h"
 #include "controls/KnownTypeStyle.h"
+#include "controls/PartBarPainter.h"
 #include "controls/SearchResultsModel.h"
 #include "controls/ServerListModel.h"
 #include "controls/SortableItems.h"
@@ -130,6 +131,8 @@ private slots:
     void sourceRowsFollowMfcColumns();
     void sourceStatusFollowsMfc();
     void a4afSourcesStayBelowAvailableOnes();
+    void a4afOnlyDownloadCanExpand();
+    void jointOnlyDownloadCanExpand();
     void downloadSortHistoryBreaksTies();
     void activeDownloadsAreBoldWhenEnabled();
     void sourcesSortByQueueRankWithDownloadingFirst();
@@ -162,6 +165,7 @@ private slots:
     void barShaderShadesRoundBars();
     void barShaderBlendsSubPixelSpans();
     void downloadBarDrawsDataWhereItSits();
+    void completingFileShowsItsProgress();
     void barRangesAreCappedKeepingTheEnds();
 };
 
@@ -1758,6 +1762,47 @@ void tst_ListSorting::downloadBarDrawsDataWhereItSits()
     thePrefs.setDepth3D(0);
 }
 
+void tst_ListSorting::completingFileShowsItsProgress()
+{
+    DownloadRow row;
+    row.hash = QStringLiteral("00112233445566778899aabbccddeeff");
+    row.status = QStringLiteral("completing");
+    row.percentCompleted = 100.0;
+    row.completionPermille = 455;
+    DownloadListModel model;
+    model.setDownloads({row});
+    const QModelIndex cell = model.index(0, DownloadListModel::ColProgress);
+    QCOMPARE(cell.data(Qt::DisplayRole).toString(), QStringLiteral("45.5%"));
+    QCOMPARE(cell.data(DownloadListModel::CompletionPercentRole).toDouble(), 45.5);
+    QCOMPARE(cell.data(Qt::UserRole).toDouble(), 100.0);   // sorting keeps the download's own
+
+    row.completionPermille = -1;
+    model.setDownloads({row});
+    QCOMPARE(cell.data(Qt::DisplayRole).toString(), QStringLiteral("100.0%"));
+    QVERIFY(!cell.data(DownloadListModel::CompletionPercentRole).isValid());
+
+    DownloadBarData bar;
+    bar.fileSize = 1000;
+    const auto render = [&] {
+        return renderBar(200, 16, [&](QPainter& p, const QRect& r) {
+            paintDownloadBar(p, r, bar, 100.0, false, false);
+            paintProgressStrip(p, r, 50.0, /*track*/ true);
+        });
+    };
+    thePrefs.setDepth3D(0);
+    QImage image = render();
+    QCOMPARE(image.pixelColor(50, 1), QColor(0, 150, 0));
+    QCOMPARE(image.pixelColor(150, 1), QColor(224, 224, 224));
+    QCOMPARE(image.pixelColor(150, 8), QColor(0, 150, 0));   // the bar below stays green
+
+    // Round: the unfinished strip must not vanish into the green
+    thePrefs.setDepth3D(5);
+    image = render();
+    QCOMPARE(image.pixelColor(50, 1), QColor(0, 224, 0));
+    QVERIFY(image.pixelColor(150, 1).red() > 100);
+    thePrefs.setDepth3D(0);
+}
+
 void tst_ListSorting::barRangesAreCappedKeepingTheEnds()
 {
     std::vector<std::pair<uint64, uint64>> ranges;
@@ -1892,6 +1937,48 @@ void tst_ListSorting::sourceTooltipFollowsMfc()
     url.userName = QStringLiteral("http://example.org/f");
     url.availPartCount = 4;
     QCOMPARE(sourceTooltipText(url, true), QStringLiteral("URL: http://example.org/f\nAvailable parts: 4"));
+}
+
+// all its peers serve another file first: still needs an arrow to list them
+void tst_ListSorting::a4afOnlyDownloadCanExpand()
+{
+    DownloadRow file;
+    file.hash = QStringLiteral("file");
+    file.status = QStringLiteral("empty");
+    file.a4afSrcCount = 2;
+
+    DownloadListModel model;
+    model.setDownloads({file});
+
+    thePrefs.setShowExtControls(true);
+    QVERIFY(model.hasChildren(model.index(0, 0)));
+    // A4AF rows are advanced-mode only: nothing to list
+    thePrefs.setShowExtControls(false);
+    QVERIFY(!model.hasChildren(model.index(0, 0)));
+    thePrefs.setShowExtControls(true);
+}
+
+// joint eD2K download, 0 eD2K sources: its ed3k peers need the arrow
+void tst_ListSorting::jointOnlyDownloadCanExpand()
+{
+    DownloadRow file;
+    file.hash = QStringLiteral("file");
+    file.status = QStringLiteral("empty");
+    file.jointSrcCount = 1;
+
+    DownloadRow waiting = file;
+    waiting.hash = QStringLiteral("waiting");
+    waiting.jointSrcCount = 0;
+    waiting.jointA4afCount = 1;
+
+    DownloadListModel model;
+    model.setDownloads({file, waiting});
+
+    thePrefs.setShowExtControls(false);
+    QVERIFY(model.hasChildren(model.index(0, 0)));
+    QVERIFY(!model.hasChildren(model.index(1, 0)));
+    thePrefs.setShowExtControls(true);
+    QVERIFY(model.hasChildren(model.index(1, 0)));
 }
 
 // MFC's LVCFMT_RIGHT columns. Only the server list answered the role.

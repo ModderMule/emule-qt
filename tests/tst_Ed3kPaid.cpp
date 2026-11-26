@@ -41,6 +41,8 @@
 #include <QTest>
 #include <QUrlQuery>
 
+#include "TestTlsCert.h"
+
 #include <openssl/evp.h>
 
 #include <array>
@@ -264,12 +266,8 @@ public:
     explicit FakeSeller(std::function<QByteArray(const QByteArray& holder)> passFor) : m_passFor(std::move(passFor))
     {
         QSslConfiguration config = QSslConfiguration::defaultConfiguration();
-        QFile cert(testing::testDataDir() + QStringLiteral("/tls/localhost-cert.pem"));
-        QFile key(testing::testDataDir() + QStringLiteral("/tls/localhost-key.pem"));
-        if (cert.open(QIODevice::ReadOnly))
-            config.setLocalCertificate(QSslCertificate(&cert));
-        if (key.open(QIODevice::ReadOnly))
-            config.setPrivateKey(QSslKey(&key, QSsl::Rsa));
+        config.setLocalCertificate(testing::localhostCertificate());
+        config.setPrivateKey(testing::localhostKey());
         config.setPeerVerifyMode(QSslSocket::VerifyNone);
         m_server.setSslConfiguration(config);
         m_server.listen(QHostAddress::LocalHost, 0);
@@ -355,9 +353,8 @@ void tst_Ed3kPaid::initTestCase()
 {
     // the seller's self-signed certificate is trusted here (it names 127.0.0.1)
     QSslConfiguration c = QSslConfiguration::defaultConfiguration();
-    QFile cert(testing::testDataDir() + QStringLiteral("/tls/localhost-cert.pem"));
-    QVERIFY(cert.open(QIODevice::ReadOnly));
-    c.addCaCertificate(QSslCertificate(&cert));
+    QVERIFY(!testing::localhostCertificate().isNull());
+    c.addCaCertificate(testing::localhostCertificate());
     QSslConfiguration::setDefaultConfiguration(c);
 }
 

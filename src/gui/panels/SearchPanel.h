@@ -277,6 +277,9 @@ private:
     /// The eD2K result behind a row of the view; on a name row also that name.
     [[nodiscard]] SearchResultRef refAt(const QModelIndex& proxyIndex) const;
 
+    /// Selected rows of the view; none before the first search (no selection model yet).
+    [[nodiscard]] QModelIndexList selectedResultRows() const;
+
     /// Send one ED2K download request for a row of the view. A name row downloads
     /// the file under that name (MFC SearchResultsWnd.cpp:516-548).
     void sendDownloadRequest(const QModelIndex& proxyIndex, int category, std::optional<bool> paused);

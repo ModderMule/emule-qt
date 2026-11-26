@@ -822,6 +822,68 @@ private slots:
         QCOMPARE(gui.btPublicTrackers(), Preferences::defaultBtPublicTrackers());
     }
 
+    // user deleted every suggested tracker: must not come back as defaults
+    void btI2pTrackers_emptyListStaysEmpty()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("i2p-empty.yaml"));
+        {
+            Preferences prefs;
+            prefs.setBtI2pTrackers({});
+            QVERIFY(prefs.saveTo(file));
+        }
+        Preferences loaded;
+        QVERIFY(loaded.load(file));
+        QVERIFY(loaded.btI2pTrackers().isEmpty());
+    }
+
+    // unedited profiles move to the new defaults, edited ones stay
+    void btI2pTrackers_migratesOnlyUnedited()
+    {
+        const QStringList oldDefault{
+            QStringLiteral("http://btrackrqkjp6kgelov5a3uxisis77ofxqt5nvy5hvvtoybjpmq4q.b32.i2p/announce"),
+            QStringLiteral("http://qimlze77z7w32lx2ntnwkuqslrzlsqy7774v3urueuarafyqik5a.b32.i2p:80/a"),
+            QStringLiteral("http://opentracker.dg2.i2p:80/a"),
+            QStringLiteral("http://opentracker.r4sas.i2p:80/a"),
+            QStringLiteral("http://opentracker.simp.i2p:80/a"),
+            QStringLiteral("http://opentracker.skank.i2p:80/a"),
+            QStringLiteral("http://opentracker.eeptorrent.i2p:80/a"),
+            QStringLiteral("http://opentracker.fattydove.i2p:80/a"),
+            QStringLiteral("http://freetracker.i2p:7331/announce"),
+            QStringLiteral("http://nyaaplus.i2p:80/announce"),
+            QStringLiteral("http://sigmatracker.i2p:80/a"),
+            QStringLiteral("http://tracker.insulaocculta.i2p/a"),
+            QStringLiteral("http://tracker.nyaa2p.i2p:80/announce"),
+            QStringLiteral("http://yet-another-public-tracker.i2p/announce"),
+        };
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("i2p-migrate.yaml"));
+        const auto reload = [&](const QStringList& saved) {
+            Preferences prefs;
+            prefs.setBtI2pTrackers(saved);
+            if (!prefs.saveTo(file))
+                return QStringList{QStringLiteral("save failed")};
+            Preferences loaded;
+            if (!loaded.load(file))
+                return QStringList{QStringLiteral("load failed")};
+            return loaded.btI2pTrackers();
+        };
+
+        QCOMPARE(reload(oldDefault), Preferences::defaultBtI2pTrackers());
+        // one entry removed = edited
+        QStringList edited = oldDefault;
+        edited.removeLast();
+        QCOMPARE(reload(edited), edited);
+        const QStringList custom{QStringLiteral("http://mine.i2p/a")};
+        QCOMPARE(reload(custom), custom);
+
+        // current defaults aren't written, so the next version's list applies
+        QCOMPARE(reload(Preferences::defaultBtI2pTrackers()), Preferences::defaultBtI2pTrackers());
+        QFile f(file);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QVERIFY(!f.readAll().contains(Preferences::defaultBtI2pTrackers().first().toUtf8()));
+    }
+
     // single transfer mode (ed3k only): per network, through YAML and IPC; in effect only with ed3k
     void singleTransfer_roundTrip()
     {

@@ -3660,7 +3660,10 @@ void FileMoveThread::run()
     if (m_verify) {
         const QByteArray partOk = PartFile::verifyPartData(
             m_srcPath, m_verify->fileSize, m_verify->fileHash, m_verify->partHashes,
-            [this](uint32, uint32) { return !isInterruptionRequested(); },
+            [this](uint32 done, uint32 total) {
+                reportProgress(done, total);
+                return !isInterruptionRequested();
+            },
             wantAICH ? &aich : nullptr);
         if (isInterruptionRequested())
             return;
@@ -3676,7 +3679,8 @@ void FileMoveThread::run()
         }
     } else if (wantAICH) {
         // Already verified by a rehash, which builds no tree
-        haveAICH = KnownFile::buildAICHHashSet(m_srcPath, m_aichFileSize, aich);
+        haveAICH = KnownFile::buildAICHHashSet(m_srcPath, m_aichFileSize, aich, nullptr,
+                                               [this](uint64 done, uint64 total) { reportProgress(done, total); });
     }
     if (isInterruptionRequested())
         return;
@@ -3699,8 +3703,8 @@ void FileMoveThread::run()
         logInfo(QStringLiteral("A file named %1 exists already: saved as %2")
                     .arg(QFileInfo(m_destPath).fileName(), QFileInfo(finalDest).fileName()));
 
-    // Try rename first (instant on same filesystem)
-    if (QFile::rename(m_srcPath, finalDest)) {
+    // Same volume: instant. was: QFile::rename, which copies across volumes without progress
+    if (renameOnVolume(m_srcPath, finalDest)) {
         m_destPath = finalDest;
         readDelivered(finalDest);
         emit moveFinished(true, finalDest, static_cast<int>(CompletionFailure::None));
@@ -3709,8 +3713,12 @@ void FileMoveThread::run()
 
     // Rename failed (cross-filesystem)
     const qint64 bytes = QFileInfo(m_srcPath).size();
+    m_progress.store(0, std::memory_order_relaxed);   // the copy starts over from the hash's 100 %
     const bool ok = copyThenRename(m_srcPath, finalDest,
-                                   [this] { return !isInterruptionRequested(); });
+                                   [this] { return !isInterruptionRequested(); },
+                                   [this](qint64 done, qint64 total) {
+                                       reportProgress(uint64(done), uint64(total));
+                                   });
     if (!ok && isInterruptionRequested())
         return;
     if (ok) {
@@ -3730,6 +3738,12 @@ void FileMoveThread::readDelivered(const QString& path)
         m_delivered->mtime = mtime;
     if (m_delivered->wantMeta)
         m_delivered->meta = KnownFile::readMetaData(path);
+}
+
+void FileMoveThread::reportProgress(uint64 done, uint64 total)
+{
+    if (total > 0)
+        m_progress.store(int(std::min(done, total) * 1000 / total), std::memory_order_relaxed);
 }
 
 CompletionFailure FileMoveThread::classifyFailure(const QString& destPath, qint64 bytes)
@@ -3791,7 +3805,8 @@ QString FileMoveThread::uniqueDestination(const QString& path,
 }
 
 bool FileMoveThread::copyThenRename(const QString& srcPath, const QString& finalDest,
-                                    const std::function<bool()>& keepGoing)
+                                    const std::function<bool()>& keepGoing,
+                                    const std::function<void(qint64, qint64)>& onProgress)
 {
     // Never a half-written file under the final name: a crash leaves only the staged
     // sibling, which the next attempt replaces.
@@ -3818,10 +3833,14 @@ bool FileMoveThread::copyThenRename(const QString& srcPath, const QString& final
         // A read error is not the end of the file
         if (got <= 0 || destFile.write(buf.data(), got) != got)
             ok = false;
-        else
+        else {
             copied += got;
+            if (onProgress)
+                onProgress(copied, total);
+        }
     }
-    ok = ok && copied == total && flushToDisk(destFile);
+    // the flush can take long: stopped meanwhile, the source stays
+    ok = ok && copied == total && flushToDisk(destFile) && (!keepGoing || keepGoing());
     destFile.close();
     srcFile.close();
 
@@ -3859,7 +3878,10 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
 
     QObject::connect(thread, &FileMoveThread::aichHashSetStored, &m_partNotifier,
                      [this](const QByteArray& masterHash) { m_completedAICHMaster = masterHash; });
-    m_fileOp = verify ? PartFileOp::Hashing : PartFileOp::Copying;
+    // A verified file still has its AICH read ahead of the move: that is hashing too
+    // was: verify ? Hashing : Copying
+    const bool hashesFirst = verify || (fileSize() > 0 && AICHRecoveryHashSet::hasKnown2MetPath());
+    m_fileOp = hashesFirst ? PartFileOp::Hashing : PartFileOp::Copying;
 
     QObject::connect(thread, &FileMoveThread::moveStarted, &m_partNotifier, [this] {
         m_fileOp = PartFileOp::Copying;

@@ -6,6 +6,7 @@
 /// disk instead of downloaded.
 
 #include <QString>
+#include <QStringList>
 
 #include <functional>
 
@@ -20,6 +21,9 @@ namespace LocateFilesAction {
 /// Asks for a folder (starting at @p startDir), scans it in the core, says what was found.
 /// @p refresh runs after the answer.
 void run(QWidget* parent, IpcClient* ipc, const QString& startDir, std::function<void()> refresh);
+
+/// Torrents: the files found are proved by the torrent's hashes and used where they are.
+void runTorrents(QWidget* parent, IpcClient* ipc, const QStringList& ids, const QString& startDir, std::function<void()> refresh);
 
 /// The menu entry's text, one for all lists.
 [[nodiscard]] QString menuText();

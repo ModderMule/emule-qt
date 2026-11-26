@@ -60,7 +60,8 @@ void ScheduleNetworkBridge::btPause(bool paused, bool persistent)
         const bool isPaused = row.state == bt::BtState::Paused;
         if (isPaused == paused)
             continue;
-        if (paused ? m_bt->pause(row.id) : m_bt->resume(row.id))
+        // not the user's resume: seed limits still apply
+        if (paused ? m_bt->pause(row.id) : m_bt->resume(row.id, false))
             flipped.append(row.id);
     }
     logInfo(QStringLiteral("Scheduler: %1 %2 torrent(s)")
@@ -87,7 +88,7 @@ void ScheduleNetworkBridge::btRestore()
         if (!flipped.contains(row.id) || (row.state == bt::BtState::Paused) != m_btFlippedToPaused)
             continue;
         if (m_btFlippedToPaused)
-            m_bt->resume(row.id);
+            m_bt->resume(row.id, false);
         else
             m_bt->pause(row.id);
     }

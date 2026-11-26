@@ -193,12 +193,16 @@ public:
     void run() override;
     /// Filled before moveFinished on success; read by its receiver.
     void setDelivered(std::shared_ptr<Delivered> out) { m_delivered = std::move(out); }
+    /// Current step (hash or copy) in 0-1000; -1 before the first report.
+    [[nodiscard]] int progressPermille() const { return m_progress.load(std::memory_order_relaxed); }
 
     /// Deliver across volumes: copy to a staged sibling of @p finalDest, put it on the
     /// disk, rename it in place, then remove @p srcPath. On failure, or when
     /// @p keepGoing says stop, nothing is left at the destination and the source stays.
+    /// @p onProgress: bytes copied, total.
     static bool copyThenRename(const QString& srcPath, const QString& finalDest,
-                               const std::function<bool()>& keepGoing);
+                               const std::function<bool()>& keepGoing,
+                               const std::function<void(qint64, qint64)>& onProgress = {});
 
     /// @p path, or the first free "name(N).ext" beside it when @p exists says it is taken.
     [[nodiscard]] static QString uniqueDestination(
@@ -221,8 +225,10 @@ private:
     std::optional<Verify> m_verify;
     uint64 m_aichFileSize = 0;
     std::shared_ptr<Delivered> m_delivered;
+    std::atomic<int> m_progress{-1};
 
     void readDelivered(const QString& path);
+    void reportProgress(uint64 done, uint64 total);
 };
 
 // ---------------------------------------------------------------------------
@@ -505,6 +511,11 @@ public:
     /// The long-running operation in progress, if any. Relabels the displayed status —
     /// "Completing (Hashing)" and so on, as MFC's getPartfileStatus does.
     [[nodiscard]] PartFileOp fileOp() const { return m_fileOp; }
+    /// Final hash or copy in 0-1000; -1 when none is running or it has not reported yet.
+    [[nodiscard]] int completionPermille() const
+    {
+        return m_completionRunning && m_moveThread ? m_moveThread->progressPermille() : -1;
+    }
     /// Mark or clear an operation that runs outside this class (importing parts).
     void setFileOp(PartFileOp op) { m_fileOp = op; }
 

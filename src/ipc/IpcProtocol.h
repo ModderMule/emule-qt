@@ -922,6 +922,11 @@ enum class IpcMsgType : int {
     CancelTorrentCreation   = 821,
     /// [jobId: int] -> [ok, {data: bytes (.torrent), name}]; kept 1 h after the job
     GetCreatedTorrent       = 822,
+    /// [id: string, folders: [string]] -> [ok, {files, candidates, hashed, linked, partial,
+    /// copied, failed}] or error. #224: unfinished files found in the folders (core's disk),
+    /// proved by the torrent's hashes, used in place, then rechecked; v1 files with an
+    /// unprovable edge piece: their proved pieces copied in. The reply when it ends.
+    LocateTorrentFiles      = 823,
 
     // -- ed3k (1000-1049; more in 1100-1149) -----------------------------------------------------
     //

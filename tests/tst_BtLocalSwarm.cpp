@@ -126,9 +126,10 @@ struct Torrent {
     lt::info_hash_t hashes;
 };
 
-Torrent makeTorrent(const QString& file, const QString& root, lt::create_flags_t flags)
+Torrent makeTorrent(const QString& file, const QString& root, lt::create_flags_t flags, bool isPrivate = false)
 {
     lt::create_torrent t(lt::list_files(file.toStdString()), kPieceLength, flags);
+    t.set_priv(isPrivate);
     lt::set_piece_hashes(t, root.toStdString());
     const std::vector<char> buf = t.generate_buf();
     Torrent out;
@@ -156,7 +157,9 @@ private slots:
     void i2pOnlyDropsDirectPeers_data();
     void i2pOnlyDropsDirectPeers();
     void stopAfterMetadata();
+    void magnetI2pListWaitsForMetadata();
     void addWithWantedFiles();
+    void seedLimitStopsPartialTorrent();
     void moveStorageTakesTheFiles();
     void moveStorageClearsAWriteError();
 
@@ -662,6 +665,63 @@ void tst_BtLocalSwarm::addWithWantedFiles()
     session.stop();
 }
 
+void tst_BtLocalSwarm::seedLimitStopsPartialTorrent()
+{
+    // two files of several pieces: wanting one leaves the torrent Finished, never Seeding
+    const QString root = m_dir.filePath(QStringLiteral("limit"));
+    const QString folder = root + QStringLiteral("/set");
+    QVERIFY(QDir().mkpath(folder));
+    const qsizetype fileSize = kPieceLength * 3;
+    QVERIFY(m_payload.size() >= fileSize * 2);
+    for (int i = 0; i < 2; ++i) {
+        QFile f(folder + QStringLiteral("/%1.bin").arg(i));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(m_payload.mid(i * fileSize, fileSize)), fileSize);
+    }
+    const Torrent torrent = makeTorrent(folder, root, lt::create_torrent::v1_only);
+
+    BtSession full;
+    full.start(settingsIn(m_dir, QStringLiteral("limitFull")));
+    const BtAddResult source = full.addTorrentFile(torrent.bytes, root);
+    QCOMPARE(source.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY_WITH_TIMEOUT(full.torrent(source.id) && full.torrent(source.id)->state == BtState::Seeding, kTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(full.status().listenPort != 0, 5000);
+
+    BtSettings limited = settingsIn(m_dir, QStringLiteral("limitPartial"));
+    limited.seedRatioPercent = 1;
+    BtSession partial;
+    partial.start(limited);
+    QTRY_VERIFY_WITH_TIMEOUT(partial.status().listenPort != 0, 5000);
+    const BtAddResult added = partial.addMagnet(magnet(torrent, full.status().listenPort) + QStringLiteral("&so=0"));
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY_WITH_TIMEOUT(partial.torrent(added.id) && partial.torrent(added.id)->state == BtState::Finished, kTimeoutMs);
+
+    // a pause and resume below the limit must not switch the limit off
+    QVERIFY(partial.pause(added.id));
+    QTRY_VERIFY_WITH_TIMEOUT(partial.torrent(added.id)->paused, 5000);
+    QVERIFY(partial.resume(added.id));
+    QTRY_VERIFY_WITH_TIMEOUT(!partial.torrent(added.id)->paused, 5000);
+
+    full.stop();
+    BtSession leech;
+    leech.start(settingsIn(m_dir, QStringLiteral("limitLeech")));
+    QCOMPARE(leech.addMagnet(magnet(torrent, partial.status().listenPort)).outcome, BtAddOutcome::Added);
+    QTRY_VERIFY_WITH_TIMEOUT(partial.torrent(added.id)->paused, kTimeoutMs);
+    leech.stop();
+
+    // the scheduler's resume leaves the limit on
+    QVERIFY(partial.resume(added.id, false));
+    QTRY_VERIFY_WITH_TIMEOUT(!partial.torrent(added.id)->paused, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(partial.torrent(added.id)->paused, 5000);
+
+    // the user's resume at the limit seeds on
+    QVERIFY(partial.resume(added.id));
+    QTRY_VERIFY_WITH_TIMEOUT(!partial.torrent(added.id)->paused, 5000);
+    QTest::qWait(2500);
+    QVERIFY(!partial.torrent(added.id)->paused);
+    partial.stop();
+}
+
 void tst_BtLocalSwarm::moveStorageTakesTheFiles()
 {
     // "Move to" (#187): a seeding torrent's files go to the folder, it seeds on from there,
@@ -735,6 +795,52 @@ void tst_BtLocalSwarm::moveStorageClearsAWriteError()
     QTRY_VERIFY_WITH_TIMEOUT(finished.count() > 0, kTimeoutMs);
     QCOMPARE(QDir::cleanPath(leecher.torrent(added.id)->savePath), QDir::cleanPath(roomy));
     QCOMPARE(readDownloaded(leecher, added.id), m_payload);
+    leecher.stop();
+    seeder.stop();
+}
+
+// mixed I2P: a magnet's private flag is unknown, so the list waits for metadata
+void tst_BtLocalSwarm::magnetI2pListWaitsForMetadata()
+{
+    const auto hasI2p = [](const BtSession& s, const QString& id) {
+        const auto list = s.trackers(id);
+        return std::ranges::any_of(list, [](const auto& t) { return t.url.contains(QLatin1StringView(".i2p")); });
+    };
+    const QString ownTracker = QStringLiteral("&tr=http%3A%2F%2F127.0.0.1%3A9%2Fannounce");
+    BtSettings settings = settingsIn(m_dir, QStringLiteral("leechI2pList"));
+    settings.i2pEnabled = true;
+    settings.i2pMixed = true;
+    settings.i2pTrackers = {QStringLiteral("http://tracker.example.i2p/a")};
+
+    // public: list added once metadata proves it
+    {
+        BtSession seeder;
+        quint16 port = 0;
+        startSeeder(seeder, m_v1, port);
+        BtSession leecher;
+        leecher.start(settings);
+        QSignalSpy metadata(&leecher, &BtSession::metadataReceived);
+        const BtAddResult added = leecher.addMagnet(magnet(m_v1, port) + ownTracker, {}, false);
+        QCOMPARE(added.outcome, BtAddOutcome::Added);
+        QVERIFY(!hasI2p(leecher, added.id));
+        QTRY_VERIFY_WITH_TIMEOUT(metadata.count() > 0, kTimeoutMs);
+        QTRY_VERIFY_WITH_TIMEOUT(hasI2p(leecher, added.id), 5000);
+        leecher.remove(added.id, true);
+        leecher.stop();
+        seeder.stop();
+    }
+
+    // private: libtorrent seeds don't serve its metadata, the list never goes out
+    const Torrent priv = makeTorrent(m_seedDir + QStringLiteral("/payload.bin"), m_seedDir, lt::create_torrent::v1_only, true);
+    BtSession seeder;
+    quint16 port = 0;
+    startSeeder(seeder, priv, port);
+    BtSession leecher;
+    leecher.start(settings);
+    const BtAddResult added = leecher.addMagnet(magnet(priv, port) + ownTracker, {}, false);
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTest::qWait(3000);
+    QVERIFY(!hasI2p(leecher, added.id));
     leecher.stop();
     seeder.stop();
 }

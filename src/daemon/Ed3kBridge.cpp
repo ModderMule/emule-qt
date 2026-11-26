@@ -223,6 +223,21 @@ QByteArray jointRoot([[maybe_unused]] const QByteArray& md4)
     return {};
 }
 
+void appendJointCounts([[maybe_unused]] QCborMap& row, [[maybe_unused]] const QByteArray& md4)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_ed2kJoin || !s_ed2kJoin->isEnabled())
+        return;
+    const auto info = s_ed2kJoin->infoOf(md4);
+    if (!info)
+        return;
+    if (info->sources > 0)
+        row.insert(QLatin1StringView("ed3kSources"), info->sources);
+    if (info->a4af > 0)
+        row.insert(QLatin1StringView("ed3kA4af"), info->a4af);
+#endif
+}
+
 void appendSharedCounts([[maybe_unused]] QCborMap& shared)
 {
 #ifdef EMULE_HAVE_ED3K

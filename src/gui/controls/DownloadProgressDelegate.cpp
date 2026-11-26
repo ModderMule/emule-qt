@@ -132,6 +132,7 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
         return;
     }
 
+    const QVariant completing = index.data(DownloadListModel::CompletionPercentRole);
     const bool flat = useFlatBar();
     if (isSourceRow) {
         // Parts sit at their real offsets when the parent file's size is known
@@ -147,7 +148,7 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
                          fileBar.freqUnit > 0 ? static_cast<uint64_t>(fileBar.freqUnit) : PARTSIZE);
         }
     } else if (useSimpleDownloadBar()) {
-        paintSimpleBar(*painter, barRect, percent, paused);
+        paintSimpleBar(*painter, barRect, completing.isValid() ? completing.toDouble() : percent, paused);
     } else if (const QVariant barData = index.data(DownloadListModel::BarDataRole); barData.isValid()) {
         paintDownloadBar(*painter, barRect, barData.value<DownloadBarData>(), percent, paused,
                          downloadBarMode() == DownloadBarMode::PartDetail);
@@ -167,6 +168,10 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
         }
         paintProgressStrip(*painter, barRect, percent);
     }
+
+    // Final hash/copy: the bar stays green, its top strip runs again
+    if (!isSourceRow && completing.isValid() && !useSimpleDownloadBar())
+        paintProgressStrip(*painter, barRect, completing.toDouble(), /*track*/ true);
 
     // Percentage text — file rows only, as MFC's DrawFileItem
     if (!isSourceRow && thePrefs.showDwlPercentage())

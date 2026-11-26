@@ -39,6 +39,7 @@
 
 #include <QNetworkDatagram>
 #include <QSignalSpy>
+#include <QPointer>
 #include <QTcpServer>
 #include <QUdpSocket>
 #include <QTest>
@@ -446,6 +447,8 @@ private slots:
     void requestSharedFileList_sendsAfterHandshakeAndRefusesDuplicate();
     // Browse outcome is visible: denial on the status log, answer in its own tab
     void requestSharedFileList_deniedAndAnsweredAreReported();
+    // Peer that closes a plain hello gets one obfuscated browse dial
+    void requestSharedFileList_retriesObfuscatedOnce();
     // OP_REASKCALLBACKTCP — the IPv6 sentinel relay form
     void reaskCallbackTcp_parsesIPv6SentinelForm();
     // OP_QUEUEFULL threshold — MFC srchybrid/ClientUDPSocket.cpp:299
@@ -1758,6 +1761,47 @@ void tst_CallbackAndQueueRank::requestSharedFileList_sendsAfterHandshakeAndRefus
 
     m_clientList->removeClient(shyClient);
     delete shyClient;
+}
+
+void tst_CallbackAndQueueRank::requestSharedFileList_retriesObfuscatedOnce()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+    QList<uint8> firstBytes;
+    connect(&server, &QTcpServer::newConnection, this, [&] {
+        QTcpSocket* s = server.nextPendingConnection();
+        connect(s, &QTcpSocket::readyRead, s, [&firstBytes, s] {
+            firstBytes << static_cast<uint8>(s->readAll().at(0));
+            s->disconnectFromHost();    // what a crypt-required peer does
+        });
+        connect(s, &QTcpSocket::disconnected, s, &QObject::deleteLater);
+    });
+
+    std::array<uint8, 16> hash{};
+    hash.fill(0x75);
+    auto* client = new UpDownClient();
+    client->setUserHash(hash.data());
+    client->setConnectAddress(Address::fromHostOrder(0x7F000001));
+    client->setUserPort(server.serverPort());
+    client->setUserIDHybrid(0x7F000001);
+    m_clientList->addClient(client);
+    // the list reaps a client nothing needs once both dials failed
+    const QPointer<UpDownClient> alive(client);
+
+    client->requestSharedFileList();
+    QTRY_COMPARE_WITH_TIMEOUT(firstBytes.size(), 2, 5000);
+    QCOMPARE(firstBytes[0], static_cast<uint8>(OP_EDONKEYPROT));
+    QVERIFY(firstBytes[1] != OP_EDONKEYPROT);
+
+    // Both failed: reported, released, no third dial
+    QTRY_VERIFY_WITH_TIMEOUT(!alive || alive->fileListRequested() == 0, 5000);
+    QTest::qWait(300);
+    QCOMPARE(firstBytes.size(), 2);
+
+    if (alive) {
+        m_clientList->removeClient(alive);
+        delete alive.data();
+    }
 }
 
 namespace {

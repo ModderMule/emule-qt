@@ -130,6 +130,10 @@ QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
         // batch 15: "Node" / "Anonymous" (hops.md §1)
         {QStringLiteral("key"), s_downloads ? ed3k::Ed3kHide::keyName(s_downloads->keyOfRoot(i.root)) : QString()},
     };
+    if (i.completionPermille >= 0) {
+        m.insert(QStringLiteral("completionPermille"), i.completionPermille);
+        m.insert(QStringLiteral("copying"), i.copying);
+    }
     // other names of the root known here (tooltip, Details); its row stays in Transfers only
     if (QCborArray aliases = Ed3kUploadsBridge::aliasesOf(QByteArray(reinterpret_cast<const char*>(i.root.bytes.data()),
                                                                       qsizetype(i.root.bytes.size())));

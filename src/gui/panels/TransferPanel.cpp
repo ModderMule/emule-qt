@@ -13,6 +13,7 @@
 #include "utils/MoveDownloadsAction.h"
 #include "utils/LocateFilesAction.h"
 #include "utils/Clipboard.h"
+#include "utils/ClientSelection.h"
 #include "utils/Opcodes.h"
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
@@ -1615,12 +1616,15 @@ void TransferPanel::requestDownloads()
             row.transferringSrcCount = static_cast<int>(m.value(QStringLiteral("transferringSrcCount")).toInteger());
             row.availableSrcCount = static_cast<int>(m.value(QStringLiteral("availableSrcCount")).toInteger());
             row.a4afSrcCount      = static_cast<int>(m.value(QStringLiteral("a4afSrcCount")).toInteger());
+            row.jointSrcCount     = static_cast<int>(m.value(QStringLiteral("ed3kSources")).toInteger());
+            row.jointA4afCount    = static_cast<int>(m.value(QStringLiteral("ed3kA4af")).toInteger());
             row.priority          = m.value(QStringLiteral("downPriority")).toString();
             row.isAutoDownPriority = m.value(QStringLiteral("isAutoDownPriority")).toBool();
             row.isPaused          = m.value(QStringLiteral("isPaused")).toBool();
             row.isStopped         = m.value(QStringLiteral("isStopped")).toBool();
             row.fileOp            = static_cast<int>(m.value(QStringLiteral("fileOp")).toInteger());
             row.completionError   = static_cast<int>(m.value(QStringLiteral("completionError")).toInteger());
+            row.completionPermille = static_cast<int>(m.value(QStringLiteral("completionPermille")).toInteger(-1));
             row.category          = m.value(QStringLiteral("category")).toInteger();
             row.lastSeenComplete  = m.value(QStringLiteral("lastSeenComplete")).toInteger();
             row.completeSourcesLo = static_cast<int>(m.value(QStringLiteral("completeSourcesLo")).toInteger());
@@ -1854,11 +1858,11 @@ void TransferPanel::applyClients(int clientView, std::vector<ClientRow> rows)
     const ClientSlot& slot = clientSlot(clientView);
     const int vScroll = slot.view->verticalScrollBar()->value();
     const int hScroll = slot.view->horizontalScrollBar()->value();
-    const QStringList selected = saveClientSelection(slot.view, slot.model);
+    const QStringList selected = ClientSelection::save(slot.view, slot.model);
 
     slot.model->setClients(std::move(rows));
 
-    restoreClientSelection(slot.view, slot.model, selected);
+    ClientSelection::restore(slot.view, slot.model, selected);
     slot.view->verticalScrollBar()->setValue(vScroll);
     slot.view->horizontalScrollBar()->setValue(hScroll);
 }
@@ -2468,69 +2472,6 @@ QStringList TransferPanel::saveDownloadSelectionMulti() const
         }
     }
     return result;
-}
-
-QStringList TransferPanel::saveClientSelection(QTreeView* view, ClientListModel* model) const
-{
-    // Key on the selected rows, not the current one: a deselected row stays current,
-    // and restoring it would undo the deselect on the next refresh (issue #27)
-    const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(view->model());
-    if (!proxy)
-        return {};
-
-    QStringList keys;
-    const auto keyOf = [&](const QModelIndex& proxyIdx) {
-        const auto* client = model->clientAt(proxy->mapToSource(proxyIdx).row());
-        if (client && !client->userHash.isEmpty() && !keys.contains(client->userHash))
-            keys << client->userHash;
-    };
-    const auto* sel = view->selectionModel();
-    if (const QModelIndex cur = sel->currentIndex(); cur.isValid() && sel->isSelected(cur))
-        keyOf(cur);
-    for (const QModelIndex& idx : sel->selectedRows(0))
-        keyOf(idx);
-    return keys;
-}
-
-void TransferPanel::restoreClientSelection(QTreeView* view, ClientListModel* model,
-                                           const QStringList& keys)
-{
-    if (keys.isEmpty())
-        return;
-
-    const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(view->model());
-    if (!proxy)
-        return;
-
-    // setCurrentIndex() on the view would ClearAndSelect, so set current without updating and
-    // select every column of each row (selectedRows() wants whole rows)
-    QModelIndex current;
-    QItemSelection selection;
-    const int lastCol = model->columnCount() - 1;
-    for (int row = 0; row < model->clientCount(); ++row) {
-        const auto* client = model->clientAt(row);
-        if (!client)
-            continue;
-        const qsizetype pos = keys.indexOf(client->userHash);
-        if (pos < 0)
-            continue;
-        const QModelIndex first = proxy->mapFromSource(model->index(row, 0));
-        const QModelIndex last = proxy->mapFromSource(model->index(row, lastCol));
-        if (!first.isValid())
-            continue;
-        selection.select(first, last.isValid() ? last : first);
-        if (pos == 0)
-            current = first;
-    }
-    if (selection.isEmpty())
-        return;
-
-    auto* sel = view->selectionModel();
-    if (!current.isValid())
-        current = selection.first().topLeft();
-    sel->setCurrentIndex(current, QItemSelectionModel::NoUpdate);
-    sel->select(selection, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-    // no scrollTo(current): it jumps the horizontal bar back to column 0 on every refresh
 }
 
 std::vector<const ClientRow*> TransferPanel::selectedClients(QTreeView* view, ClientListModel* model,

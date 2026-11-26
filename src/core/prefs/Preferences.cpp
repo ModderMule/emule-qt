@@ -2827,10 +2827,13 @@ QStringList Preferences::defaultBtPublicTrackers()
     };
 }
 
-QStringList Preferences::defaultBtI2pTrackers()
+namespace {
+
+/// Default list v0.7.8-v0.7.40, written to every profile: unchanged = never edited.
+/// Newer defaults aren't saved, so no further lists belong here.
+[[nodiscard]] bool isSavedOldI2pDefault(const QStringList& urls)
 {
-    // ngosang/trackerslist trackers_all_i2p.txt as of 2026-11; udp:// ones left out
-    return {
+    static const QStringList old{
         QStringLiteral("http://btrackrqkjp6kgelov5a3uxisis77ofxqt5nvy5hvvtoybjpmq4q.b32.i2p/announce"),
         QStringLiteral("http://qimlze77z7w32lx2ntnwkuqslrzlsqy7774v3urueuarafyqik5a.b32.i2p:80/a"),
         QStringLiteral("http://opentracker.dg2.i2p:80/a"),
@@ -2845,6 +2848,26 @@ QStringList Preferences::defaultBtI2pTrackers()
         QStringLiteral("http://tracker.insulaocculta.i2p/a"),
         QStringLiteral("http://tracker.nyaa2p.i2p:80/announce"),
         QStringLiteral("http://yet-another-public-tracker.i2p/announce"),
+    };
+    return urls == old;
+}
+
+} // namespace
+
+QStringList Preferences::defaultBtI2pTrackers()
+{
+    // ngosang/trackerslist trackers_all_i2p.txt as of 2026-11; udp:// ones left out
+    return {
+        QStringLiteral("http://btrackrqkjp6kgelov5a3uxisis77ofxqt5nvy5hvvtoybjpmq4q.b32.i2p:80/announce"),
+        QStringLiteral("http://freetracker.i2p:7331/announce"),
+        QStringLiteral("http://kyu.i2p:80/a"),
+        QStringLiteral("http://opentracker.dg2.i2p:80/a"),
+        QStringLiteral("http://opentracker.fattydove.i2p:80/a"),
+        QStringLiteral("http://opentracker.r4sas.i2p:80/a"),
+        QStringLiteral("http://opentracker.skank.i2p:80/a"),
+        QStringLiteral("http://tracker.insulaocculta.i2p:80/a"),
+        QStringLiteral("http://trackergjmjgh6jfqjf5db6wagbgmfh3gp2msej7z4tpdjo5cuya.b32.i2p:80/announce"),
+        QStringLiteral("http://yet-another-public-tracker.i2p:80/announce"),
     };
 }
 
@@ -6408,7 +6431,10 @@ bool Preferences::load(const QString& filePath)
                     for (const auto& item : list)
                         if (const QString u = QString::fromStdString(item.as<std::string>("")).trimmed(); !u.isEmpty())
                             urls << u;
-                    m_data->btI2pTrackers = urls;
+                    m_data->btI2pTrackers = isSavedOldI2pDefault(urls) ? defaultBtI2pTrackers() : urls;
+                } else {
+                    // not saved = follows the defaults of this version
+                    m_data->btI2pTrackers = defaultBtI2pTrackers();
                 }
                 const int routerPort = i2p["routerPort"].as<int>(m_data->btI2pRouterPort);
                 m_data->btI2pRouterPort = (routerPort >= 0 && routerPort <= 65535) ? static_cast<uint16>(routerPort) : 0;
@@ -7960,10 +7986,13 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "ed3kJoin" << YAML::Value << m_data->btI2pEd3kJoin;
     out << YAML::Key << "tunnelLength" << YAML::Value << m_data->btI2pTunnelLength;
     out << YAML::Key << "tunnelQuantity" << YAML::Value << m_data->btI2pTunnelQuantity;
-    out << YAML::Key << "trackers" << YAML::Value << YAML::BeginSeq;
-    for (const QString& u : m_data->btI2pTrackers)
-        out << u.toStdString();
-    out << YAML::EndSeq;
+    // defaults stay unsaved so unedited profiles get the next version's list; empty is saved
+    if (m_data->btI2pTrackers != defaultBtI2pTrackers()) {
+        out << YAML::Key << "trackers" << YAML::Value << YAML::BeginSeq;
+        for (const QString& u : m_data->btI2pTrackers)
+            out << u.toStdString();
+        out << YAML::EndSeq;
+    }
     out << YAML::Key << "routerPort" << YAML::Value << static_cast<int>(m_data->btI2pRouterPort);
     out << YAML::Key << "share" << YAML::Value << m_data->btI2pShare;
     out << YAML::Key << "browserProxy" << YAML::Value << m_data->btI2pBrowserProxy;

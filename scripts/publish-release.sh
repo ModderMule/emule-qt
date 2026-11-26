@@ -62,6 +62,7 @@ set -euo pipefail
 # Nothing needs to be started by hand.
 #
 # Usage: scripts/publish-release.sh [--publish-only] [--no-build] [--skip-resolver] [--skip-ed3k-nodes]
+#                                   [--update-i2p-trackers]
 #
 #   --publish-only   Skip the whole git side (no bump, no commit, no tag, no push)
 #                    and do what CI's manifest job does, for the version already in
@@ -75,21 +76,29 @@ set -euo pipefail
 #   --skip-resolver  Leave the resolver alone: no build, no upload, no publish-resolver.sh
 #                    (the manifest keeps its entry).
 #   --skip-ed3k-nodes Keep data/config/nodes.ed3knod as committed; no export from a seed node.
+#   --update-i2p-trackers  Refresh the default I2P trackers (scripts/update-i2p-trackers.py)
+#                    into the release commit. A failed refresh warns and keeps the list.
 
 # --- arguments --------------------------------------------------------------
 PUBLISH_ONLY=0
 NO_BUILD=0
 SKIP_RESOLVER=0
 SKIP_ED3K_NODES=0
+UPDATE_I2P_TRACKERS=0
 for arg in "$@"; do
   case "$arg" in
     --publish-only) PUBLISH_ONLY=1 ;;
     --no-build)      NO_BUILD=1 ;;
     --skip-resolver) SKIP_RESOLVER=1 ;;
     --skip-ed3k-nodes) SKIP_ED3K_NODES=1 ;;
-    *) echo "usage: $0 [--publish-only] [--no-build] [--skip-resolver] [--skip-ed3k-nodes]" >&2; exit 1 ;;
+    --update-i2p-trackers) UPDATE_I2P_TRACKERS=1 ;;
+    *) echo "usage: $0 [--publish-only] [--no-build] [--skip-resolver] [--skip-ed3k-nodes] [--update-i2p-trackers]" >&2; exit 1 ;;
   esac
 done
+if [[ "$PUBLISH_ONLY" -eq 1 && "$UPDATE_I2P_TRACKERS" -eq 1 ]]; then
+  echo "error: --update-i2p-trackers needs a release commit; not with --publish-only" >&2
+  exit 1
+fi
 
 # --- locate repo root -------------------------------------------------------
 if ! ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"; then
@@ -383,6 +392,7 @@ else
   else
     echo "  ed3k     : (no ${ED3K_SEED_SCRIPT}; ${ED3K_NODES_FILE} as committed)"
   fi
+  [[ "$UPDATE_I2P_TRACKERS" -eq 1 ]] && echo "  i2p      : scripts/update-i2p-trackers.py (in the release commit)"
   echo "  packmule : ${PM_COMMIT:0:12} (CI checks out ${PM_REF_FILE})"
   echo "  tag      : ${TAG}  (annotated, carries the GeoLite2 + resolver SHA-256)"
   echo "  push     : ${REMOTE} ${BRANCH}  and  ${REMOTE} ${TAG}"
@@ -483,6 +493,16 @@ if [[ "$PUBLISH_ONLY" -eq 0 && "$SKIP_ED3K_NODES" -eq 0 ]]; then
     fi
   else
     echo "note: no ${ED3K_SEED_SCRIPT}; ${ED3K_NODES_FILE} stays as committed"
+  fi
+fi
+
+# --- default I2P trackers -----------------------------------------------------
+if [[ "$UPDATE_I2P_TRACKERS" -eq 1 ]]; then
+  echo "Updating the default I2P trackers ..."
+  if py scripts/update-i2p-trackers.py; then
+    [[ -n "$(git status --porcelain -- src/core/prefs/Preferences.cpp)" ]] && BUMPED=1
+  else
+    echo "warning: I2P trackers not updated; the committed list stays" >&2
   fi
 fi
 

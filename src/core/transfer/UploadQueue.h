@@ -147,7 +147,7 @@ public:
     /// Give the slot of a peer that is taking nothing to someone who is waiting.
     ///
     /// Only while the line is not full (rate + 2 % under the limit for kUnderfillMs,
-    /// or no limit at all) and a reachable client, or a LowID we can call back, is waiting. A slot counts as dead
+    /// or no limit at all), no further slot may be opened (slotRoomLeft()), and a reachable client, or a LowID we can call back, is waiting. A slot counts as dead
     /// when the peer has had all we sent and asked for nothing for kDeadSlotMs, or has data queued and
     /// took none of it after the warm-up, or sent data has gone unacked for
     /// UpDownClient::kUnackedStuckMs (UpDownClient::upSlotActivity). Without this
@@ -155,7 +155,8 @@ public:
     ///
     /// The peer goes back on the waiting list the way a finished session does — no
     /// ban, it may simply be busy with another file — and its address is passed over
-    /// for a slot for kSlotCooldownMs, doubling each time it happens again.
+    /// for a slot for kSlotCooldownMs, doubling each time it happens again — unless the
+    /// session it lost sent a part or more: then the doubling starts over.
     /// One slot per call. @p curTick is passed in so a test can move time.
     void recycleDeadSlots(uint64 curTick);
     /// Drop waiters not heard from in MAX_PURGEQUEUETIME, or whose file is gone. Run
@@ -242,6 +243,10 @@ public:
     /// while the rate stayed under kUnderfillSlotPercent of a known limit for
     /// kUnderfillSlotMs and fewer than 90 % of the slot sockets are full. Public for tests.
     [[nodiscard]] bool underfillAllowsSlot(uint64 curTick) const;
+    /// The slot rules would open another slot now, pacing aside: forceNewClient()
+    /// without its timers. recycleDeadSlots() needs it false — with room left the
+    /// waiter gets a slot of its own, no one has to give theirs up. Public for tests.
+    [[nodiscard]] bool slotRoomLeft() const;
     static constexpr uint32 kUnderfillSlotMs = 5'000;
     static constexpr uint32 kUnderfillSlotPercent = 95;
     /// Cap (KB/s) up to which acceptNewClient's slot floor is 3, not MFC's 4; matches
@@ -289,6 +294,9 @@ private slots:
 private:
     /// The file a slot is being served from: its head block's, else the one it asked for.
     [[nodiscard]] static const uint8* servedFileId(const UpDownClient* client);
+
+    /// underfillAllowsSlot() without its timers: below the limit, under the cap, line not busy.
+    [[nodiscard]] bool underfillHasRoom() const;
 
     /// Point the client's upload file at the file a block request names — MFC
     /// srchybrid/UploadQueue.cpp:339-358. Removes the slot when that file is no longer

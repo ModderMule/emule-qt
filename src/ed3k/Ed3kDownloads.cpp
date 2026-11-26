@@ -9,6 +9,7 @@
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "prefs/Preferences.h"
+#include "utils/FileRelocate.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Log.h"
 
@@ -124,8 +125,10 @@ void Ed3kDownloads::stop()
     closeAll();
     for (auto& [root, e] : m_entries) {
         e.info.rate = 0;
-        if (e.info.state == Ed3kDownloadInfo::State::Verifying)
+        if (e.info.state == Ed3kDownloadInfo::State::Verifying) {
+            endCompletion(e);
             e.info.state = Ed3kDownloadInfo::State::Downloading;   // hashed again at the next start
+        }
     }
     markChanged();
 }
@@ -352,7 +355,12 @@ bool Ed3kDownloads::cancel(const ffi::Root& root)
         stopDownload(root);
         if (isShared(root))
             unshare(root);
-        QFile::remove(e.info.partPath);
+        const bool copying = e.info.copying;
+        endCompletion(e);
+        if (copying)
+            (void)removeWhenFree(e.info.partPath);   // the worker still reads it (Windows)
+        else
+            QFile::remove(e.info.partPath);
         forgetBlobWrites(metPathOf(e));   // a queued save lands after the remove otherwise
         QFile::remove(metPathOf(e));
         logInfo(QStringLiteral("download of \"%1\" cancelled").arg(e.info.name));
@@ -462,6 +470,8 @@ std::expected<void, QString> Ed3kDownloads::rename(const ffi::Root& root, const 
         return std::unexpected(tr("Invalid file name."));
     if (clean == e->info.name)
         return {};
+    if (e->info.copying)
+        return std::unexpected(tr("The file is being moved."));
     if (e->info.state == Ed3kDownloadInfo::State::Complete) {
         // on disk: the share list or its own sharing follows the file
         if (e->moving)
@@ -830,7 +840,10 @@ void Ed3kDownloads::verify(Entry& e)
     if (QFile f(e.info.partPath); f.exists() && f.size() != qint64(e.info.size))
         (void)f.resize(qint64(e.info.size));
     const ffi::Root root = e.info.root;
-    hashInBackground(e.info.partPath, [this, root](std::optional<FileHash> hashed) { verified(root, hashed); });
+    e.completion = std::make_shared<FileStep>();
+    e.info.completionPermille = 0;
+    hashInBackground(e.info.partPath, [this, root](std::optional<FileHash> hashed) { verified(root, hashed); },
+                     /*withEd2k*/ false, e.completion);
 }
 
 void Ed3kDownloads::verified(const ffi::Root& root, const std::optional<FileHash>& hashed)
@@ -841,6 +854,7 @@ void Ed3kDownloads::verified(const ffi::Root& root, const std::optional<FileHash
     if (!hashed || hashed->root != root || hashed->size != e->info.size) {
         // every block was verified on arrival: the part file changed on disk since
         logWarning(QStringLiteral("\"%1\" does not hash to its root: downloaded again").arg(e->info.name));
+        endCompletion(*e);
         if (isShared(root))
             unshare(root);
         std::fill(e->have.begin(), e->have.end(), false);
@@ -854,29 +868,65 @@ void Ed3kDownloads::verified(const ffi::Root& root, const std::optional<FileHash
         pumpSession();
         return;
     }
-    QString error;
-    const QString path = moveToTarget(*e, &error);
-    if (path.isEmpty()) {
-        fail(*e, error);
+    const QString target = targetOf(*e);
+    if (renameOnVolume(e->info.partPath, target)) {
+        delivered(*e, target, std::span{hashed->hashes});
         return;
     }
-    e->info.path = path;
-    e->info.state = Ed3kDownloadInfo::State::Complete;
-    e->info.completedOn = QDateTime::currentSecsSinceEpoch();
-    forgetBlobWrites(metPathOf(*e));   // a queued save lands after the remove otherwise
-    QFile::remove(metPathOf(*e));
-    shareComplete(*e, std::span{hashed->hashes});
-    saveNow();
-    logInfo(QStringLiteral("\"%1\" complete: %2").arg(e->info.name, path));
+    // another volume: on a worker, was a QFile::copy that held up the core
+    e->info.copying = true;
+    e->info.completionPermille = 0;
+    e->completion->permille.store(0, std::memory_order_relaxed);
     markChanged();
-    const Ed3kDownloadInfo done = e->info;
+    auto hashes = std::make_shared<ffi::Bytes>(hashed->hashes);
+    copyInBackground(e->info.partPath, target, e->completion,
+                     [this, root, target, hashes, step = e->completion](bool ok) {
+        Entry* e = entryOf(root);
+        if (!e || e->completion != step) {   // cancelled while the last bytes went out
+            if (ok)
+                QFile::remove(target);
+            return;
+        }
+        if (!ok) {
+            const QString from = e->info.partPath;
+            endCompletion(*e);
+            fail(*e, QStringLiteral("cannot move %1 to %2").arg(from, target));
+            return;
+        }
+        delivered(*e, target, std::span{*hashes});
+    });
+}
+
+void Ed3kDownloads::delivered(Entry& e, const QString& path, std::span<const std::byte> hashes)
+{
+    const ffi::Root root = e.info.root;
+    endCompletion(e);
+    e.info.path = path;
+    e.info.state = Ed3kDownloadInfo::State::Complete;
+    e.info.completedOn = QDateTime::currentSecsSinceEpoch();
+    forgetBlobWrites(metPathOf(e));   // a queued save lands after the remove otherwise
+    QFile::remove(metPathOf(e));
+    shareComplete(e, hashes);
+    saveNow();
+    logInfo(QStringLiteral("\"%1\" complete: %2").arg(e.info.name, path));
+    markChanged();
+    const Ed3kDownloadInfo done = e.info;
     emit completed(root, path);
     if (m_completedHook)
         m_completedHook(done);
     pumpSession();
 }
 
-QString Ed3kDownloads::moveToTarget(const Entry& e, QString* error)
+void Ed3kDownloads::endCompletion(Entry& e)
+{
+    if (e.completion)
+        e.completion->stop.store(true);
+    e.completion.reset();
+    e.info.completionPermille = -1;
+    e.info.copying = false;
+}
+
+QString Ed3kDownloads::targetOf(const Entry& e)
 {
     QString target = e.info.targetPath;
     if (target.isEmpty()) {
@@ -889,17 +939,7 @@ QString Ed3kDownloads::moveToTarget(const Entry& e, QString* error)
         target = QDir(m_incomingDir).filePath(e.info.name);
         QDir().mkpath(m_incomingDir);
     }
-    target = freePath(target);
-    if (QFile::rename(e.info.partPath, target))
-        return target;
-    // another file system
-    if (QFile::copy(e.info.partPath, target)) {
-        QFile::remove(e.info.partPath);
-        return target;
-    }
-    if (error)
-        *error = QStringLiteral("cannot move %1 to %2").arg(e.info.partPath, target);
-    return {};
+    return freePath(target);
 }
 
 void Ed3kDownloads::shareComplete(Entry& e, std::span<const std::byte> hashes)
@@ -1032,6 +1072,13 @@ void Ed3kDownloads::onTick()
         if (rate != e.info.rate) {
             e.info.rate = rate;
             m_changed = true;
+        }
+        if (e.completion) {
+            const int permille = e.completion->permille.load(std::memory_order_relaxed);
+            if (permille != e.info.completionPermille) {
+                e.info.completionPermille = permille;
+                m_changed = true;
+            }
         }
     }
     webDrive();

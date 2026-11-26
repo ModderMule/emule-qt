@@ -1033,6 +1033,21 @@ void dispatchRequest(const IpcMessage& msg, const std::function<void(const IpcMe
     case IpcMsgType::PauseTorrent: boolResult(s_session->pause(id)); break;
     case IpcMsgType::ResumeTorrent: boolResult(s_session->resume(id)); break;
     case IpcMsgType::RecheckTorrent: boolResult(s_session->recheck(id)); break;
+    case IpcMsgType::LocateTorrentFiles:
+        s_session->locateFiles(id, stringsOf(msg.fieldArray(1)), [seq, reply](std::optional<bt::BtLocateReport> r) {
+            if (!r) {
+                reply(IpcMessage::makeError(seq, 409, QStringLiteral("Torrent not found or busy")));
+                return;
+            }
+            reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("files"), r->files},
+                                                             {QStringLiteral("candidates"), r->candidates},
+                                                             {QStringLiteral("hashed"), r->hashed},
+                                                             {QStringLiteral("linked"), r->linked},
+                                                             {QStringLiteral("partial"), r->partial},
+                                                             {QStringLiteral("copied"), r->copied},
+                                                             {QStringLiteral("failed"), r->failed}}));
+        });
+        break;
     case IpcMsgType::ReannounceTorrent: boolResult(s_session->reannounce(id)); break;
     case IpcMsgType::GetTorrentDetails:
         if (!s_session->torrent(id))
