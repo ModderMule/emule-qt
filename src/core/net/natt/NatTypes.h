@@ -99,6 +99,7 @@ struct Attempt {
     Address peerIPv6;               ///< from the peer's handoff
     bool peerHandoffSeen = false;   ///< got a 0xB2 0x11 from the peer
     bool peerSentNoAddress = false; ///< its handoff carried no IPv6
+    bool offeredUdp6 = false;       ///< requester: our IPv6 UDP endpoint went in the request
 
     uint32 connAck = 0;             ///< PR_NAT pairing nonce
     uint64 startedMs = 0;

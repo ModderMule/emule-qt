@@ -98,6 +98,8 @@ protected:
 
 private:
     void setupUi();
+    /// .torrent files, or files / a folder for the Torrent Creator
+    [[nodiscard]] bool takesDrop(const QMimeData* mime) const;
     QWidget* createFilterBar();
     void setFilter(int filter);
     void updateFilterCounts();

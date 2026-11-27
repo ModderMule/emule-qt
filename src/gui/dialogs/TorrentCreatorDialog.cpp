@@ -41,6 +41,7 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QMessageBox>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -302,6 +303,21 @@ void TorrentCreatorDialog::run(IpcClient* ipc, QWidget* parent, const QString& p
     auto* dlg = new TorrentCreatorDialog(ipc, path, onlyFiles, parent);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->show();
+}
+
+bool TorrentCreatorDialog::acceptsDrop(IpcClient* ipc, const QMimeData* mime)
+{
+    return ipc && ipc->isLocalConnection() && dropSource(mime).has_value();
+}
+
+bool TorrentCreatorDialog::runFromDrop(IpcClient* ipc, QWidget* parent, const QMimeData* mime)
+{
+    const auto source = acceptsDrop(ipc, mime) ? dropSource(mime) : std::nullopt;
+    if (!source)
+        return false;
+    // not modal inside the drop: the drag source waits for it
+    QTimer::singleShot(0, parent, [ipc, parent, s = *source] { run(ipc, parent, s.path, s.onlyFiles); });
+    return true;
 }
 
 void TorrentCreatorDialog::reject()

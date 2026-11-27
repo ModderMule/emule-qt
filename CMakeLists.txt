@@ -495,7 +495,7 @@ if(EMULE_BITTORRENT)
     set(_emule_bt_hint "Install Boost >= 1.74 headers (brew install boost, apt install libboost-dev, \
 vcpkg, or set BOOST_ROOT) or pass -DEMULE_BITTORRENT=OFF")
     # bump here, in src/vcpkg.json and src/vcpkg-ports/libtorrent together
-    set(EMULE_LIBTORRENT_VERSION 2.1.2)
+    set(EMULE_LIBTORRENT_VERSION 2.1.3)
     find_package(LibtorrentRasterbar ${EMULE_LIBTORRENT_VERSION} EXACT CONFIG QUIET)
     set(_emule_lt_installed OFF)
     if(LibtorrentRasterbar_FOUND)
@@ -569,12 +569,9 @@ vcpkg, or set BOOST_ROOT) or pass -DEMULE_BITTORRENT=OFF")
             GIT_SHALLOW    TRUE
             # try_signal is in the library's source list; the other submodules are not needed
             GIT_SUBMODULES deps/try_signal
-            # I2P SAM use-after-free, upstream 51000e88 (docs/torrent/libtorrent-i2p-stream-uaf.md)
-            PATCH_COMMAND ${CMAKE_COMMAND}
-                -DPATCH=${CMAKE_SOURCE_DIR}/src/vcpkg-ports/libtorrent/fix-i2p-stream-buffer-uaf.patch
-                -P ${CMAKE_SOURCE_DIR}/cmake/ApplyPatch.cmake
+            # I2P SAM use-after-free fixed upstream in 2.1.3 (51000e88), patch dropped
             # I2P peer sockets skip the outgoing interface bind (docs/torrent/libtorrent-i2p-stream-uaf.md)
-            COMMAND ${CMAKE_COMMAND}
+            PATCH_COMMAND ${CMAKE_COMMAND}
                 -DPATCH=${CMAKE_SOURCE_DIR}/src/vcpkg-ports/libtorrent/fix-i2p-outgoing-bind.patch
                 -P ${CMAKE_SOURCE_DIR}/cmake/ApplyPatch.cmake
             # incoming I2P comes back after a router restart (docs/torrent/libtorrent-i2p-stream-uaf.md)

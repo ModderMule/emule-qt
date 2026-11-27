@@ -125,6 +125,29 @@ bool BackgroundFileWriter::saveFile(const QString& path, const QByteArray& data)
     return f.commit();
 }
 
+bool BackgroundFileWriter::saveFileKeepBak(const QString& path, const QByteArray& data)
+{
+    keepBak(path);
+    return saveFile(path, data);
+}
+
+void BackgroundFileWriter::keepBak(const QString& path)
+{
+    // a copy, not a rename: the file stays in place should the save fail
+    if (QFileInfo(path).size() <= 0)
+        return;
+    const QString bak = path + QStringLiteral(".bak");
+    QFile::remove(bak);
+    (void)QFile::copy(path, bak);
+}
+
+void BackgroundFileWriter::removeWithBak(const QString& path)
+{
+    discard(path);
+    QFile::remove(path);
+    QFile::remove(path + QStringLiteral(".bak"));
+}
+
 std::optional<QByteArray> BackgroundFileWriter::readFile(const QString& path)
 {
     if (auto queued = instance().pending(path))

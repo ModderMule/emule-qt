@@ -1543,6 +1543,10 @@ public:
     [[nodiscard]] int btSeedTimeLimitMinutes() const;
     void setBtSeedTimeLimitMinutes(int val);
 
+    /// Stop seeding once the swarm has this many other seeds. 0 = no limit.
+    [[nodiscard]] int btSeedMinSeeds() const;
+    void setBtSeedMinSeeds(int val);
+
     /// Share of the global limits BitTorrent keeps while eD2K and Usenet are busy,
     /// percent 1–99. Below them in priority; idle bandwidth is borrowed in full.
     [[nodiscard]] int btDownloadSharePercent() const;
@@ -1639,6 +1643,7 @@ public:
     static constexpr int kMaxBtConnections = 5000;
     static constexpr int kMaxBtSeedRatioPercent = 10000;
     static constexpr int kMaxBtSeedTimeLimitMinutes = 525600;   // one year
+    static constexpr int kMaxBtSeedMinSeeds = 1000;
 
     // -- ed3k (packmule) -------------------------------------------------------
     //

@@ -59,6 +59,12 @@ public:
 
     /// QSaveFile with folders made: the default WriteFn.
     static bool saveFile(const QString& path, const QByteArray& data);
+    /// saveFile, the file there before kept as <path>.bak (an empty one is not kept).
+    static bool saveFileKeepBak(const QString& path, const QByteArray& data);
+    /// Keeps @p path as <path>.bak before it is replaced. Any thread.
+    static void keepBak(const QString& path);
+    /// discard() + removes @p path and its .bak: a deleted file must not come back.
+    void removeWithBak(const QString& path);
     /// What @p path holds once the queue is written: the queued copy, else the file;
     /// nullopt: neither (missing or unreadable).
     [[nodiscard]] static std::optional<QByteArray> readFile(const QString& path);

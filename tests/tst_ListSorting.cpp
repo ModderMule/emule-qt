@@ -1173,7 +1173,8 @@ void tst_ListSorting::uploadStateIsWordedAndSortedByState()
         rows[i].userHash = QString::number(i);
         rows[i].uploadState = QString::fromLatin1(tokens[i]);
     }
-    rows[1].uploadStalled = true;
+    rows[1].uploadWait = QStringLiteral("Request");
+    rows[2].uploadWait = QStringLiteral("Ack");
 
     ClientListModel model(ClientListMode::KnownClients);
     model.setClients(rows);
@@ -1181,12 +1182,13 @@ void tst_ListSorting::uploadStateIsWordedAndSortedByState()
 
     thePrefs.setShowExtControls(false);
     QCOMPARE(text(0), QStringLiteral("On Queue"));
-    QCOMPARE(text(1), QStringLiteral("Transferring"));   // stalled shows in advanced mode only
+    QCOMPARE(text(1), QStringLiteral("Transferring"));   // waits show in advanced mode only
     QCOMPARE(text(2), QStringLiteral("Standby"));
     QCOMPARE(text(3), QStringLiteral("Banned"));
     QCOMPARE(text(4), QStringLiteral("Connecting"));
     thePrefs.setShowExtControls(true);
     QCOMPARE(text(1), QStringLiteral("Stalled! Waiting for block request."));
+    QCOMPARE(text(2), QStringLiteral("Stalled! Waiting for acknowledgement."));
 
     // uploading, queued, connecting, banned — not alphabetical
     const auto rank = [&model](int row) { return model.index(row, 1).data(Qt::UserRole).toInt(); };

@@ -243,6 +243,8 @@ using Kind = PrefSpec::Kind;
                 "at this share ratio, in percent (100 = 1.0). 0 = no limit.");
     t << number("btSeedTimeLimitMinutes", 0, Preferences::kMaxBtSeedTimeLimitMinutes, "min",
                 "Stop seeding after this many minutes. 0 = no limit.");
+    t << number("btSeedMinSeeds", 0, Preferences::kMaxBtSeedMinSeeds, "",
+                "Stop seeding once the swarm has this many other seeds (tracker scrape). 0 = no limit.");
     t << number("btDownloadSharePercent", 1, 99, "%", "Share of the download limit BitTorrent "
                 "keeps while eD2K and Usenet download too. Idle bandwidth is borrowed in full.");
     t << number("btUploadSharePercent", 1, 99, "%", "Share of the upload limit BitTorrent keeps "

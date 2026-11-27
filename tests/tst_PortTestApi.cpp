@@ -5,6 +5,7 @@
 #include "app/AppConfig.h"
 #include "net/BindAddress.h"
 #include "net/PortTestApi.h"
+#include "net/PortTestGate.h"
 
 #include <QCborMap>
 #include <QTest>
@@ -31,6 +32,8 @@ private slots:
     void parseEd2kObfuscated();
     void ed2kTcpVerdict();
     void boundInterfaceFamilies();
+    void serverSources();
+    void filterGate();
 };
 
 void tst_PortTestApi::urlBitTorrent()
@@ -281,6 +284,45 @@ void tst_PortTestApi::boundInterfaceFamilies()
     const Reply none = parseReply(R"({"error":true,"errorMsg":"No address","data":{"reason":"no_target"}})", 400, Network::Ed2k);
     QVERIFY(!none.ok);
     QCOMPARE(none.failure, Failure::NoBoundAddress);
+}
+
+void tst_PortTestApi::serverSources()
+{
+    // #266: the addresses the server dials from, to let them past the IP filter
+    QVERIFY(sourceUrl().toString().endsWith(QStringLiteral("/wp-json/emqt/v1/porttest/source")));
+    const QStringList ips = parseSources(
+        R"({"error":false,"data":{"ip4":["198.51.100.20","bogus"],"ip6":["2001:db8::20"]}})");
+    QCOMPARE(ips, (QStringList{QStringLiteral("198.51.100.20"), QStringLiteral("2001:db8::20")}));
+    // an older server answers 404 with a WP error
+    QVERIFY(parseSources(R"({"code":"rest_no_route","message":"No route"})").isEmpty());
+    QVERIFY(parseSources("<html>").isEmpty());
+}
+
+void tst_PortTestApi::filterGate()
+{
+    const Address server = Address::fromString(QStringLiteral("198.51.100.20"));
+    const Address other = Address::fromString(QStringLiteral("203.0.113.9"));
+    // closed: nothing exempt, nothing recorded
+    QVERIFY(!PortTestGate::isExempt(server));
+    PortTestGate::noteFiltered(other, QStringLiteral("hosting"), true);
+
+    PortTestGate::open({server}, 10'000);
+    QVERIFY(PortTestGate::isExempt(server));
+    QVERIFY(!PortTestGate::isExempt(other));
+    PortTestGate::noteFiltered(other, QStringLiteral("hosting"), true);
+    PortTestGate::noteFiltered(other, QStringLiteral("hosting"), true);   // once per address
+    PortTestGate::noteFiltered(other, QStringLiteral("hosting"), false);
+    const auto hits = PortTestGate::close();
+    QCOMPARE(hits.size(), std::size_t(2));
+    QVERIFY(hits.at(0).address == other && hits.at(0).tcp);
+    QCOMPARE(hits.at(0).description, QStringLiteral("hosting"));
+    QVERIFY(!PortTestGate::isExempt(server));
+    QVERIFY(PortTestGate::close().empty());
+
+    // the safety deadline ends a window whose test never answered
+    PortTestGate::open({server}, 0);
+    QVERIFY(!PortTestGate::isExempt(server));
+    PortTestGate::close();
 }
 
 QTEST_GUILESS_MAIN(tst_PortTestApi)

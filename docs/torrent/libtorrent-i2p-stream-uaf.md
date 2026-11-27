@@ -5,16 +5,16 @@ Issue 1 found on Windows 11 (vcpkg libtorrent 2.1.2, MSVC Debug, i2pd 0.9.71 SAM
 
 | Issue | Upstream state | eMuleQt patch (`src/vcpkg-ports/libtorrent/`) |
 |---|---|---|
-| 1 `i2p_stream` buffer use-after-free | fixed on RC_2_1 by 51000e88, not released; RC_2_0 still has it | `fix-i2p-stream-buffer-uaf.patch` (same change as 51000e88). Drop once a release has it |
+| 1 `i2p_stream` buffer use-after-free | fixed in 2.1.3 (51000e88); RC_2_0 still has it | none since the 2.1.3 bump (patch dropped) |
 | 2 reconnect backoff stays at 1 s | not filed (checked 2026-11-04) | `fix-i2p-reconnect-backoff.patch` |
 | 3 `outgoing_interfaces` drops all I2P peers | not filed | `fix-i2p-outgoing-bind.patch` |
 | 4 incoming I2P dead after an accept error | not filed | `fix-i2p-accept-after-router-restart.patch` |
 | 5 dead SAM session not detected | not filed | `fix-i2p-accept-after-router-restart.patch` (same patch as 4) |
 
-Before filing 2 to 5, check RC_2_1 HEAD and the open issues. They were only checked against v2.1.2 (6da363d2).
+Before filing 2 to 5, check RC_2_1 HEAD and the open issues. They were checked against v2.1.2 (6da363d2); all four patches still apply unchanged to v2.1.3 (87b77c0).
 
 Local state:
-- the overlay port applies all four patches in order: uaf, outgoing-bind, accept-after-router-restart, reconnect-backoff. The FetchContent v2.1.2 build (Linux/macOS) applies the same files via `cmake/ApplyPatch.cmake`. A Homebrew or distro libtorrent found by `find_package` is not patched
+- the overlay port applies three patches in order: outgoing-bind, accept-after-router-restart, reconnect-backoff. The FetchContent v2.1.3 build (Linux/macOS) applies the same files via `cmake/ApplyPatch.cmake`. A Homebrew or distro libtorrent found by `find_package` is not patched
 - issue 1 verified 2026-11-04 with the patch, Debug: two cores, each with its own bundled i2pd, 4 MB torrent. Done in 6m50s over public I2P trackers, sha256 matches, no assert and no freeze
 - issues 2 to 5 verified 2026-11-12 with a standalone session probe and a scratch i2pd (see each issue)
 
@@ -27,7 +27,7 @@ Local state:
 ### Affected
 - releases 2.0.14, 2.0.15, 2.1.1, 2.1.2
 - RC_2_0 HEAD
-- fixed on RC_2_1 by 51000e889558a702e7bf591b07c280ad9a4b3b28, not in a release
+- fixed on RC_2_1 by 51000e889558a702e7bf591b07c280ad9a4b3b28, released in 2.1.3
 
 Introduced by "don't hand a stack buffer to async_write in i2p_stream" (7f13c61d on RC_2_1, back-ported to 2.0.14). That change made `send_*` format into the member `m_buffer`. `read_line()` was not reordered to match.
 

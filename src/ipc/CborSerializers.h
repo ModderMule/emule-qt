@@ -538,7 +538,7 @@ inline void insertDownloadSeed(QCborMap& m, const SearchFile& f)
     m.insert(QStringLiteral("userHash"),        md4str(c.userHash()));
     m.insert(QStringLiteral("software"),        c.dbgGetFullClientSoftVer());
     m.insert(QStringLiteral("uploadState"),     c.uploadStateToken());
-    m.insert(QStringLiteral("uploadStalled"),   c.uploadStalled());
+    m.insert(QStringLiteral("uploadWait"),      c.uploadWaitToken());
     m.insert(QStringLiteral("downloadState"),   c.downloadStateDisplayString());
     m.insert(QStringLiteral("sourceFrom"),      static_cast<int>(c.sourceFrom()));
     // Upload fields

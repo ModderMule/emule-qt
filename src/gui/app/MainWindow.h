@@ -354,6 +354,8 @@ private slots:
     void onFirstTimeWizard();
     void maybeShowFirstStartWizard();
     void onIPFilter();
+    /// Tools › Backup Config (#268): the core copies its config folder to a folder picked
+    void onBackupConfig();
     void onPasteLinks();
     void onSchedulerToggle();
     void onToolbarContextMenu(const QPoint& pos);

@@ -135,7 +135,8 @@ private slots:
     // hole-punch extension (ed2k-server#39)
     void ext_keepaliveObfuscatedOnceKeyKnown();
     void ext_requestCarriesKeepalive();
-    void ext_skipsEvenTargetAndIPv6Session();
+    void ext_evenTargetPunchedButNotOverIPv6();
+    void fail_0x62_triesKadBuddy();
     void ext_keyOutlivesLostPublicIP();
     void sessionKeyUDP_rules();
     void ext_wakeUp_burstsAndWaitsForInfo();
@@ -479,6 +480,34 @@ void tst_NatRendezvous::fail_0x62_endsRequest()
     fail[4] = 2;
     f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_FAIL, fail);
     QCOMPARE(f.env->failed.size(), size_t{1});
+}
+
+void tst_NatRendezvous::fail_0x62_triesKadBuddy()
+{
+    // even LowID without a UDP port: 0x62 reason 4 hands over to its Kad buddy
+    HubFixture f;
+    logInExtension(f);
+    f.env->isKadConnected = true;
+    f.env->publicIPv4 = Address::fromString(QStringLiteral("198.51.100.20")).toNetworkUint32();
+    PeerInfo peer = f.peerOnServer(78);
+    peer.buddyValid = true;
+    peer.buddyEndpoint = Endpoint(Address::fromString(QStringLiteral("9.9.9.9")), 4672);
+    peer.buddyID.fill(0xB0);
+    peer.kadEndpoint = Endpoint(kPeerIP, kPeerUdp);
+    peer.fileHash.fill(0xF0);
+    QVERIFY(f.hub->start(peer));
+    QVERIFY(std::ranges::any_of(f.env->tcp, [](const SentTcp& t) { return t.opcode == OP_LOWID_HOLEPUNCH_REQUEST; }));
+    QVERIFY(f.env->udpWith(OP_EMULEPROT, OP_REASKCALLBACKUDP).empty());
+
+    QByteArray fail(5, '\0');
+    pokeUInt32(fail.data(), 78);
+    fail[4] = 4;                              // FAIL_TARGET_NO_UDP
+    f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_FAIL, fail);
+    QVERIFY(f.env->failed.empty());
+    QVERIFY(!f.hub->hasFailed(peer));
+    const auto env = f.env->udpWith(OP_EMULEPROT, OP_REASKCALLBACKUDP);
+    QCOMPARE(env.size(), size_t{1});
+    QCOMPARE(env[0].to, peer.buddyEndpoint);
 }
 
 void tst_NatRendezvous::keepalive_0x9F_every60s()
@@ -1336,21 +1365,19 @@ void tst_NatRendezvous::quic_framesGoToTransport()
     QCOMPARE(f.env->quicFrames.size(), size_t{4});
 }
 
-void tst_NatRendezvous::ext_skipsEvenTargetAndIPv6Session()
+void tst_NatRendezvous::ext_evenTargetPunchedButNotOverIPv6()
 {
     const auto sent0x60 = [](const HubFixture& f) {
         return std::ranges::any_of(f.env->tcp, [](const SentTcp& t) { return t.opcode == OP_LOWID_HOLEPUNCH_REQUEST; });
     };
-    // our LowID is odd: the server hands out Lugdunum's IDs, an even one is a stock client
+    // our LowID odd (Lugdunum IDs): even = no 0x1000, but it may have sent 0xF9 (emule-qt#245)
     {
         HubFixture f;
         logInExtension(f);
-        f.hub->start(f.peerOnServer(78));
-        QVERIFY(!sent0x60(f));
-        QVERIFY(f.hub->start(f.peerOnServer(79)));
+        QVERIFY(f.hub->start(f.peerOnServer(78)));
         QVERIFY(sent0x60(f));
     }
-    // no Lugdunum IDs here: parity says nothing
+    // no Lugdunum IDs here either
     {
         HubFixture f;
         theApp.setPublicIP(Address::fromString(QStringLiteral("198.51.100.20")).toNetworkUint32());

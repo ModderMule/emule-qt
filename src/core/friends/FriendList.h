@@ -100,6 +100,8 @@ signals:
     void friendConnectingResult(eMule::Friend* f, bool success);
 
 private:
+    /// One friends file, no .bak fallback (load does that).
+    bool readFile(const QString& filePath);
     /// Friend raises the two signals above through these, so the emit stays with the
     /// list that owns the entry.
     friend class Friend;

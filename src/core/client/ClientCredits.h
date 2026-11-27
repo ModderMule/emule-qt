@@ -175,6 +175,9 @@ public:
     [[nodiscard]] static KeyFileInfo inspectKeyFile(const QString& keyPath);
 
 private:
+    /// One file, no fallback: loadList tries the .bak with it.
+    bool readList(const QString& filePath);
+
     struct EvpKeyDeleter { void operator()(evp_pkey_st* p) const; };
     using EvpKeyPtr = std::unique_ptr<evp_pkey_st, EvpKeyDeleter>;
 

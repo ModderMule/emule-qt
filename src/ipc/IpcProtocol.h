@@ -158,6 +158,9 @@ enum class IpcMsgType : int {
     /// [id] -> [ok, {found, row of GetKadIncoming, wanted, own: {id}, asker: {id, addr, cc,
     /// version}, handed: [{id, addr, cc, version}]}] — one request for the incoming search graph
     GetKadIncomingGraph  = 228,
+    /// [destFolder: string] -> [ok, {folder, files, bytes, failed}] | [false, error] — copy of
+    /// the config folder into destFolder/eMuleQt-config-<stamp> on the core's disk (#268)
+    BackupConfig         = 229,
     SaveSchedules        = 222,  ///< [enabled: bool, schedules: CborArray] — replace all
     ScanImportFolder     = 230,  ///< [folder: string, removeSource: bool] → scan + queue + return jobs
     GetConvertJobs       = 231,  ///< [] → current job list with statuses
@@ -879,7 +882,7 @@ enum class IpcMsgType : int {
     /// [id: string] -> bool
     ReannounceTorrent       = 809,
     /// [id: string, {downloadLimitKb, uploadLimitKb, maxPeers, ratioMode,
-    ///  ratioPercent, seedTimeMode, seedTimeMinutes}] -> bool
+    ///  ratioPercent, seedTimeMode, seedTimeMinutes, minSeedsMode, minSeeds}] -> bool
     /// Limits in KiB/s, 0 = none; maxPeers 0 = default; modes are BtLimitMode
     /// (0 global, 1 unlimited, 2 custom)
     SetTorrentOptions       = 810,

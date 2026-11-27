@@ -145,6 +145,22 @@ QByteArray readAll(const QString& path)
     return BackgroundFileWriter::readFile(path).value_or(QByteArray());
 }
 
+/// A state file there but damaged: its .bak (a missing one was deleted on purpose)
+QJsonDocument readJson(const QString& path)
+{
+    QJsonParseError err{};
+    const QByteArray data = readAll(path);
+    QJsonDocument doc = QJsonDocument::fromJson(data, &err);
+    if (err.error == QJsonParseError::NoError || !QFileInfo::exists(path))
+        return doc;
+    const QString bak = path + QStringLiteral(".bak");
+    QJsonDocument old = QJsonDocument::fromJson(readAll(bak), &err);
+    if (err.error != QJsonParseError::NoError)
+        return doc;
+    logWarning(QStringLiteral("BitTorrent: %1 damaged, read %2").arg(QFileInfo(path).fileName(), QFileInfo(bak).fileName()));
+    return old;
+}
+
 /// lt::read_resume_data, but the saved "i2p" key wins: libtorrent sets the flag again for
 /// any .i2p tracker, which turned "I2P and direct" into "I2P only" on every restart (#241)
 lt::add_torrent_params readResume(const QByteArray& data, lt::error_code& ec)
@@ -164,10 +180,30 @@ lt::add_torrent_params readResume(const QByteArray& data, lt::error_code& ec)
     return atp;
 }
 
+/// readResume of a resume file, its .bak when the file is damaged (#264)
+lt::add_torrent_params readResumeOrBak(const QString& path, lt::error_code& ec)
+{
+    lt::add_torrent_params atp = readResume(readAll(path), ec);
+    if (!ec)
+        return atp;
+    const QString bak = path + QStringLiteral(".bak");
+    if (!QFileInfo::exists(bak))
+        return atp;
+    lt::error_code bakEc;
+    lt::add_torrent_params old = readResume(readAll(bak), bakEc);
+    if (bakEc)
+        return atp;
+    logWarning(QStringLiteral("BitTorrent: resume data %1 damaged (%2), read its .bak")
+                   .arg(QFileInfo(path).fileName(), QString::fromStdString(ec.message())));
+    ec.clear();
+    return old;
+}
+
 /// Synced, now: for the stop only, every other save is writeQueued.
 bool writeAtomic(const QString& path, const std::vector<char>& data)
 {
     BackgroundFileWriter::instance().discard(path);   // an older queued copy must not land after this
+    BackgroundFileWriter::keepBak(path);   // #264: the torrent list had no second copy
     QSaveFile f(path);
     if (!f.open(QIODevice::WriteOnly))
         return false;
@@ -182,7 +218,7 @@ bool writeAtomic(const QString& path, const std::vector<char>& data)
 /// disk (report 43). The writer logs a failed write.
 void writeQueued(const QString& path, const QByteArray& json)
 {
-    BackgroundFileWriter::instance().write(path, json, {});
+    BackgroundFileWriter::instance().write(path, json, &BackgroundFileWriter::saveFileKeepBak);
 }
 
 /// Off the main thread: a commit syncs, seconds on a busy disk (report 23); the encode
@@ -196,7 +232,7 @@ void writeLater(const QString& path, lt::add_torrent_params params)
             const std::vector<char> buf = lt::write_resume_data_buf(*p);
             return QByteArray(buf.data(), qsizetype(buf.size()));
         },
-        &BackgroundFileWriter::saveFile);
+        &BackgroundFileWriter::saveFileKeepBak);
 }
 
 /// The file name of a torrent's resume data: its hash, no ':'.
@@ -345,6 +381,13 @@ lt::torrent_status addedStatus(const lt::add_torrent_params& p, const lt::torren
     return st;
 }
 
+/// seeds besides us: the scrape counts us once we announced as seed, a seed has no
+/// seed peers (libtorrent drops seed-to-seed links), so the scrape is the main source
+int otherSeeds(const BtTorrentRow& row)
+{
+    return std::max(row.seeds, row.seedsTotal - 1);
+}
+
 } // namespace
 
 struct BtSession::Impl {
@@ -442,7 +485,7 @@ struct BtSession::Impl {
     void loadLinks()
     {
         links.clear();
-        const QJsonObject root = QJsonDocument::fromJson(readAll(linksPath())).object();
+        const QJsonObject root = readJson(linksPath()).object();
         for (auto it = root.begin(); it != root.end(); ++it)
             links[it.key()] = it.value().toString();
     }
@@ -484,7 +527,7 @@ struct BtSession::Impl {
     void loadLocated()
     {
         located.clear();
-        const QJsonObject root = QJsonDocument::fromJson(readAll(locatedPath())).object();
+        const QJsonObject root = readJson(locatedPath()).object();
         for (auto it = root.begin(); it != root.end(); ++it) {
             const QJsonObject files = it.value().toObject();
             for (auto f = files.begin(); f != files.end(); ++f)
@@ -661,6 +704,8 @@ struct BtSession::Impl {
     std::map<QString, QBitArray> have;
     /// checked, a join attached: torrentChecked waits for the status with the new pieces
     QSet<QString> checkWaited;
+    /// files checked since the last (re)check began: before that, nobody else writes (#264)
+    QSet<QString> checked;
     /// File priorities sent, not yet applied: libtorrent 2.x updates them only when the
     /// disk job returns (file_prio_alert), a poll in between read the old ones (report 21)
     struct PendingPriorities {
@@ -693,14 +738,13 @@ struct BtSession::Impl {
     void loadStops()
     {
         stopAtMeta.clear();
-        for (const QJsonValue& v : QJsonDocument::fromJson(readAll(stopsPath())).array())
+        for (const QJsonValue& v : readJson(stopsPath()).array())
             stopAtMeta.insert(v.toString());
     }
     void saveStops() const
     {
         if (stopAtMeta.isEmpty()) {
-            BackgroundFileWriter::instance().discard(stopsPath());
-            QFile::remove(stopsPath());
+            BackgroundFileWriter::instance().removeWithBak(stopsPath());
             return;
         }
         QJsonArray ids;
@@ -866,7 +910,7 @@ struct BtSession::Impl {
     void loadI2pListWait()
     {
         i2pListWait.clear();
-        const QJsonObject root = QJsonDocument::fromJson(readAll(i2pListWaitPath())).object();
+        const QJsonObject root = readJson(i2pListWaitPath()).object();
         for (auto it = root.begin(); it != root.end(); ++it) {
             QStringList urls;
             for (const QJsonValue& v : it.value().toArray())
@@ -877,8 +921,7 @@ struct BtSession::Impl {
     void saveI2pListWait() const
     {
         if (i2pListWait.empty()) {
-            BackgroundFileWriter::instance().discard(i2pListWaitPath());
-            QFile::remove(i2pListWaitPath());
+            BackgroundFileWriter::instance().removeWithBak(i2pListWaitPath());
             return;
         }
         QJsonObject root;
@@ -933,6 +976,8 @@ struct BtSession::Impl {
     struct SeedLimitHit {
         bool ratio = false;
         bool time = false;
+        bool seeds = false;
+        [[nodiscard]] bool any() const { return ratio || time || seeds; }
     };
     [[nodiscard]] SeedLimitHit seedLimitHit(const BtTorrentRow& row) const;
     /// tracker alerts of .i2p trackers: remember an INVALID_KEY, forget it on a reply
@@ -1063,9 +1108,8 @@ void BtSession::start(const BtSettings& settings)
     const QDir resumeDir(QDir(settings.stateDir).filePath(kResumeDir));
     int loaded = 0;
     for (const QString& file : resumeDir.entryList({QStringLiteral("*") + kResumeSuffix}, QDir::Files)) {
-        const QByteArray data = readAll(resumeDir.filePath(file));
         lt::error_code ec;
-        lt::add_torrent_params atp = readResume(data, ec);
+        lt::add_torrent_params atp = readResumeOrBak(resumeDir.filePath(file), ec);
         if (ec) {
             logWarning(QStringLiteral("BitTorrent: resume data %1 unreadable: %2").arg(file, QString::fromStdString(ec.message())));
             continue;
@@ -1172,6 +1216,7 @@ void BtSession::stop()
     d->streamFocus.clear();
     d->have.clear();
     d->checkWaited.clear();
+    d->checked.clear();
     d->i2pNameMisses.clear();
     d->outstandingResume = 0;
     d->listening = false;
@@ -1206,7 +1251,8 @@ void BtSession::applySettings(const BtSettings& settings)
         d->i2pError.clear();
     // a new global limit is the user's word: it applies again
     if (d->settings.seedRatioPercent != settings.seedRatioPercent
-        || d->settings.seedTimeLimitMinutes != settings.seedTimeLimitMinutes)
+        || d->settings.seedTimeLimitMinutes != settings.seedTimeLimitMinutes
+        || d->settings.seedMinSeeds != settings.seedMinSeeds)
         d->limitOverride.clear();
     d->settings = settings;
     if (!d->ses)
@@ -1443,6 +1489,7 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->streamFocus.erase(id);
     d->have.erase(id);
     d->checkWaited.remove(id);
+    d->checked.remove(id);
     d->pendingPriorities.erase(id);
     d->details.erase(id);
     d->i2pNameMisses.erase(id);
@@ -1461,8 +1508,7 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
         d->peerGate.setStrict(hashes, false);
         d->saveI2pOnly();
     }
-    BackgroundFileWriter::instance().discard(d->resumePath(id));
-    QFile::remove(d->resumePath(id));
+    BackgroundFileWriter::instance().removeWithBak(d->resumePath(id));
     emit torrentRemoved(id);
     return true;
 }
@@ -1485,8 +1531,7 @@ bool BtSession::resume(const QString& id, bool byUser)
     // only a seed the user resumes at its limit seeds past it
     if (auto it = d->rows.find(id); byUser && it != d->rows.end() && it->second.paused
         && it->second.wantedDone) {
-        const auto hit = d->seedLimitHit(it->second);
-        if (hit.ratio || hit.time)
+        if (d->seedLimitHit(it->second).any())
             d->limitOverride.insert(id);
     }
     d->metaStopped.remove(id);
@@ -1733,7 +1778,10 @@ bool BtSession::setOptions(const QString& id, const BtTorrentOptions& options)
     limits.ratioPercent = options.ratioPercent > 0 ? options.ratioPercent : 100;
     limits.seedTimeMode = options.seedTimeMode;
     limits.seedTimeMinutes = options.seedTimeMinutes > 0 ? options.seedTimeMinutes : 60;
-    const bool isDefault = limits.ratioMode == BtLimitMode::Global && limits.seedTimeMode == BtLimitMode::Global;
+    limits.minSeedsMode = options.minSeedsMode;
+    limits.minSeeds = options.minSeeds > 0 ? options.minSeeds : 2;
+    const bool isDefault = limits.ratioMode == BtLimitMode::Global && limits.seedTimeMode == BtLimitMode::Global
+                           && limits.minSeedsMode == BtLimitMode::Global;
     auto it = d->seedLimits.find(id);
     if (isDefault ? it != d->seedLimits.end() : (it == d->seedLimits.end() || !(it->second == limits))) {
         if (isDefault)
@@ -1921,9 +1969,8 @@ QList<BtSavedTorrent> BtSession::savedTorrents(const QString& stateDir, const QS
     QList<BtSavedTorrent> out;
     const QDir resumeDir(QDir(stateDir).filePath(kResumeDir));
     for (const QString& file : resumeDir.entryList({QStringLiteral("*") + kResumeSuffix}, QDir::Files)) {
-        const QByteArray data = readAll(resumeDir.filePath(file));
         lt::error_code ec;
-        const lt::add_torrent_params atp = readResume(data, ec);
+        const lt::add_torrent_params atp = readResumeOrBak(resumeDir.filePath(file), ec);
         if (ec || !atp.ti || !atp.ti->is_valid())
             continue;
         const lt::torrent_info& ti = *atp.ti;
@@ -2203,6 +2250,11 @@ QBitArray BtSession::havePieces(const QString& id) const
     return it == d->have.end() ? QBitArray() : it->second;
 }
 
+bool BtSession::filesChecked(const QString& id) const
+{
+    return d->checked.contains(id);
+}
+
 QString BtSession::ed3kLink(const QString& id) const
 {
     const auto it = d->links.find(id);
@@ -2255,6 +2307,9 @@ void BtSession::drainAlerts()
             for (const lt::torrent_status& st : su->status) {
                 BtTorrentRow row = d->row(st);
                 const QString id = row.id;
+                // queued for or in a (re)check: its pieces are unknown again
+                if (st.state == lt::torrent_status::checking_files || st.state == lt::torrent_status::checking_resume_data)
+                    d->checked.remove(id);
                 if (!d->handles.contains(id))
                     continue;
                 // file progress asked before this change is old now
@@ -2269,8 +2324,12 @@ void BtSession::drainAlerts()
                 for (int i = 0; i < st.pieces.size(); ++i)
                     bits.setBit(i, st.pieces.get_bit(lt::piece_index_t(i)));
                 emit torrentChanged(id);
-                if (d->checkWaited.remove(id) && d->joins.contains(id))
-                    emit torrentChecked(id);
+                if (d->checkWaited.remove(id)) {
+                    // with the checked pieces in have: a join sees both at once
+                    d->checked.insert(id);
+                    if (d->joins.contains(id))
+                        emit torrentChecked(id);
+                }
                 d->enforceSeedLimits(st, row);
             }
         } else if (auto* at = lt::alert_cast<lt::add_torrent_alert>(a)) {
@@ -2393,9 +2452,12 @@ void BtSession::drainAlerts()
             d->pieceCopied(this, id, int(pf->piece_index), true);
         } else if (auto* tc = lt::alert_cast<lt::torrent_checked_alert>(a)) {
             // torrentChecked once the pieces of the check are in (post_status asks all flags)
-            if (const QString id = BtTorrentView::idOf(tc->handle.info_hashes()); d->joins.contains(id)) {
+            const QString id = BtTorrentView::idOf(tc->handle.info_hashes());
+            if (d->joins.contains(id)) {
                 d->checkWaited.insert(id);
                 tc->handle.post_status();
+            } else {
+                d->checked.insert(id);
             }
         } else if (auto* fpr = lt::alert_cast<lt::file_progress_alert>(a)) {
             if (auto dt = d->details.find(BtTorrentView::idOf(fpr->handle.info_hashes())); dt != d->details.end()) {
@@ -2783,7 +2845,7 @@ void BtSession::Impl::retryI2pNames()
 void BtSession::Impl::loadSeedLimits()
 {
     seedLimits.clear();
-    const QJsonObject root = QJsonDocument::fromJson(readAll(optionsPath())).object();
+    const QJsonObject root = readJson(optionsPath()).object();
     for (auto it = root.begin(); it != root.end(); ++it) {
         const QJsonObject o = it.value().toObject();
         BtTorrentOptions limits;
@@ -2791,6 +2853,8 @@ void BtSession::Impl::loadSeedLimits()
         limits.ratioPercent = std::max(1, o.value(QStringLiteral("ratioPercent")).toInt(100));
         limits.seedTimeMode = limitMode(o.value(QStringLiteral("seedTimeMode")).toInt());
         limits.seedTimeMinutes = std::max(1, o.value(QStringLiteral("seedTimeMinutes")).toInt(60));
+        limits.minSeedsMode = limitMode(o.value(QStringLiteral("minSeedsMode")).toInt());
+        limits.minSeeds = std::max(1, o.value(QStringLiteral("minSeeds")).toInt(2));
         seedLimits[it.key()] = limits;
     }
 }
@@ -2804,6 +2868,8 @@ void BtSession::Impl::saveSeedLimits() const
                             {QStringLiteral("ratioPercent"), o.ratioPercent},
                             {QStringLiteral("seedTimeMode"), static_cast<int>(o.seedTimeMode)},
                             {QStringLiteral("seedTimeMinutes"), o.seedTimeMinutes},
+                            {QStringLiteral("minSeedsMode"), static_cast<int>(o.minSeedsMode)},
+                            {QStringLiteral("minSeeds"), o.minSeeds},
                         });
     const QByteArray json = QJsonDocument(root).toJson(QJsonDocument::Indented);
     writeQueued(optionsPath(), json);
@@ -2812,7 +2878,7 @@ void BtSession::Impl::saveSeedLimits() const
 void BtSession::Impl::loadI2pOnly()
 {
     i2pOnly.clear();
-    const QJsonObject root = QJsonDocument::fromJson(readAll(i2pOnlyPath())).object();
+    const QJsonObject root = readJson(i2pOnlyPath()).object();
     for (auto it = root.begin(); it != root.end(); ++it) {
         const QJsonObject o = it.value().toObject();
         I2pOnly s;
@@ -2832,8 +2898,7 @@ void BtSession::Impl::loadI2pOnly()
 void BtSession::Impl::saveI2pOnly() const
 {
     if (i2pOnly.empty()) {
-        BackgroundFileWriter::instance().discard(i2pOnlyPath());
-        QFile::remove(i2pOnlyPath());
+        BackgroundFileWriter::instance().removeWithBak(i2pOnlyPath());
         return;
     }
     QJsonObject root;
@@ -2943,28 +3008,35 @@ void BtSession::Impl::enforceSeedLimits(const lt::torrent_status& st, const BtTo
     if (!done || row.paused || limitOverride.contains(row.id))
         return;
     const SeedLimitHit hit = seedLimitHit(row);
-    if (!hit.ratio && !hit.time)
+    if (!hit.any())
         return;
     st.handle.unset_flags(lt::torrent_flags::auto_managed);
     st.handle.pause();
-    logInfo(QStringLiteral("BitTorrent: seeding of %1 stopped, %2 reached").arg(row.name, hit.ratio ? QStringLiteral("ratio") : QStringLiteral("seed time")));
+    const QString what = hit.ratio  ? QStringLiteral("ratio")
+                         : hit.time ? QStringLiteral("seed time")
+                                    : QStringLiteral("minimum seeds");
+    logInfo(QStringLiteral("BitTorrent: seeding of %1 stopped, %2 reached").arg(row.name, what));
 }
 
 BtSession::Impl::SeedLimitHit BtSession::Impl::seedLimitHit(const BtTorrentRow& row) const
 {
     int ratioPercent = settings.seedRatioPercent;
     int seedMinutes = settings.seedTimeLimitMinutes;
+    int minSeeds = settings.seedMinSeeds;
     if (auto it = seedLimits.find(row.id); it != seedLimits.end()) {
         if (it->second.ratioMode != BtLimitMode::Global)
             ratioPercent = it->second.ratioMode == BtLimitMode::Custom ? it->second.ratioPercent : 0;
         if (it->second.seedTimeMode != BtLimitMode::Global)
             seedMinutes = it->second.seedTimeMode == BtLimitMode::Custom ? it->second.seedTimeMinutes : 0;
+        if (it->second.minSeedsMode != BtLimitMode::Global)
+            minSeeds = it->second.minSeedsMode == BtLimitMode::Custom ? it->second.minSeeds : 0;
     }
     // same ratio as the Torrents list shows (#218), pad bytes left out
     const double ratio = shareRatio(row.uploaded, row.downloaded, row.haveBytes);
     return {ratioPercent > 0 && ratio != kShareRatioNone
                 && (ratio == kShareRatioInfinite || ratio * 100.0 >= ratioPercent),
-            seedMinutes > 0 && row.finishedSeconds >= qint64(seedMinutes) * 60};
+            seedMinutes > 0 && row.finishedSeconds >= qint64(seedMinutes) * 60,
+            minSeeds > 0 && otherSeeds(row) >= minSeeds};
 }
 
 lt::settings_pack BtSession::Impl::pack(const BtSettings& s) const

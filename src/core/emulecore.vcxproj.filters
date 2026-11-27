@@ -36,6 +36,9 @@
     <ClCompile Include="app\AppConfig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\ConfigBackup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\InstallerCopy.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -79,6 +82,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="net\PortTestApi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\PortTestGate.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="httpcache\HttpCacheClient.cpp">
@@ -794,6 +800,9 @@
     <ClInclude Include="app\AppConfig.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="app\ConfigBackup.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="app\InstallerCopy.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -834,6 +843,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\PortTestApi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\PortTestGate.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="archive\ArchiveRecovery.h">

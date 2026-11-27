@@ -11,6 +11,7 @@
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "ipfilter/IPFilter.h"
+#include "net/PortTestGate.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
@@ -412,7 +413,9 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
     // Address-typed: the filter now holds a per-family range table, so an IPv6 sender
     // is checked against the IPv6 ranges instead of passing unfiltered.
     if (auto* filter = theApp.ipFilter) {
-        if (filter->isFiltered(senderAddress, thePrefs.ipFilterLevel())) {
+        // a running port test lets its server through (#266)
+        if (!PortTestGate::isExempt(senderAddress) && filter->isFiltered(senderAddress, thePrefs.ipFilterLevel())) {
+            PortTestGate::noteFiltered(senderAddress, filter->lastHitDescription(), false);
             filter->logLastHit(u"client UDP packet");
             if (auto* stats = theApp.statistics)
                 stats->addFilteredClient();

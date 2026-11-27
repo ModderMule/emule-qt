@@ -36,9 +36,9 @@ namespace eMule {
     return {};
 }
 
-/// Upload side: the token of UpDownClient::uploadStateToken(). @p stalled is the slot
-/// with nothing to send, shown in advanced mode only (MFC BaseClient.cpp:2480-2510).
-[[nodiscard]] inline QString uploadStateText(const QString& token, bool stalled)
+/// Upload side: the token of UpDownClient::uploadStateToken(). @p wait is
+/// UpDownClient::uploadWaitToken(), passed in advanced mode only (MFC BaseClient.cpp:2480-2510).
+[[nodiscard]] inline QString uploadStateText(const QString& token, const QString& wait)
 {
     // literals marked QT_TRANSLATE_NOOP: lupdate does not look inside this lambda
     const auto text = [](const char* s) {
@@ -48,8 +48,10 @@ namespace eMule {
     if (token == QLatin1String("Banned"))     return text(QT_TRANSLATE_NOOP("eMule::ClientState", "Banned"));
     if (token == QLatin1String("Connecting")) return text(QT_TRANSLATE_NOOP("eMule::ClientState", "Connecting"));
     if (token == QLatin1String("Transferring") || token == QLatin1String("Standby")) {
-        if (stalled)
+        if (wait == QLatin1String("Request"))
             return text(QT_TRANSLATE_NOOP("eMule::ClientState", "Stalled! Waiting for block request."));
+        if (wait == QLatin1String("Ack"))
+            return text(QT_TRANSLATE_NOOP("eMule::ClientState", "Stalled! Waiting for acknowledgement."));
         return token == QLatin1String("Standby")
             ? text(QT_TRANSLATE_NOOP("eMule::ClientState", "Standby"))
             : text(QT_TRANSLATE_NOOP("eMule::ClientState", "Transferring"));

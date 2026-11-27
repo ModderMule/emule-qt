@@ -107,10 +107,25 @@ TorrentOptionsForm::TorrentOptionsForm(QWidget* parent)
     timeRow->addWidget(addVariesLabel(FieldSeedTime, seeding));
     timeRow->addStretch(1);
     seedForm->addRow(tr("Seed time:"), timeRow);
+    auto* seedsRow = new QHBoxLayout;
+    m_minSeedsMode = new QComboBox(seeding);
+    fillLimitCombo(m_minSeedsMode);
+    m_minSeeds = new QSpinBox(seeding);
+    m_minSeeds->setRange(1, Preferences::kMaxBtSeedMinSeeds);
+    m_minSeeds->setValue(2);
+    m_minSeeds->setSuffix(tr(" seeds"));
+    m_minSeeds->setToolTip(tr("Other seeds the tracker reports, not counting this one."));
+    seedsRow->addWidget(m_minSeedsMode);
+    seedsRow->addWidget(m_minSeeds);
+    seedsRow->addWidget(addVariesLabel(FieldMinSeeds, seeding));
+    seedsRow->addStretch(1);
+    seedForm->addRow(tr("Minimum seeds:"), seedsRow);
     connect(m_ratioMode, &QComboBox::currentIndexChanged, this, [this] { markEdited(FieldRatio); });
     connect(m_ratio100, &QDoubleSpinBox::valueChanged, this, [this] { markEdited(FieldRatio); });
     connect(m_seedTimeMode, &QComboBox::currentIndexChanged, this, [this] { markEdited(FieldSeedTime); });
     connect(m_seedMinutes, &QSpinBox::valueChanged, this, [this] { markEdited(FieldSeedTime); });
+    connect(m_minSeedsMode, &QComboBox::currentIndexChanged, this, [this] { markEdited(FieldMinSeeds); });
+    connect(m_minSeeds, &QSpinBox::valueChanged, this, [this] { markEdited(FieldMinSeeds); });
     layout->addWidget(seeding);
 
     auto* peers = new QGroupBox(tr("Peer Connections"), this);
@@ -181,6 +196,8 @@ QCborMap TorrentOptionsForm::options() const
         {QStringLiteral("ratioPercent"), qRound(m_ratio100->value() * 100.0)},
         {QStringLiteral("seedTimeMode"), m_seedTimeMode->currentData().toInt()},
         {QStringLiteral("seedTimeMinutes"), m_seedMinutes->value()},
+        {QStringLiteral("minSeedsMode"), m_minSeedsMode->currentData().toInt()},
+        {QStringLiteral("minSeeds"), m_minSeeds->value()},
         {QStringLiteral("i2pMode"), m_i2pMode->currentData().toInt()},
     };
 }
@@ -222,6 +239,7 @@ QList<QString> TorrentOptionsForm::keysOf(Field field)
     case FieldUp: return {QStringLiteral("uploadLimitKb")};
     case FieldRatio: return {QStringLiteral("ratioMode"), QStringLiteral("ratioPercent")};
     case FieldSeedTime: return {QStringLiteral("seedTimeMode"), QStringLiteral("seedTimeMinutes")};
+    case FieldMinSeeds: return {QStringLiteral("minSeedsMode"), QStringLiteral("minSeeds")};
     case FieldMaxPeers: return {QStringLiteral("maxPeers")};
     case FieldI2p: return {QStringLiteral("i2pMode")};
     case FieldCount: break;
@@ -254,6 +272,9 @@ void TorrentOptionsForm::fill(const QCborMap& options)
     selectMode(m_seedTimeMode, int(options.value(QStringLiteral("seedTimeMode")).toInteger()));
     if (const qint64 minutes = options.value(QStringLiteral("seedTimeMinutes")).toInteger(); minutes > 0)
         m_seedMinutes->setValue(int(minutes));
+    selectMode(m_minSeedsMode, int(options.value(QStringLiteral("minSeedsMode")).toInteger()));
+    if (const qint64 seeds = options.value(QStringLiteral("minSeeds")).toInteger(); seeds > 0)
+        m_minSeeds->setValue(int(seeds));
     m_i2pEnabled = options.value(QStringLiteral("i2pEnabled")).toBool(true);
     selectMode(m_i2pMode, int(options.value(QStringLiteral("i2pMode")).toInteger()));
     updateEnables();
@@ -276,6 +297,7 @@ void TorrentOptionsForm::updateEnables()
     m_limitUpKb->setEnabled(m_limitUp->isChecked());
     m_ratio100->setEnabled(m_ratioMode->currentData().toInt() == ModeCustom);
     m_seedMinutes->setEnabled(m_seedTimeMode->currentData().toInt() == ModeCustom);
+    m_minSeeds->setEnabled(m_minSeedsMode->currentData().toInt() == ModeCustom);
 }
 
 QLabel* TorrentOptionsForm::addVariesLabel(Field field, QWidget* parent)

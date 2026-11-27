@@ -1,0 +1,47 @@
+{
+  "not reachable: the core closed the connection at once (IP filter or ban)": {
+    "_context": "PortTest",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "nl_NL": "",
+    "pl_PL": "",
+    "pt_BR": "",
+    "ru_RU": "",
+    "zh_CN": "",
+    "zh_TW": ""
+  },
+  "Your IP filter rejected %1 during the test, likely the test server: the result may be wrong. Lower the IP filter level or allow that address, then test again.": {
+    "_context": "PortTest",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "nl_NL": "",
+    "pl_PL": "",
+    "pt_BR": "",
+    "ru_RU": "",
+    "zh_CN": "",
+    "zh_TW": ""
+  },
+  "Your IP filter blocks the test server %1. It was let through for this test only.": {
+    "_context": "PortTest",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "nl_NL": "",
+    "pl_PL": "",
+    "pt_BR": "",
+    "ru_RU": "",
+    "zh_CN": "",
+    "zh_TW": ""
+  }
+}

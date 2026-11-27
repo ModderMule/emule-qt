@@ -11,6 +11,7 @@
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "ipfilter/IPFilter.h"
+#include "net/PortTestGate.h"
 #include "net/Address.h"
 #include "net/ClientReqSocket.h"
 #include "prefs/Preferences.h"
@@ -345,7 +346,10 @@ void ListenSocket::admitAccepted(ClientReqSocket* reqSocket)
     // peer arriving on the dual-stack listener as ::ffff:a.b.c.d is normalised back to
     // Family::IPv4 by Address::fromQHostAddress, so it is matched against the v4 table
     // and not, wrongly, against the v6 one.
-    if (theApp.ipFilter && theApp.ipFilter->isFiltered(peer, thePrefs.ipFilterLevel())) {
+    // a running port test lets its server through (#266)
+    if (theApp.ipFilter && !PortTestGate::isExempt(peer)
+        && theApp.ipFilter->isFiltered(peer, thePrefs.ipFilterLevel())) {
+        PortTestGate::noteFiltered(peer, theApp.ipFilter->lastHitDescription(), true);
         if (thePrefs.logFilteredIPs()) {
             logDebug([&]() -> QString { return QStringLiteral("Rejecting connection attempt (IP=%1) - IP filter (%2)")
                            .arg(ipstr(peer), theApp.ipFilter->lastHitDescription()); });

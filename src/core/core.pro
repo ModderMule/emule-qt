@@ -70,6 +70,7 @@ macx {
 
 SOURCES += \
     app/AppConfig.cpp \
+    app/ConfigBackup.cpp \
     app/VersionManifest.cpp \
     app/InstallerCopy.cpp \
     app/TranslationRouter.cpp \
@@ -171,6 +172,7 @@ SOURCES += \
 
     net/MetaFileCache.cpp \
     net/PortTestApi.cpp \
+    net/PortTestGate.cpp \
     net/LastCommonRouteFinder.cpp \
     net/ListenSocket.cpp \
     net/Packet.cpp \
@@ -258,6 +260,7 @@ SOURCES += \
 
 HEADERS += \
     app/AppConfig.h \
+    app/ConfigBackup.h \
     app/VersionManifest.h \
     app/InstallerCopy.h \
     app/TranslationRouter.h \
@@ -369,6 +372,7 @@ HEADERS += \
     net/HttpStreamDownload.h \
     net/MetaFileCache.h \
     net/PortTestApi.h \
+    net/PortTestGate.h \
     net/LastCommonRouteFinder.h \
     net/ListenSocket.h \
     net/Packet.h \

@@ -855,6 +855,11 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     </message>
     <message>
         <location line="+2"/>
+        <source>not reachable: the core closed the connection at once (IP filter or ban)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>not tested: TCP failed first</source>
         <translation type="unfinished"></translation>
     </message>
@@ -905,12 +910,12 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+141"/>
+        <location line="+142"/>
         <source>The core did not run the test.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-94"/>
+        <location line="-95"/>
         <source>TCP: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -995,7 +1000,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+18"/>
         <location line="+26"/>
         <location line="+4"/>
         <location line="+5"/>
@@ -1074,7 +1079,17 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+21"/>
+        <source>Your IP filter rejected %1 during the test, likely the test server: the result may be wrong. Lower the IP filter level or allow that address, then test again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Your IP filter blocks the test server %1. It was let through for this test only.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+11"/>
         <source>Peers see this node at %1, not at the tested address, so this result does not apply to it. The test request likely took another route (VPN, proxy or a second internet line).</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1569,7 +1584,7 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/TorrentCreatorDialog.cpp" line="+68"/>
+        <location filename="../src/gui/dialogs/TorrentCreatorDialog.cpp" line="+69"/>
         <location filename="../src/core/utils/StringUtils.cpp" line="+1"/>
         <location filename="../src/core/webserver/WebServer.cpp" line="+1"/>
         <source>KB</source>
@@ -2866,14 +2881,14 @@ M	compressed data not completely downloaded yet
 <context>
     <name>eMule::BugReportDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+61"/>
+        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+63"/>
         <location line="+139"/>
-        <location line="+144"/>
+        <location line="+145"/>
         <source>Submit Bug Report</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-278"/>
+        <location line="-279"/>
         <source>Report Details</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2975,7 +2990,7 @@ M	compressed data not completely downloaded yet
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+139"/>
+        <location line="+140"/>
         <source>Bug report submitted successfully.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4402,12 +4417,12 @@ On queue: we wait in its upload queue.</source>
     </message>
     <message>
         <location line="-21"/>
-        <location line="+29"/>
+        <location line="+31"/>
         <source>Transferring</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-28"/>
+        <location line="-30"/>
         <source>Receiving hashset</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4454,6 +4469,11 @@ On queue: we wait in its upload queue.</source>
     <message>
         <location line="+4"/>
         <source>Stalled! Waiting for block request.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Stalled! Waiting for acknowledgement.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -15593,7 +15613,7 @@ Other members see your nick and posts; your node takes part in passing the room&
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+146"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+147"/>
         <location line="+872"/>
         <source>eMule Qt v%1</source>
         <translation type="unfinished"></translation>
@@ -15621,12 +15641,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1790"/>
+        <location line="+1832"/>
         <source>eD2K: Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1704"/>
+        <location line="-1746"/>
         <source>Kad: Connected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -15642,7 +15662,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1707"/>
+        <location line="+1749"/>
         <source>Kad: Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -15706,7 +15726,7 @@ Turn them on under Options → ed3k → Hoster, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2027"/>
+        <location line="-2069"/>
         <source>Open Incoming Folder...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -15721,7 +15741,7 @@ Turn them on under Options → ed3k → Hoster, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+17"/>
         <source>IP Filter...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -15746,14 +15766,14 @@ Turn them on under Options → ed3k → Hoster, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1267"/>
+        <location line="-1274"/>
         <location line="+7"/>
-        <location line="+1263"/>
+        <location line="+1270"/>
         <source>Version Check</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1375"/>
+        <location line="-1382"/>
         <source>Quit eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
@@ -16088,7 +16108,12 @@ The core is detached: it keeps running with all downloads and uploads. Open eMul
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+42"/>
+        <location line="+17"/>
+        <source>Backup Config...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+32"/>
         <source>Open WebUI</source>
         <translation type="unfinished"></translation>
     </message>
@@ -16139,11 +16164,12 @@ The core is detached: it keeps running with all downloads and uploads. Open eMul
     </message>
     <message>
         <location line="+1"/>
+        <location line="+97"/>
         <source>Not connected to the core.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="-90"/>
         <source>Web Interface Disabled</source>
         <translation type="unfinished"></translation>
     </message>
@@ -16156,12 +16182,47 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1928"/>
+        <location line="+1963"/>
         <source>Open Options</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1701"/>
+        <location line="-1877"/>
+        <location line="+14"/>
+        <location line="+14"/>
+        <source>Backup Config</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-23"/>
+        <source>Backup Config: folder for the backup</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>The backup failed: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Config backed up to
+%1
+
+%2 files, %3.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>%1 files could not be copied, see the log.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>To restore: quit eMule Qt and its core, then copy the folder&apos;s contents over the config folder.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+150"/>
         <source>Main</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18377,7 +18438,17 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3849"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2340"/>
+        <source>Stop at minimum seeds:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-1"/>
+        <source>Stop seeding a torrent once the tracker reports this many other seeds.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-6188"/>
         <source>Options</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18395,12 +18466,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-2707"/>
-        <location line="+6965"/>
+        <location line="+6973"/>
         <source>Apply</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6964"/>
+        <location line="-6972"/>
         <source>Help</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18428,12 +18499,12 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5834"/>
+        <location line="+5842"/>
         <source>Bandwidth</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5618"/>
+        <location line="-5626"/>
         <source>General options</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18473,31 +18544,31 @@ Download it again?</source>
         <location line="-65"/>
         <location line="+66"/>
         <location line="+3183"/>
-        <location line="+3422"/>
+        <location line="+3430"/>
         <source>Usenet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6666"/>
+        <location line="-6674"/>
         <location line="+63"/>
-        <location line="+6605"/>
-        <location line="+2865"/>
+        <location line="+6613"/>
+        <location line="+2868"/>
         <source>BitTorrent</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-9344"/>
+        <location line="-9355"/>
         <source>User Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6869"/>
+        <location line="+6877"/>
         <source>Language</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6866"/>
+        <location line="-6874"/>
         <source>System Default</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18603,12 +18674,12 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6754"/>
+        <location line="+6762"/>
         <source>Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6767"/>
+        <location line="-6775"/>
         <source>Address:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18759,12 +18830,12 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+8952"/>
+        <location line="+8963"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8904"/>
+        <location line="-8915"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18856,14 +18927,14 @@ Are you sure you want to continue?</source>
         <location line="+301"/>
         <location line="+1084"/>
         <location line="+162"/>
-        <location line="+1410"/>
+        <location line="+1418"/>
         <location line="+333"/>
         <location line="+31"/>
         <source>Enabled</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5607"/>
+        <location line="-5615"/>
         <source>Reset</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18880,13 +18951,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4936"/>
+        <location line="+4944"/>
         <location line="+381"/>
         <source> KB/s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5320"/>
+        <location line="-5328"/>
         <source>Upload</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18907,41 +18978,41 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+41"/>
-        <location line="+4760"/>
+        <location line="+4768"/>
         <source>Client Port</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4757"/>
-        <location line="+8657"/>
+        <location line="-4765"/>
+        <location line="+8668"/>
         <source>TCP</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8651"/>
+        <location line="-8662"/>
         <source>UDP</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4765"/>
+        <location line="+4773"/>
         <source>Test Ports</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4761"/>
-        <location line="+4769"/>
+        <location line="-4769"/>
+        <location line="+4777"/>
         <source>Open Router</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4768"/>
-        <location line="+4769"/>
+        <location line="-4776"/>
+        <location line="+4777"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4765"/>
+        <location line="-4773"/>
         <source>Use UPnP to Setup Ports</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18962,12 +19033,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4789"/>
+        <location line="+4797"/>
         <source>Connection Limits</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4787"/>
+        <location line="-4795"/>
         <source>Max. connections</source>
         <translation type="unfinished"></translation>
     </message>
@@ -19535,7 +19606,7 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+49"/>
         <source>Open .torrent files and magnet links with eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
@@ -19655,7 +19726,7 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3430"/>
+        <location line="+3433"/>
         <source>Downloading the DB-IP country database...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -19675,7 +19746,7 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3876"/>
+        <location line="-3879"/>
         <source>Set on the Connection page.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -19710,13 +19781,13 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2157"/>
+        <location line="+2159"/>
         <source>Could not update the file associations: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8240"/>
-        <location line="+9417"/>
+        <location line="-8250"/>
+        <location line="+9428"/>
         <location line="+63"/>
         <source>Directories</source>
         <translation type="unfinished"></translation>
@@ -19822,7 +19893,7 @@ Create it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-7356"/>
+        <location line="-7367"/>
         <source>Connect to help channel</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20177,22 +20248,22 @@ Create it?</source>
     <message>
         <location line="+4"/>
         <location line="+2015"/>
-        <location line="+6175"/>
+        <location line="+6186"/>
         <source>Any</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8188"/>
+        <location line="-8199"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+8085"/>
+        <location line="+8096"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8020"/>
+        <location line="-8031"/>
         <source>Use IPv6 privacy address</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20328,12 +20399,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+15"/>
-        <location line="+3056"/>
+        <location line="+3064"/>
         <source>Auto</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3043"/>
+        <location line="-3051"/>
         <source>Select Color</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21137,12 +21208,13 @@ RAR and 7z need 7-Zip or unrar installed; ZIP does not.</source>
         <location line="+1"/>
         <location line="+2088"/>
         <location line="+9"/>
-        <location line="+180"/>
+        <location line="+6"/>
+        <location line="+182"/>
         <source>No limit</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2269"/>
+        <location line="-2277"/>
         <source>Allowance size:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21198,19 +21270,19 @@ RAR and 7z need 7-Zip or unrar installed; ZIP does not.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2211"/>
+        <location line="+2219"/>
         <source>Share of the download limit:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2208"/>
+        <location line="-2216"/>
         <location line="+42"/>
-        <location line="+2158"/>
+        <location line="+2166"/>
         <source> %</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2198"/>
+        <location line="-2206"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21286,12 +21358,12 @@ With this on, an automatic download waits for you to press Resume, so a feed pro
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6014"/>
+        <location line="+6025"/>
         <source>Off</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6011"/>
+        <location line="-6022"/>
         <source>A release posted only minutes ago may not have reached your provider yet, so its articles look missing. It waits in the queue until its newest post is this old, then downloads.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21353,12 +21425,12 @@ It cannot be inside your temp, incoming or configuration folders: the daemon wri
     </message>
     <message>
         <location line="-1824"/>
-        <location line="+1911"/>
+        <location line="+1919"/>
         <source>Desktop</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1907"/>
+        <location line="-1915"/>
         <source>Open .nzb files with eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21648,7 +21720,7 @@ Torrent files left out are never shared there, also inside the incoming folder. 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+368"/>
+        <location line="+376"/>
         <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
 Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, 32 below 500 Mbit/s, 64 below 1 Gbit/s, else 128.</source>
         <translation type="unfinished"></translation>
@@ -21659,7 +21731,7 @@ Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3721"/>
+        <location line="+3724"/>
         <source>No lookups behind a proxy: no flags for names</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21728,7 +21800,7 @@ Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 
         </translation>
     </message>
     <message>
-        <location line="-9725"/>
+        <location line="-9736"/>
         <location line="+4379"/>
         <location line="+395"/>
         <location line="+541"/>
@@ -22450,7 +22522,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+118"/>
+        <location line="+126"/>
         <source>Listen port (TCP/UDP):</source>
         <translation type="unfinished"></translation>
     </message>
@@ -22681,7 +22753,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1957"/>
+        <location line="+1960"/>
         <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -22691,7 +22763,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4068"/>
+        <location line="-4079"/>
         <source>Active downloads:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -22743,7 +22815,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+127"/>
+        <location line="+135"/>
         <source>BitTorrent download folder</source>
         <translation type="unfinished"></translation>
     </message>
@@ -22773,7 +22845,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3655"/>
+        <location line="+3658"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -22783,7 +22855,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3655"/>
+        <location line="-3658"/>
         <source>Disabled</source>
         <translation type="unfinished"></translation>
     </message>
@@ -22813,12 +22885,12 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5243"/>
+        <location line="-5251"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5246"/>
+        <location line="+5254"/>
         <source>Disable A4AF checks to save CPU</source>
         <translation type="unfinished"></translation>
     </message>
@@ -22883,8 +22955,8 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3901"/>
-        <location line="+3905"/>
+        <location line="-3909"/>
+        <location line="+3913"/>
         <location line="+15"/>
         <source>Never</source>
         <translation type="unfinished"></translation>
@@ -23128,8 +23200,8 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-7196"/>
-        <location line="+7640"/>
+        <location line="-7204"/>
+        <location line="+7650"/>
         <source>Web Interface</source>
         <translation type="unfinished"></translation>
     </message>
@@ -23154,7 +23226,7 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+556"/>
+        <location line="+557"/>
         <source>Port forwarding: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -23255,20 +23327,20 @@ Rehash all shared files now?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8998"/>
+        <location line="-9009"/>
         <location line="+30"/>
         <location line="+745"/>
         <location line="+2165"/>
         <location line="+1087"/>
         <location line="+164"/>
-        <location line="+1761"/>
+        <location line="+1769"/>
         <location line="+406"/>
-        <location line="+2556"/>
+        <location line="+2559"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-7281"/>
+        <location line="-7292"/>
         <source>New eMule Qt version detected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -23278,7 +23350,7 @@ Rehash all shared files now?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3499"/>
+        <location line="+3507"/>
         <source>Write eMule core logs to disk</source>
         <translation type="unfinished"></translation>
     </message>
@@ -23338,21 +23410,21 @@ Rehash all shared files now?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2707"/>
+        <location line="-2715"/>
         <location line="+981"/>
-        <location line="+1730"/>
+        <location line="+1738"/>
         <source> s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2753"/>
+        <location line="-2761"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2881"/>
+        <location line="+2889"/>
         <source>New</source>
         <translation type="unfinished"></translation>
     </message>
@@ -23460,17 +23532,17 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4843"/>
+        <location line="-4851"/>
         <location line="+1735"/>
         <location line="+1087"/>
         <location line="+164"/>
-        <location line="+2102"/>
-        <location line="+2616"/>
+        <location line="+2110"/>
+        <location line="+2619"/>
         <source>Add</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2559"/>
+        <location line="-2562"/>
         <source>Edit Value</source>
         <translation type="unfinished"></translation>
     </message>
@@ -23480,8 +23552,8 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6829"/>
-        <location line="+7043"/>
+        <location line="-6837"/>
+        <location line="+7051"/>
         <location line="+7"/>
         <source>Proxy</source>
         <translation type="unfinished"></translation>
@@ -29133,7 +29205,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     <name>eMule::TorrentCreatorDialog</name>
     <message>
         <location filename="../src/gui/dialogs/TorrentCreatorDialog.cpp" line="+70"/>
-        <location line="+205"/>
+        <location line="+220"/>
         <location line="+33"/>
         <location line="+35"/>
         <location line="+5"/>
@@ -29142,7 +29214,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-396"/>
+        <location line="-411"/>
         <source>Select file/folder to share</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29163,12 +29235,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+9"/>
-        <location line="+277"/>
+        <location line="+292"/>
         <source>Select file</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-273"/>
+        <location line="-288"/>
         <source>Pick a single file.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29179,12 +29251,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+2"/>
-        <location line="+277"/>
+        <location line="+292"/>
         <source>Select folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-276"/>
+        <location line="-291"/>
         <source>Pick a folder; every file below it goes into the torrent.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29292,7 +29364,7 @@ Custom trackers of a public torrent join this list. Del or Backspace removes the
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+349"/>
+        <location line="+364"/>
         <source>Reset Public Trackers</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29302,7 +29374,7 @@ Custom trackers of a public torrent join this list. Del or Backspace removes the
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-357"/>
+        <location line="-372"/>
         <source>Web seed URLs:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29349,7 +29421,7 @@ Custom trackers of a public torrent join this list. Del or Backspace removes the
     <message>
         <location line="+7"/>
         <location line="+33"/>
-        <location line="+45"/>
+        <location line="+60"/>
         <source>Create Torrent</source>
         <translation type="unfinished"></translation>
     </message>
@@ -30301,7 +30373,22 @@ Custom trackers of a public torrent join this list. Del or Backspace removes the
 <context>
     <name>eMule::TorrentOptionsForm</name>
     <message>
-        <location filename="../src/gui/controls/TorrentOptionsForm.cpp" line="+43"/>
+        <location filename="../src/gui/controls/TorrentOptionsForm.cpp" line="+122"/>
+        <source>Minimum seeds:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-5"/>
+        <source>Other seeds the tracker reports, not counting this one.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-1"/>
+        <source> seeds</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-73"/>
         <source>Use global settings</source>
         <translation type="unfinished"></translation>
     </message>
@@ -30361,7 +30448,7 @@ Custom trackers of a public torrent join this list. Del or Backspace removes the
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+22"/>
         <source>Peer Connections</source>
         <translation type="unfinished"></translation>
     </message>
@@ -30406,7 +30493,7 @@ Custom trackers of a public torrent join this list. Del or Backspace removes the
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+141"/>
+        <location line="+148"/>
         <source>Varies</source>
         <translation type="unfinished"></translation>
     </message>
@@ -30419,7 +30506,7 @@ Custom trackers of a public torrent join this list. Del or Backspace removes the
 <context>
     <name>eMule::TorrentPanel</name>
     <message>
-        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+134"/>
+        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+135"/>
         <source>Torrent download completed: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -30438,12 +30525,12 @@ Custom trackers of a public torrent join this list. Del or Backspace removes the
         <location line="+15"/>
         <location line="+11"/>
         <location line="+16"/>
-        <location line="+827"/>
+        <location line="+829"/>
         <source>Not connected to the eMule core.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-894"/>
+        <location line="-896"/>
         <location line="+77"/>
         <source>Cannot read %1.</source>
         <translation type="unfinished"></translation>
@@ -30467,7 +30554,7 @@ Custom trackers of a public torrent join this list. Del or Backspace removes the
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+98"/>
+        <location line="+100"/>
         <source>Add Torrent…</source>
         <translation type="unfinished"></translation>
     </message>

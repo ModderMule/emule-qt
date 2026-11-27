@@ -65,6 +65,7 @@
 #include "utils/StatusBarNotifier.h"
 #include "utils/AppActivation.h"
 #include "utils/StringUtils.h"
+#include "dialogs/FolderPickerDialog.h"
 #include "utils/TaskbarProgress.h"
 
 #include "dialogs/PasteLinksDialog.h"
@@ -1611,6 +1612,13 @@ void MainWindow::buildToolsMenu()
         tr("Import Downloads (eM,eD,ON)..."),
         this, &MainWindow::onImportDownloads);
 
+    // #268, extended controls only (declutter switch)
+    if (thePrefs.showExtControls())
+        m_toolsMenu->addAction(
+            skinIcon(QStringLiteral(":/icons/Incoming.ico")),
+            tr("Backup Config..."),
+            this, &MainWindow::onBackupConfig);
+
     m_toolsMenu->addAction(
         skinIcon(QStringLiteral(":/icons/IPFilter.ico")),
         tr("IP Filter..."),
@@ -1822,6 +1830,41 @@ void MainWindow::onIPFilter()
     // MFC MP_HM_IPFILTER opens CIPFilterDlg, not the options page
     IPFilterDialog dlg(m_ipc, this);
     dlg.exec();
+}
+
+void MainWindow::onBackupConfig()
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        QMessageBox::warning(this, tr("Backup Config"), tr("Not connected to the core."));
+        return;
+    }
+    // on the core's disk: a remote core gets its folder tree
+    const QString dir = FolderPickerDialog::getExistingDirectory(
+        this, m_ipc, tr("Backup Config: folder for the backup"), QDir::homePath());
+    if (dir.isEmpty())
+        return;
+    Ipc::IpcMessage req(Ipc::IpcMsgType::BackupConfig);
+    req.append(dir);
+    m_ipc->sendRequest(std::move(req), [self = QPointer<MainWindow>(this)](const Ipc::IpcMessage& resp) {
+        if (!self)
+            return;
+        if (!resp.fieldBool(0)) {
+            QMessageBox::warning(self, tr("Backup Config"),
+                                 tr("The backup failed: %1").arg(resp.fieldString(1)));
+            return;
+        }
+        const QCborMap m = resp.fieldMap(1);
+        const QString folder = QDir::toNativeSeparators(m.value(QStringLiteral("folder")).toString());
+        QString text = tr("Config backed up to\n%1\n\n%2 files, %3.")
+                           .arg(folder)
+                           .arg(m.value(QStringLiteral("files")).toInteger())
+                           .arg(formatByteSize(m.value(QStringLiteral("bytes")).toInteger()));
+        if (const auto failed = m.value(QStringLiteral("failed")).toInteger(); failed > 0)
+            text += u'\n' + tr("%1 files could not be copied, see the log.").arg(failed);
+        text += QStringLiteral("\n\n") + tr("To restore: quit eMule Qt and its core, then copy the "
+                                              "folder's contents over the config folder.");
+        QMessageBox::information(self, tr("Backup Config"), text);
+    });
 }
 
 void MainWindow::onPasteLinks()

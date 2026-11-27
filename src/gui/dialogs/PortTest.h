@@ -106,6 +106,8 @@ public:
             return tr("not reachable: something else answers on this port");
         if (reason == QLatin1String("crypt_failed"))
             return tr("not reachable: the encrypted connection failed");
+        if (reason == PortTestApi::kReasonDropped)
+            return tr("not reachable: the core closed the connection at once (IP filter or ban)");
         if (reason == QLatin1String("udp_skipped"))
             return tr("not tested: TCP failed first");
         return tr("not reachable (%1)").arg(reason);
@@ -231,6 +233,7 @@ public:
         else if (missed)
             head += QLatin1Char(' ') + tr("The website's test packets did not arrive.");
         head += boundNote(result);
+        head += filterNote(result, all);
         return head + QStringLiteral("\n\n") + details.join(QStringLiteral("\n\n"));
     }
 
@@ -353,6 +356,33 @@ private:
                + (families == PortTestApi::kSeenIPv4
                       ? tr("Only IPv4 was tested: the network interface %1 selected in Options has no IPv6.").arg(name)
                       : tr("Only IPv6 was tested: the network interface %1 selected in Options has no IPv4.").arg(name));
+    }
+
+    /// eD2K (#266): the IP filter rejected peers during a failed test (likely the test server),
+    /// or blocks the test server, which was let through for the test.
+    [[nodiscard]] static QString filterNote(const QCborMap& result, bool allReachable)
+    {
+        QString note;
+        const auto list = [](const QCborArray& entries) {
+            QStringList out;
+            for (const QCborValue& v : entries) {
+                const QCborMap m = v.toMap();
+                const QString why = m.value(QStringLiteral("description")).toString();
+                const QString ip = m.value(QStringLiteral("address")).toString();
+                out << (why.isEmpty() ? ip : QStringLiteral("%1 (%2)").arg(ip, why));
+            }
+            return out.join(QStringLiteral(", "));
+        };
+        const QCborArray hits = result.value(QStringLiteral("filterHits")).toArray();
+        if (!allReachable && !hits.isEmpty())
+            note += QLatin1Char(' ')
+                    + tr("Your IP filter rejected %1 during the test, likely the test server: the result may be wrong. "
+                         "Lower the IP filter level or allow that address, then test again.").arg(list(hits));
+        const QCborArray blocked = result.value(QStringLiteral("serverFiltered")).toArray();
+        if (!blocked.isEmpty())
+            note += QLatin1Char(' ')
+                    + tr("Your IP filter blocks the test server %1. It was let through for this test only.").arg(list(blocked));
+        return note;
     }
 
     /// A failed target peers see at another address (#216): the test likely took another route.

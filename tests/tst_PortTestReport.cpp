@@ -47,6 +47,7 @@ private slots:
     void ed3kOtherRouteNotProven();
     void ed2kKadAndServerProof();
     void boundInterfaceNote();
+    void ipFilterNotes();
 };
 
 void tst_PortTestReport::ed3kLostButProven()
@@ -130,6 +131,37 @@ void tst_PortTestReport::boundInterfaceNote()
     const QString text = NetworkTest::reportText(result, &all);
     QVERIFY(all);
     QVERIFY(text.contains(QStringLiteral("Only IPv4 was tested: the network interface utun5")));
+}
+
+void tst_PortTestReport::ipFilterNotes()
+{
+    // #266: the core dropped the test link, its IP filter rejected the test server
+    const QCborMap t{
+        {QStringLiteral("family"), 4},
+        {QStringLiteral("ip"), QStringLiteral("198.51.100.7")},
+        {QStringLiteral("tcp"), QCborMap{{QStringLiteral("open"), false}, {QStringLiteral("reason"), QString(PortTestApi::kReasonDropped)}}},
+    };
+    QCborMap result{{QStringLiteral("network"), 3}, {QStringLiteral("tcpPort"), 24662},
+                    {QStringLiteral("udpPort"), 0}, {QStringLiteral("targets"), QCborArray{t}}};
+    const QCborArray hits{QCborMap{{QStringLiteral("address"), QStringLiteral("192.0.2.80")},
+                                   {QStringLiteral("description"), QStringLiteral("Cloud | hosting")},
+                                   {QStringLiteral("tcp"), true}}};
+    result.insert(QStringLiteral("filterHits"), hits);
+    bool all = true;
+    QString text = NetworkTest::reportText(result, &all);
+    QVERIFY(!all);
+    QVERIFY(text.contains(QStringLiteral("closed the connection at once")));
+    QVERIFY(text.contains(QStringLiteral("Your IP filter rejected 192.0.2.80 (Cloud | hosting) during the test")));
+
+    // let through: passed, and said so
+    QCborMap open = t;
+    open.insert(QStringLiteral("tcp"), QCborMap{{QStringLiteral("open"), true}, {QStringLiteral("reason"), QStringLiteral("open")}});
+    result.insert(QStringLiteral("targets"), QCborArray{open});
+    result.insert(QStringLiteral("serverFiltered"), hits);
+    text = NetworkTest::reportText(result, &all);
+    QVERIFY(all);
+    QVERIFY(!text.contains(QStringLiteral("during the test")));   // hits only matter on a failure
+    QVERIFY(text.contains(QStringLiteral("Your IP filter blocks the test server 192.0.2.80 (Cloud | hosting)")));
 }
 
 QTEST_GUILESS_MAIN(tst_PortTestReport)

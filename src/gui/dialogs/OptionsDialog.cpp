@@ -6312,6 +6312,14 @@ QWidget* OptionsDialog::createBitTorrentPage()
     fitSpecialValue(m_btSeedTimeSpin);
     seedForm->addRow(tr("Stop after seeding for:"), m_btSeedTimeSpin);
 
+    m_btSeedMinSeedsSpin = new QSpinBox(seedGroup);
+    m_btSeedMinSeedsSpin->setRange(0, Preferences::kMaxBtSeedMinSeeds);
+    m_btSeedMinSeedsSpin->setSpecialValueText(tr("No limit"));
+    fitSpecialValue(m_btSeedMinSeedsSpin);
+    m_btSeedMinSeedsSpin->setToolTip(
+        tr("Stop seeding a torrent once the tracker reports this many other seeds."));
+    seedForm->addRow(tr("Stop at minimum seeds:"), m_btSeedMinSeedsSpin);
+
     mainLayout->addWidget(seedGroup);
 
     // -- Desktop integration --------------------------------------------------
@@ -6345,7 +6353,7 @@ QWidget* OptionsDialog::createBitTorrentPage()
     // -- Wiring -------------------------------------------------------------
     connect(m_btEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_btSingleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    for (QSpinBox* box : {m_btMaxActiveDownSpin, m_btMaxActiveSeedSpin, m_btSeedTimeSpin})
+    for (QSpinBox* box : {m_btMaxActiveDownSpin, m_btMaxActiveSeedSpin, m_btSeedTimeSpin, m_btSeedMinSeedsSpin})
         connect(box, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_btSeedRatioSpin, &QDoubleSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_btDownloadDirEdit, &QLineEdit::textEdited, this, &OptionsDialog::markDirty);
@@ -8374,6 +8382,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(qRound(m_btSeedRatioSpin->value() * 100.0)));
         req.append(QStringLiteral("btSeedTimeLimitMinutes"));
         req.append(static_cast<qint64>(m_btSeedTimeSpin->value()));
+        req.append(QStringLiteral("btSeedMinSeeds"));
+        req.append(static_cast<qint64>(m_btSeedMinSeedsSpin->value()));
         req.append(QStringLiteral("btPortMapping"));
         req.append(m_btPortMappingCheck->isChecked());
         req.append(QStringLiteral("btMaxConnections"));
@@ -9403,6 +9413,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         double(prefs.value(QStringLiteral("btSeedRatioPercent")).toInteger(100)) / 100.0);
     m_btSeedTimeSpin->setValue(
         int(prefs.value(QStringLiteral("btSeedTimeLimitMinutes")).toInteger(0)));
+    m_btSeedMinSeedsSpin->setValue(int(prefs.value(QStringLiteral("btSeedMinSeeds")).toInteger(0)));
     m_btPortMappingCheck->setChecked(prefs.value(QStringLiteral("btPortMapping")).toBool(true));
     m_btI2pPage->load(prefs);
     m_btMaxConnSpin->setValue(int(prefs.value(QStringLiteral("btMaxConnections"))

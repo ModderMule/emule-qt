@@ -171,6 +171,7 @@
     <ClCompile Include="crypto\AICHSyncThread.cpp" />
     <ClCompile Include="files\AbstractFile.cpp" />
     <ClCompile Include="app\AppConfig.cpp" />
+    <ClCompile Include="app\ConfigBackup.cpp" />
     <ClCompile Include="app\VersionManifest.cpp" />
     <ClCompile Include="app\InstallerCopy.cpp" />
     <ClCompile Include="app\TranslationRouter.cpp" />
@@ -187,6 +188,7 @@
     <ClCompile Include="net\ScheduledUpdater.cpp" />
     <ClCompile Include="net\MetaFileCache.cpp" />
     <ClCompile Include="net\PortTestApi.cpp" />
+    <ClCompile Include="net\PortTestGate.cpp" />
     <ClCompile Include="httpcache\HttpCacheClient.cpp" />
     <ClCompile Include="httpcache\HttpCacheManager.cpp" />
     <ClCompile Include="httpcache\HttpCacheOffer.cpp" />
@@ -451,6 +453,7 @@
     <QtMoc Include="crypto\AICHSyncThread.h" />
     <ClInclude Include="files\AbstractFile.h" />
     <ClInclude Include="app\AppConfig.h" />
+    <ClInclude Include="app\ConfigBackup.h" />
     <ClInclude Include="app\VersionManifest.h" />
     <ClInclude Include="app\InstallerCopy.h" />
     <ClInclude Include="app\TranslationRouter.h" />
@@ -468,6 +471,7 @@
     <ClInclude Include="net\HttpValidators.h" />
     <ClInclude Include="net\MetaFileCache.h" />
     <ClInclude Include="net\PortTestApi.h" />
+    <ClInclude Include="net\PortTestGate.h" />
     <ClInclude Include="httpcache\HttpCacheOffer.h" />
     <ClInclude Include="httpcache\HttpCacheReach.h" />
     <ClInclude Include="httpcache\HttpCacheServerProbe.h" />

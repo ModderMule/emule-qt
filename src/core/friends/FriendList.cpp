@@ -12,6 +12,7 @@
 #include "utils/SafeFile.h"
 
 #include <QDir>
+#include <QFileInfo>
 
 
 namespace eMule {
@@ -33,44 +34,16 @@ FriendList::~FriendList() = default;
 
 bool FriendList::load(const QString& configDir)
 {
-    const QString filePath = QDir(configDir).filePath(
-        QString::fromLatin1(kFriendsMetFilename));
-
-    SafeFile file;
-    if (!file.open(filePath, QIODevice::ReadOnly)) {
-        logInfo(QStringLiteral("FriendList: no friends file at %1").arg(filePath));
-        return false;
-    }
-
-    try {
-        const uint8 header = file.readUInt8();
-        if (header != MET_HEADER) {
-            logWarning(QStringLiteral("FriendList: invalid header 0x%1 in %2")
-                           .arg(header, 2, 16, QChar(u'0'))
-                           .arg(filePath));
-            return false;
-        }
-
-        const uint32 friendCount = file.readUInt32();
-        m_friends.reserve(friendCount);
-
-        for (uint32 i = 0; i < friendCount; ++i) {
-            auto f = std::make_unique<Friend>();
-            f->loadFromFile(file);
-            m_friends.push_back(std::move(f));
-        }
-
-        logInfo(QStringLiteral("FriendList: loaded %1 friends from %2")
-                    .arg(friendCount)
-                    .arg(filePath));
-        emit listLoaded(static_cast<int>(friendCount));
+    const QString filePath = QDir(configDir).filePath(QString::fromLatin1(kFriendsMetFilename));
+    if (readFile(filePath))
         return true;
-
-    } catch (const FileException& ex) {
-        logError(QStringLiteral("FriendList: error reading %1: %2")
-                     .arg(filePath, QString::fromUtf8(ex.what())));
-    }
-    return false;
+    // save() keeps the previous file as .bak
+    const QString bak = filePath + QStringLiteral(".bak");
+    if (!QFileInfo::exists(filePath) || !QFileInfo::exists(bak))
+        return false;
+    logWarning(QStringLiteral("FriendList: %1 damaged, reading %2").arg(filePath, QFileInfo(bak).fileName()));
+    m_friends.clear();
+    return readFile(bak);
 }
 
 void FriendList::save(const QString& configDir) const
@@ -273,6 +246,45 @@ void FriendList::emitConnectionProgress(Friend* f, ChatConnectProgress step)
 void FriendList::emitConnectingResult(Friend* f, bool success)
 {
     emit friendConnectingResult(f, success);
+}
+
+bool FriendList::readFile(const QString& filePath)
+{
+    SafeFile file;
+    if (!file.open(filePath, QIODevice::ReadOnly)) {
+        logInfo(QStringLiteral("FriendList: no friends file at %1").arg(filePath));
+        return false;
+    }
+
+    try {
+        const uint8 header = file.readUInt8();
+        if (header != MET_HEADER) {
+            logWarning(QStringLiteral("FriendList: invalid header 0x%1 in %2")
+                           .arg(header, 2, 16, QChar(u'0'))
+                           .arg(filePath));
+            return false;
+        }
+
+        const uint32 friendCount = file.readUInt32();
+        m_friends.reserve(friendCount);
+
+        for (uint32 i = 0; i < friendCount; ++i) {
+            auto f = std::make_unique<Friend>();
+            f->loadFromFile(file);
+            m_friends.push_back(std::move(f));
+        }
+
+        logInfo(QStringLiteral("FriendList: loaded %1 friends from %2")
+                    .arg(friendCount)
+                    .arg(filePath));
+        emit listLoaded(static_cast<int>(friendCount));
+        return true;
+
+    } catch (const FileException& ex) {
+        logError(QStringLiteral("FriendList: error reading %1: %2")
+                     .arg(filePath, QString::fromUtf8(ex.what())));
+    }
+    return false;
 }
 
 } // namespace eMule

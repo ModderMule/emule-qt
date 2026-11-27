@@ -129,6 +129,7 @@ emule_add_test(tst_MassRename      FOLDER "Utils")
 # Own comment + rating, one file or a batch (#123, IPC SetFileComment)
 emule_add_test(tst_FileComments    FOLDER "Files")
 emule_add_test(tst_SafeFile        FOLDER "Utils")
+emule_add_test(tst_ConfigBackup    FOLDER "Utils")
 emule_add_test(tst_Log             FOLDER "Utils")
 emule_add_test(tst_CorroborationTally FOLDER "Utils")
 

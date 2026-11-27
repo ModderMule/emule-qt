@@ -99,6 +99,8 @@
 #include "prefs/LegacyConfigImport.h"
 #include "prefs/PreferenceSchema.h"
 #include "prefs/Preferences.h"
+#include "app/ConfigBackup.h"
+#include "utils/BackgroundFileWriter.h"
 #include "net/Packet.h"
 #include "protocol/ED2KLink.h"
 #include "search/GlobalSearchScheduler.h"
@@ -536,6 +538,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetConvertJobs:       handleGetConvertJobs(msg); break;
     case IpcMsgType::FindLegacyProfiles:   handleFindLegacyProfiles(msg); break;
     case IpcMsgType::ImportLegacyProfile:  handleImportLegacyProfile(msg); break;
+    case IpcMsgType::BackupConfig:         handleBackupConfig(msg); break;
     case IpcMsgType::RemoveConvertJob:     handleRemoveConvertJob(msg); break;
     case IpcMsgType::RetryConvertJob:      handleRetryConvertJob(msg); break;
     case IpcMsgType::StopDownload:         handleStopDownload(msg); break;
@@ -3293,6 +3296,33 @@ void IpcClientHandler::handleImportLegacyProfile(const IpcMessage& msg)
 }
 
 // ---------------------------------------------------------------------------
+// handleBackupConfig — copy of the config folder (#268)
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleBackupConfig(const IpcMessage& msg)
+{
+    // the latest settings first; queued saves are flushed on the worker
+    thePrefs.save();
+    const int seqId = msg.seqId();
+    offCoreThread(this,
+        [dest = QDir::fromNativeSeparators(msg.fieldString(0).trimmed()), configDir = thePrefs.configDir()] {
+            BackgroundFileWriter::instance().flush();
+            return ConfigBackup::run(configDir, dest);
+        },
+        [seqId](IpcClientHandler& self, const std::expected<ConfigBackupResult, QString>& out) {
+            if (!out) {
+                self.sendMessage(IpcMessage::makeResult(seqId, false, out.error()));
+                return;
+            }
+            self.sendMessage(IpcMessage::makeResult(seqId, true,
+                                                    QCborMap{{QStringLiteral("folder"), out->folder},
+                                                             {QStringLiteral("files"), out->files},
+                                                             {QStringLiteral("bytes"), qint64(out->bytes)},
+                                                             {QStringLiteral("failed"), out->failed}}));
+        });
+}
+
+// ---------------------------------------------------------------------------
 // handleGetConvertJobs — return snapshot of all conversion jobs
 // ---------------------------------------------------------------------------
 
@@ -5532,6 +5562,8 @@ bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& v
         thePrefs.setBtSeedRatioPercent(int(val.toInteger()));
     else if (key == QStringLiteral("btSeedTimeLimitMinutes"))
         thePrefs.setBtSeedTimeLimitMinutes(int(val.toInteger()));
+    else if (key == QStringLiteral("btSeedMinSeeds"))
+        thePrefs.setBtSeedMinSeeds(int(val.toInteger()));
     else if (key == QStringLiteral("btDownloadSharePercent"))
         thePrefs.setBtDownloadSharePercent(int(val.toInteger()));
     else if (key == QStringLiteral("btUploadSharePercent"))

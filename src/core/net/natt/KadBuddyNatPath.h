@@ -4,7 +4,10 @@
 ///
 /// Requester -> target's buddy, OP_REASKCALLBACKUDP:
 ///   <buddy id 16><zero 16><OP_RENDEZVOUS><our hash 16><opts | 0x20><file hash 16>
-///   [<our ip4 wire order><our udp port 2><transport hint 1>]          (66 or 73 bytes)
+///   <our ip4 wire order><our udp port 2><transport hint 1>           (73 bytes, zeros = unknown)
+///   [<type 1><len 1><value len>]...                                  extension block (#265)
+/// The block follows the full 73 bytes so stock parsers stop before it. An unknown type is
+/// skipped by its length; a length past the end voids the whole block.
 /// The buddy relays it as a stock OP_REASKCALLBACKTCP with the requester's endpoint as it
 /// saw it; a buddy that speaks the dialect also sends the requester a 56-byte
 /// OP_NATT_ENDPOINT_HINT and an OP_HOLEPUNCH. The target unwraps the zero file hash and
@@ -26,6 +29,9 @@ public:
     static constexpr uint32 kEnvelopeSize     = 16 + 16 + 1 + 16 + 1 + 16;   // 66
     static constexpr uint32 kEnvelopeTailSize = 4 + 2 + 1;                   // 73 with it
     static constexpr uint32 kRendezvousMin    = 16 + 1 + 16;                 // after the opcode
+    static constexpr uint32 kRendezvousFull   = kRendezvousMin + kEnvelopeTailSize; // block starts here
+    static constexpr uint8  kExtUdp6          = 0x01;    // <ipv6 16><udp port 2>
+    static constexpr uint8  kExtUdp6Size      = 16 + 2;
     static constexpr uint32 kHintSize         = 56;
     static constexpr uint8  kHintVersion      = 1;
 
@@ -50,6 +56,8 @@ public:
     void onBuddyRelay(const Endpoint& requester, const uint8* data, uint32 size, const ServedPeer& served);
     /// Target role: our buddy relayed an OP_RENDEZVOUS; @p data starts after the opcode.
     bool onRendezvous(const Endpoint& requester, const uint8* data, uint32 size);
+    /// IPv6 UDP endpoint from an extension block, null when none or the block is bad.
+    [[nodiscard]] static Endpoint parseExtUdp6(const uint8* data, uint32 size);
 
 private:
     void sendEnvelope(Attempt& attempt);

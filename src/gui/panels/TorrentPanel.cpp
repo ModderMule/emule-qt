@@ -17,6 +17,7 @@
 #include "controls/TorrentProgressDelegate.h"
 #include "dialogs/AddTorrentDialog.h"
 #include "dialogs/EditTrackersDialog.h"
+#include "dialogs/TorrentCreatorDialog.h"
 #include "dialogs/TorrentOptionsDialog.h"
 #include "dialogs/TorrentDetailsDialog.h"
 #include "prefs/Preferences.h"
@@ -277,21 +278,23 @@ void TorrentPanel::applyDisplayOptions()
 
 void TorrentPanel::dragEnterEvent(QDragEnterEvent* event)
 {
-    if (!gui::torrentDropFiles(event->mimeData()).isEmpty())
+    if (takesDrop(event->mimeData()))
         event->acceptProposedAction();
 }
 
 void TorrentPanel::dragMoveEvent(QDragMoveEvent* event)
 {
-    if (!gui::torrentDropFiles(event->mimeData()).isEmpty())
+    if (takesDrop(event->mimeData()))
         event->acceptProposedAction();
 }
 
 void TorrentPanel::dropEvent(QDropEvent* event)
 {
-    if (acceptTorrentDrop(event->mimeData()))
+    // .torrent files are added; other files and folders open the Torrent Creator
+    if (acceptTorrentDrop(event->mimeData()) || TorrentCreatorDialog::runFromDrop(m_ipc, this, event->mimeData()))
         event->acceptProposedAction();
 }
+
 
 // ---------------------------------------------------------------------------
 // Private — construction
@@ -1143,6 +1146,11 @@ void TorrentPanel::setFilePriority(int priority)
             m_poller->refreshNow();
         });
     }
+}
+
+bool TorrentPanel::takesDrop(const QMimeData* mime) const
+{
+    return !gui::torrentDropFiles(mime).isEmpty() || TorrentCreatorDialog::acceptsDrop(m_ipc, mime);
 }
 
 } // namespace eMule

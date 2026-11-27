@@ -670,6 +670,7 @@ private:
     QSpinBox*       m_btMaxActiveSeedSpin = nullptr;
     QDoubleSpinBox* m_btSeedRatioSpin = nullptr;
     QSpinBox*       m_btSeedTimeSpin = nullptr;
+    QSpinBox*       m_btSeedMinSeedsSpin = nullptr;
     QPushButton*    m_btRandomPortBtn = nullptr;
     QCheckBox*      m_btPortMappingCheck = nullptr;
     QSpinBox*       m_btMaxConnSpin = nullptr;

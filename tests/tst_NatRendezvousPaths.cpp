@@ -192,6 +192,9 @@ private slots:
     void kad_endpointHint();
     void kad_buddyRelay_sendsHint();
     void kad_rendezvousFromBuddy();
+    void kad_envelopeCarriesUdp6Block();
+    void kad_rendezvousUdp6Block();
+    void kad_requesterTakesHandoffOverIPv6();
 
     // direct UDP (Kad type 6 + TAG_NATT)
     void direct_requestSendsCallbackAndDialsQuic();
@@ -1329,6 +1332,8 @@ void tst_NatRendezvousPaths::kad_requestEnvelopeAndPunches()
     HubFixture f;
     f.env->isKadConnected = true;
     f.env->publicIPv4 = kOurIP.toNetworkUint32();
+    f.env->publicIPv6 = {};                           // no extension block
+    f.env->quic = true;                               // so a rendezvous is still useful
     const PeerInfo peer = kadPeer();
     QVERIFY(f.hub->start(peer));
 
@@ -1350,13 +1355,18 @@ void tst_NatRendezvousPaths::kad_requestEnvelopeAndPunches()
     QCOMPARE(e.mid(50, 16), hashBytes(peer.fileHash));
     QCOMPARE(Address::fromNetworkOrder(peekUInt32(bytes(e) + 66)), kOurIP);
     QCOMPARE(peekUInt16(bytes(e) + 70), f.env->udpPort);
-    QCOMPARE(uint8(e[72]), uint8{0});
+    QCOMPARE(uint8(e[72]), uint8{2});                 // QUIC hint
 
-    // without a known public IPv4 the tail is left off
+    // without a known public IPv4 the tail is still sent, as zeros
     HubFixture g;
     g.env->isKadConnected = true;
+    g.env->publicIPv6 = {};
+    g.env->quic = true;
     QVERIFY(g.hub->start(peer));
-    QCOMPARE(g.env->udpWith(OP_EMULEPROT, OP_REASKCALLBACKUDP).front().payload.size(), 66);
+    const QByteArray z = g.env->udpWith(OP_EMULEPROT, OP_REASKCALLBACKUDP).front().payload;
+    QCOMPARE(z.size(), 73);
+    QCOMPARE(z.mid(66, 6), QByteArray(6, '\0'));
+    QVERIFY(!g.hub->attempts().front()->offeredUdp6);
 }
 
 void tst_NatRendezvousPaths::kad_endpointHint()
@@ -1470,6 +1480,131 @@ void tst_NatRendezvousPaths::kad_rendezvousFromBuddy()
     // too short
     HubFixture h;
     QVERIFY(!h.hub->handleRendezvousFromBuddy(seen, p, 20));
+}
+
+namespace {
+
+const Address kOurV6 = Address::fromString(QStringLiteral("2a00:1450:4001:800::1"));
+const Address kRequesterV6 = Address::fromString(QStringLiteral("2a00:1450:4001:802::9"));
+
+/// Rendezvous body after the opcode: hash, opts, file hash, 7-byte tail, then @p block.
+QByteArray rendezvousBody(const QByteArray& block)
+{
+    QByteArray r(33 + 7, '\0');
+    auto* p = reinterpret_cast<uint8*>(r.data());
+    std::memset(p, 0x42, 16);
+    p[16] = CONNECT_OPT_NATT_ENDPOINT_HINT;
+    std::memset(p + 17, 0xF0, 16);
+    return r + block;
+}
+
+QByteArray udp6Element(const Address& v6, uint16 port)
+{
+    QByteArray b;
+    b.append(char(KadBuddyNatPath::kExtUdp6));
+    b.append(char(KadBuddyNatPath::kExtUdp6Size));
+    b.append(reinterpret_cast<const char*>(v6.ipv6Bytes().data()), 16);
+    char pp[2];
+    pokeUInt16(pp, port);
+    b.append(pp, 2);
+    return b;
+}
+
+} // namespace
+
+void tst_NatRendezvousPaths::kad_envelopeCarriesUdp6Block()
+{
+    HubFixture f;
+    f.env->isKadConnected = true;
+    f.env->publicIPv6 = kOurV6;
+    QVERIFY(f.hub->start(kadPeer()));
+    const QByteArray e = f.env->udpWith(OP_EMULEPROT, OP_REASKCALLBACKUDP).front().payload;
+    QCOMPARE(e.size(), 73 + 2 + 18);
+    QCOMPARE(e.mid(66, 6), QByteArray(6, '\0'));     // no IPv4 known: zero tail first
+    QCOMPARE(e.mid(73), udp6Element(kOurV6, f.env->udpPort));
+    QVERIFY(f.hub->attempts().front()->offeredUdp6);
+}
+
+void tst_NatRendezvousPaths::kad_rendezvousUdp6Block()
+{
+    const Endpoint seen(Address::fromString(QStringLiteral("8.8.8.8")), 6000);
+    const Endpoint v6(kRequesterV6, 5662);
+
+    // unknown type first, then ours: punched on both families, QUIC armed for both
+    {
+        HubFixture f;
+        f.env->publicIPv6 = kOurV6;
+        f.env->quic = true;
+        const QByteArray r = rendezvousBody(QByteArray("\x7F\x03xyz", 5) + udp6Element(kRequesterV6, 5662));
+        QVERIFY(f.hub->handleRendezvousFromBuddy(seen, bytes(r), uint32(r.size())));
+        const Attempt* a = f.hub->attempts().front();
+        QCOMPARE(a->peerUdp, seen);
+        QCOMPARE(a->peerUdp6, v6);
+        bool punchedV6 = false;
+        for (const auto& u : f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH))
+            punchedV6 |= u.to == v6;
+        QVERIFY(punchedV6);
+        bool handoffV6 = false;
+        for (const auto& u : f.env->udpWith(OP_UDPRESERVEDPROT2, OP_NATT_FRAME_IPV6HANDOFF))
+            handoffV6 |= u.to == v6;
+        QVERIFY(handoffV6);
+        QCOMPARE(a->quicEndpoint(), v6);
+    }
+    // no IPv6 of our own: ignored
+    {
+        HubFixture f;
+        f.env->publicIPv6 = {};
+        const QByteArray r = rendezvousBody(udp6Element(kRequesterV6, 5662));
+        QVERIFY(f.hub->handleRendezvousFromBuddy(seen, bytes(r), uint32(r.size())));
+        QCOMPARE(f.hub->attempts().front()->peerUdp6.port(), uint16{0});
+    }
+    // a length past the end voids the whole block
+    {
+        HubFixture f;
+        f.env->publicIPv6 = kOurV6;
+        QByteArray r = rendezvousBody(udp6Element(kRequesterV6, 5662) + QByteArray("\x02\x09", 2));
+        QVERIFY(f.hub->handleRendezvousFromBuddy(seen, bytes(r), uint32(r.size())));
+        QCOMPARE(f.hub->attempts().front()->peerUdp6.port(), uint16{0});
+    }
+    // no usable IPv4 endpoint: the IPv6 one alone starts the attempt
+    {
+        HubFixture f;
+        f.env->publicIPv6 = kOurV6;
+        const QByteArray r = rendezvousBody(udp6Element(kRequesterV6, 5662));
+        QVERIFY(f.hub->handleRendezvousFromBuddy(Endpoint(Address::fromString(QStringLiteral("10.0.0.5")), 6000),
+                                                 bytes(r), uint32(r.size())));
+        QCOMPARE(f.hub->attempts().front()->peerUdp6, v6);
+    }
+    QVERIFY(KadBuddyNatPath::parseExtUdp6(nullptr, 0).port() == 0);
+}
+
+void tst_NatRendezvousPaths::kad_requesterTakesHandoffOverIPv6()
+{
+    HubFixture f;
+    f.env->isKadConnected = true;
+    f.env->publicIPv6 = kOurV6;
+    f.env->quic = true;
+    const PeerInfo peer = kadPeer();
+    QVERIFY(f.hub->start(peer));
+    const Endpoint targetV6(Address::fromString(QStringLiteral("2a00:1450:4001:803::5")), 7000);
+
+    // a wrong hash from an unknown IPv6: dropped
+    Hash16 other{};
+    other.fill(0x13);
+    QByteArray h = handoff(other, 1, 4662);
+    f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), targetV6, true);
+    QCOMPARE(f.hub->attempts().front()->state, Attempt::State::Requested);
+
+    h = handoff(peer.hash, 1, 4662);
+    f.hub->handleFrame(OP_NATT_FRAME_IPV6HANDOFF, bytes(h), uint32(h.size()), targetV6, true);
+    const Attempt* a = f.hub->attempts().front();
+    QCOMPARE(a->state, Attempt::State::Punching);
+    QCOMPARE(a->peerUdp6, targetV6);
+    QCOMPARE(a->quicEndpoint(), targetV6);
+
+    // the IPv4 hint later keeps the IPv6 endpoint for QUIC
+    f.hub->handlePeerPacket(OP_HOLEPUNCH, nullptr, 0, Endpoint(kPeerIP, 40001));
+    QCOMPARE(a->peerUdp6, targetV6);
 }
 
 namespace {

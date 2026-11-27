@@ -46,7 +46,7 @@ struct ClientRow {
     QString software;
     QString fileName;
     QString uploadState;        ///< token, see uploadStateText()
-    bool uploadStalled = false;
+    QString uploadWait;         ///< UpDownClient::uploadWaitToken(): "", "Request", "Ack"
     QString downloadState;
     QString userHash;
     int64_t transferredUp = 0;

@@ -160,6 +160,9 @@ public:
 
     /// The peer's UDP endpoint is known: start punching and the handoff.
     void endpointKnown(Attempt& attempt, const Endpoint& udp, uint16 tcpPort = 0);
+    /// A second, IPv6 UDP endpoint of a punching peer (Kad rendezvous block, handoff over
+    /// IPv6): punch it too and arm QUIC there. Ignored without an IPv6 of our own.
+    void addPeerUdp6(Attempt& attempt, const Endpoint& udp6);
     void fail(Attempt& attempt, const QString& why);
     /// A path gave up on @p attempt (PR_NAT FAILED): try the next path, else fail it.
     void failOrNext(Attempt& attempt, const QString& why);
@@ -192,8 +195,8 @@ private:
     /// Firewalled: every path. HighID: only the foreign callback.
     [[nodiscard]] bool pathAllowed(const NatPath& path) const;
     /// Requester whose path never produced an endpoint: move to the next untried path
-    /// that can serve the peer. False when none is left.
-    bool tryNextPath(Attempt& attempt);
+    /// that can serve the peer. False when none is left. @p why goes to the log.
+    bool tryNextPath(Attempt& attempt, const QString& why);
     /// Hash to obfuscate a datagram to the peer with, or nullptr for plain.
     [[nodiscard]] const uint8* peerCryptHash(const Attempt& attempt, bool plainWhenUnknown) const;
     void sendPunch(Attempt& attempt);

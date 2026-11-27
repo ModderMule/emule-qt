@@ -169,6 +169,10 @@ public:
     /// Pieces libtorrent has (hash passed); empty before the metadata or for an unknown id.
     /// From the last status update (≤ 1 s old) plus finished pieces; never waits.
     [[nodiscard]] QBitArray havePieces(const QString& id) const;
+    /// libtorrent has checked the files since the last (re)check began, havePieces is
+    /// current. false while queued for a check: writing into its files then could
+    /// overwrite pieces it would have found whole (#264).
+    [[nodiscard]] bool filesChecked(const QString& id) const;
     /// The ed3k:file link the torrent was added with (link or magnet `xs`); kept across
     /// restarts. Empty: none.
     [[nodiscard]] QString ed3kLink(const QString& id) const;

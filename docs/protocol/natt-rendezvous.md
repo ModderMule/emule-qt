@@ -264,9 +264,19 @@ The compatibility target's dialect, adopted unchanged (`natt-transports-emuleai.
 
 - Requester: 6 `OP_HOLEPUNCH` to the source's Kad endpoint (when known), then
   `OP_REASKCALLBACKUDP` to its serving buddy, plain:
-  `<buddy id 16><zero 16><0xA0><our hash 16><opts | 0x20><file hash 16>[<our ip 4><udp port 2><hint 1>]`
-  (66 bytes, or 73 when we know our public IPv4). Hint is 2 (QUIC) while the QUIC transport
-  runs, else 0.
+  `<buddy id 16><zero 16><0xA0><our hash 16><opts | 0x20><file hash 16><our ip 4><udp port 2><hint 1>[<block>]`
+  Always the full 73 bytes; IP and port are zeros when we don't know our public IPv4 (was 66
+  bytes until 2026-11-27). Hint is 2 (QUIC) while the QUIC transport runs, else 0.
+- Extension block (emule-qt#265, proposed to eMuleAI in eMuleAI#172, aMule will carry it):
+  `<type 1><len 1><value len>` repeated to the end of the body. Unknown type: skip by length.
+  A length past the end voids the whole block. It follows the hint byte, so eMuleAI (reads up
+  to the hint) and older eMule Qt targets (read up to the endpoint) ignore it.
+
+  | Type | Value | Meaning |
+  | --- | --- | --- |
+  | `0x01` | `<ipv6 16><udp port 2>` (port LE) | requester's IPv6 UDP endpoint. Sent while we have a confident public IPv6; port is the bound UDP port (ToDo: NAT66-mapped port). A longer value is read for its first 18 bytes |
+
+  Type values are proposed in eMuleAI#172 as the one shared table.
 - Buddy (we serve one): the existing relay forwards it as a stock `OP_REASKCALLBACKTCP`. When
   the envelope has the zero hash, `0xA0` and option `0x20`, we also send the requester
   `OP_NATT_ENDPOINT_HINT` (`0xAA`, 56 bytes:
@@ -275,6 +285,15 @@ The compatibility target's dialect, adopted unchanged (`natt-transports-emuleai.
 - Target: `processReaskCallbackTCP` sees the zero file hash, reads the embedded opcode and
   starts a target attempt at the endpoint the buddy saw. The self-reported tail is used only
   when that endpoint is not a good public address.
+- Target with an IPv6 of its own and a `0x01` element: also punches the requester's IPv6
+  endpoint, sends the `0x11` handoff there and arms QUIC on it, so QUIC goes first on IPv6
+  (§ Punch and IPv6 handoff). Works when the IPv4 punch never opens (symmetric NAT on both
+  sides). With no usable IPv4 endpoint, the IPv6 one alone starts the attempt.
+- Requester that sent `0x01`: takes a `0x11` handoff from an IPv6 address it never saw when
+  the hash names its target, and keeps that source as the peer's IPv6 UDP endpoint. The target
+  learns nothing of the requester's firewall: a stateful IPv6 firewall on the requester side
+  still drops the target's first datagrams, so this helps when the requester's IPv6 UDP port
+  is reachable (or the IPv4 handoff already got through).
 - The requester accepts a hint only from the source's buddy endpoint, naming the buddy ID it
   sent to. The target's punch from the target's IP also gives the endpoint.
 - A firewalled source with a confident IPv6 publishes it next to its buddy, and the
@@ -327,7 +346,8 @@ Once an attempt knows the peer's UDP endpoint:
 - `0xC5 0xA1` (`OP_HOLEPUNCH`, empty) every second for 20 s. A punch from the peer's IP on
   another port moves the endpoint there (the datagram source wins).
 - The handoff, `OP_UDPRESERVEDPROT2` (`0xB2`) frame type `0x11`, every 2 s until the peer's
-  arrives, then once as an answer:
+  arrives, then once as an answer. Sent to the peer's IPv6 UDP endpoint too when one is known
+  (`PR_NAT` `SYNC_IPV6`, Kad block `0x01`):
 
 ```
 <version 1 = 1><flags 1><client id 4><user hash 16><connect options 1><tcp port 2>[<ipv6 16>]

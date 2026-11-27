@@ -222,6 +222,7 @@ private:
     void handleGetConvertJobs(const Ipc::IpcMessage& msg);
     void handleFindLegacyProfiles(const Ipc::IpcMessage& msg);
     void handleImportLegacyProfile(const Ipc::IpcMessage& msg);
+    void handleBackupConfig(const Ipc::IpcMessage& msg);
     void handleRemoveConvertJob(const Ipc::IpcMessage& msg);
     void handleRetryConvertJob(const Ipc::IpcMessage& msg);
     void handleStopDownload(const Ipc::IpcMessage& msg);

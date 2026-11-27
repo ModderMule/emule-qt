@@ -915,6 +915,15 @@ void Ed3kDownloads::delivered(Entry& e, const QString& path, std::span<const std
     if (m_completedHook)
         m_completedHook(done);
     pumpSession();
+    // "Auto clear completed downloads", as eD2K (DownloadQueue::completeFile): the row
+    // leaves the list, the file stays on disk and shared. Deferred: listeners see it first.
+    // Plain ed3k rows only: torrent (seeding) and hoster jobs keep their rows in their tabs
+    if (thePrefs.autoRemoveFinishedDownloads()) {
+        QTimer::singleShot(0, this, [this, root] {
+            if (const Entry* e = entryOf(root); e && e->info.state == Ed3kDownloadInfo::State::Complete)
+                (void)cancel(root);
+        });
+    }
 }
 
 void Ed3kDownloads::endCompletion(Entry& e)

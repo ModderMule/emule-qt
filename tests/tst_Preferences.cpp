@@ -589,6 +589,7 @@ private slots:
         QCOMPARE(prefs.btMaxActiveSeeds(), 5);
         QCOMPARE(prefs.btSeedRatioPercent(), 100);
         QCOMPARE(prefs.btSeedTimeLimitMinutes(), 0);
+        QCOMPARE(prefs.btSeedMinSeeds(), 0);
     }
 
     // v3: a config from before BT shipped stored `enabled: false` as the default
@@ -728,6 +729,7 @@ private slots:
             prefs.setBtMaxActiveSeeds(0);
             prefs.setBtSeedRatioPercent(250);
             prefs.setBtSeedTimeLimitMinutes(1440);
+            prefs.setBtSeedMinSeeds(2);
             prefs.setBtI2pMode(Preferences::kBtI2pExternal);
             prefs.setBtI2pHost(QStringLiteral("10.0.0.5"));
             prefs.setBtI2pPort(7660);
@@ -772,6 +774,7 @@ private slots:
             QCOMPARE(p.btMaxActiveSeeds(), 0);
             QCOMPARE(p.btSeedRatioPercent(), 250);
             QCOMPARE(p.btSeedTimeLimitMinutes(), 1440);
+            QCOMPARE(p.btSeedMinSeeds(), 2);
             QCOMPARE(p.btI2pMode(), Preferences::kBtI2pExternal);
             QCOMPARE(p.btI2pHost(), QStringLiteral("10.0.0.5"));
             QCOMPARE(p.btI2pPort(), uint16{7660});
@@ -1172,6 +1175,10 @@ private slots:
         QCOMPARE(prefs.btSeedRatioPercent(), 0);
         prefs.setBtSeedTimeLimitMinutes(10'000'000);
         QCOMPARE(prefs.btSeedTimeLimitMinutes(), Preferences::kMaxBtSeedTimeLimitMinutes);
+        prefs.setBtSeedMinSeeds(-1);
+        QCOMPARE(prefs.btSeedMinSeeds(), 0);
+        prefs.setBtSeedMinSeeds(5000);
+        QCOMPARE(prefs.btSeedMinSeeds(), Preferences::kMaxBtSeedMinSeeds);
 
         // Hand-edited file out of range
         TempDir tmp;
@@ -1204,7 +1211,7 @@ private slots:
             QStringLiteral("btPex"), QStringLiteral("btEncryption"),
             QStringLiteral("btMaxActiveDownloads"), QStringLiteral("btMaxActiveSeeds"),
             QStringLiteral("btSeedRatioPercent"), QStringLiteral("btSeedTimeLimitMinutes"),
-            QStringLiteral("btStopAfterMetadata")};
+            QStringLiteral("btSeedMinSeeds"), QStringLiteral("btStopAfterMetadata")};
         const QCborMap map = Preferences{}.toIpcMap();
         for (const QString& key : keys) {
             const PrefSpec* spec = findPreferenceSpec(key);
@@ -1225,6 +1232,7 @@ private slots:
         QVERIFY(problem("btMaxActiveSeeds", 0).isEmpty());
         QVERIFY(!problem("btSeedRatioPercent", 10001).isEmpty());
         QVERIFY(!problem("btSeedTimeLimitMinutes", 525601).isEmpty());
+        QVERIFY(!problem("btSeedMinSeeds", 1001).isEmpty());
         QVERIFY(!problem("btDht", 1).isEmpty());   // must be a bool
         QVERIFY(!problem("btDownloadDir", true).isEmpty());
     }

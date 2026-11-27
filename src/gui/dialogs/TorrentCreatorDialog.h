@@ -18,6 +18,7 @@ class QComboBox;
 class QDialogButtonBox;
 class QLabel;
 class QLineEdit;
+class QMimeData;
 class QPlainTextEdit;
 class QProgressBar;
 class QPushButton;
@@ -38,6 +39,11 @@ public:
 
     /// Opens a non-modal dialog that deletes itself.
     static void run(IpcClient* ipc, QWidget* parent, const QString& path, const QStringList& onlyFiles = {});
+    /// A drop elsewhere (Torrents panel) the creator takes: a file or folder, or files of
+    /// one folder, on this machine with a local core.
+    [[nodiscard]] static bool acceptsDrop(IpcClient* ipc, const QMimeData* mime);
+    /// Opens run() for such a drop; false = not one.
+    static bool runFromDrop(IpcClient* ipc, QWidget* parent, const QMimeData* mime);
 
 protected:
     void reject() override;

@@ -158,6 +158,8 @@ const QStringList& actionNames()
         {s("ratio"), static_cast<double>(m.value(L("ratioPercent")).toInteger(100)) / 100.0},
         {s("seedTimeMode"), mode("seedTimeMode")},
         {s("seedTimeMinutes"), m.value(L("seedTimeMinutes")).toInteger()},
+        {s("minSeedsMode"), mode("minSeedsMode")},
+        {s("minSeeds"), m.value(L("minSeeds")).toInteger(2)},
     };
 }
 
@@ -329,9 +331,10 @@ void WebServer::addTorrentOperations()
         Operation op = make("torrents.edit", Method::Patch, "/api/v1/torrents/{id}",
                             "Change a torrent's options",
                             "Only the fields sent change. Speed limits in KiB/s, 0 = the global "
-                            "limit; maxPeers 0 = the default. ratioMode / seedTimeMode: global "
-                            "(the preferences), unlimited (seed forever) or custom (stop at "
-                            "\"ratio\" / \"seedTimeMinutes\"). The reply holds the options now.");
+                            "limit; maxPeers 0 = the default. ratioMode / seedTimeMode / minSeedsMode: "
+                            "global (the preferences), unlimited (seed forever) or custom (stop at "
+                            "\"ratio\" / \"seedTimeMinutes\" / \"minSeeds\" other seeds). The reply "
+                            "holds the options now.");
         op.mcpTool = s("torrents_set_options");
         op.params = {
             idParam(),
@@ -342,6 +345,8 @@ void WebServer::addTorrentOperations()
             bodyNum(s("ratio"), s("Stop seeding at this ratio (custom).")).range(0.01, 1000),
             bodyStr(s("seedTimeMode"), s("Seed time limit.")).oneOf(limitModeNames()),
             bodyInt(s("seedTimeMinutes"), s("Stop seeding after (custom).")).range(1, 5256000),
+            bodyStr(s("minSeedsMode"), s("Minimum seeds limit.")).oneOf(limitModeNames()),
+            bodyInt(s("minSeeds"), s("Stop seeding once this many other seeds (custom).")).range(1, 100000),
         };
         op.handler = [withTorrent, this](const Call& c) {
             return withTorrent(c, [&c, this](const QString& id, const QCborMap&) -> Result {
@@ -365,6 +370,8 @@ void WebServer::addTorrentOperations()
                 setMode("ratioMode");
                 setMode("seedTimeMode");
                 setInt("seedTimeMinutes");
+                setMode("minSeedsMode");
+                setInt("minSeeds");
                 if (c.has(L("ratio"))) {
                     options.insert(s("ratioPercent"),
                                    static_cast<qint64>(std::lround(c.args.value(L("ratio")).toDouble() * 100)));

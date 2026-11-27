@@ -840,6 +840,7 @@ struct Preferences::Data {
     int btMaxActiveSeeds = 5;
     int btSeedRatioPercent = 100;      // 0 = no limit
     int btSeedTimeLimitMinutes = 0;    // 0 = no limit
+    int btSeedMinSeeds = 0;            // 0 = no limit
     int btDownloadSharePercent = Preferences::kDefaultBtSharePercent;
     int btUploadSharePercent = Preferences::kDefaultBtSharePercent;
     int btMaxConnections = Preferences::kDefaultBtMaxConnections;
@@ -2698,6 +2699,12 @@ void Preferences::setBtSeedTimeLimitMinutes(int val)
     set(&Data::btSeedTimeLimitMinutes, std::clamp(val, 0, kMaxBtSeedTimeLimitMinutes));
 }
 
+int Preferences::btSeedMinSeeds() const { return get(&Data::btSeedMinSeeds); }
+void Preferences::setBtSeedMinSeeds(int val)
+{
+    set(&Data::btSeedMinSeeds, std::clamp(val, 0, kMaxBtSeedMinSeeds));
+}
+
 int Preferences::btDownloadSharePercent() const { return get(&Data::btDownloadSharePercent); }
 void Preferences::setBtDownloadSharePercent(int val)
 {
@@ -4548,6 +4555,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btSeedRatioPercent"), static_cast<qint64>(btSeedRatioPercent()));
     prefs.insert(QStringLiteral("btSeedTimeLimitMinutes"),
                  static_cast<qint64>(btSeedTimeLimitMinutes()));
+    prefs.insert(QStringLiteral("btSeedMinSeeds"), static_cast<qint64>(btSeedMinSeeds()));
     prefs.insert(QStringLiteral("btDownloadSharePercent"),
                  static_cast<qint64>(btDownloadSharePercent()));
     prefs.insert(QStringLiteral("btUploadSharePercent"),
@@ -4967,6 +4975,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
             int(num("btSeedRatioPercent", 100, 0, kMaxBtSeedRatioPercent));
         m_data->btSeedTimeLimitMinutes =
             int(num("btSeedTimeLimitMinutes", 0, 0, kMaxBtSeedTimeLimitMinutes));
+        m_data->btSeedMinSeeds = int(num("btSeedMinSeeds", 0, 0, kMaxBtSeedMinSeeds));
         m_data->btDownloadSharePercent =
             int(num("btDownloadSharePercent", kDefaultBtSharePercent, 1, 99));
         m_data->btUploadSharePercent =
@@ -6398,6 +6407,8 @@ bool Preferences::load(const QString& filePath)
             m_data->btSeedTimeLimitMinutes = std::clamp(
                 bt["seedTimeLimitMinutes"].as<int>(m_data->btSeedTimeLimitMinutes),
                 0, kMaxBtSeedTimeLimitMinutes);
+            m_data->btSeedMinSeeds = std::clamp(
+                bt["seedMinSeeds"].as<int>(m_data->btSeedMinSeeds), 0, kMaxBtSeedMinSeeds);
             m_data->btDownloadSharePercent = std::clamp(
                 bt["downloadSharePercent"].as<int>(m_data->btDownloadSharePercent), 1, 99);
             m_data->btUploadSharePercent = std::clamp(
@@ -7968,6 +7979,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "maxActiveSeeds" << YAML::Value << m_data->btMaxActiveSeeds;
     out << YAML::Key << "seedRatioPercent" << YAML::Value << m_data->btSeedRatioPercent;
     out << YAML::Key << "seedTimeLimitMinutes" << YAML::Value << m_data->btSeedTimeLimitMinutes;
+    out << YAML::Key << "seedMinSeeds" << YAML::Value << m_data->btSeedMinSeeds;
     out << YAML::Key << "downloadSharePercent" << YAML::Value << m_data->btDownloadSharePercent;
     out << YAML::Key << "uploadSharePercent" << YAML::Value << m_data->btUploadSharePercent;
     out << YAML::Key << "maxConnections" << YAML::Value << m_data->btMaxConnections;

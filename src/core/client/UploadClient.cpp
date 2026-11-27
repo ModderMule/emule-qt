@@ -662,6 +662,15 @@ void UpDownClient::noteSendBacklog(uint64 curTick)
     m_slotLastBacklog = backlog;
     m_slotUnackedStuckMs = backlog == 0 ? 0
         : static_cast<uint32>(std::min<uint64>(curTick - m_slotAckProgressTick, UINT32_MAX));
+
+    // the peer has everything it asked for and asks nothing more
+    const bool noRequest = backlog == 0 && m_blockRequests.empty() && payloadInBuffer() == 0
+                        && m_blockReadBytesQueued == 0;
+    if (!noRequest)
+        m_slotNoRequestSinceTick = 0;
+    else if (m_slotNoRequestSinceTick == 0)
+        m_slotNoRequestSinceTick = curTick;
+    m_slotNoRequestMs = noRequest ? curTick - m_slotNoRequestSinceTick : 0;
 }
 
 void UpDownClient::noteUpSlotSocketGone()
@@ -699,6 +708,8 @@ void UpDownClient::flushSendBlocks()
     m_slotLastBacklog = 0;
     m_slotAckProgressTick = 0;
     m_slotUnackedStuckMs = 0;
+    m_slotNoRequestSinceTick = 0;
+    m_slotNoRequestMs = 0;
     m_upSlotInfoAtSocketGone.reset();
 }
 

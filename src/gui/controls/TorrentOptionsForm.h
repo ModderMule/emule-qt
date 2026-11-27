@@ -24,7 +24,7 @@ class TorrentOptionsForm : public QWidget {
 
 public:
     /// One setting; a setting is one or two map keys.
-    enum Field { FieldDown = 0, FieldUp, FieldRatio, FieldSeedTime, FieldMaxPeers, FieldI2p, FieldCount };
+    enum Field { FieldDown = 0, FieldUp, FieldRatio, FieldSeedTime, FieldMinSeeds, FieldMaxPeers, FieldI2p, FieldCount };
 
     explicit TorrentOptionsForm(QWidget* parent = nullptr);
 
@@ -64,6 +64,8 @@ private:
     QDoubleSpinBox* m_ratio100 = nullptr;
     QComboBox* m_seedTimeMode = nullptr;
     QSpinBox* m_seedMinutes = nullptr;
+    QComboBox* m_minSeedsMode = nullptr;
+    QSpinBox* m_minSeeds = nullptr;
     QSpinBox* m_maxPeers = nullptr;
     QComboBox* m_i2pMode = nullptr;
     QLabel* m_variesLabel[FieldCount] = {};

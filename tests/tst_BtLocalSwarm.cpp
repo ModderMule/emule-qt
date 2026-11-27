@@ -409,6 +409,8 @@ void tst_BtLocalSwarm::peersTrackersAndOptions()
     opts.ratioMode = BtLimitMode::Custom;
     opts.ratioPercent = 250;
     opts.seedTimeMode = BtLimitMode::Unlimited;
+    opts.minSeedsMode = BtLimitMode::Custom;
+    opts.minSeeds = 3;
     QVERIFY(seeder.setOptions(seedId, opts));
     const auto got = seeder.options(seedId);
     QVERIFY(got.has_value());
@@ -418,6 +420,8 @@ void tst_BtLocalSwarm::peersTrackersAndOptions()
     QCOMPARE(got->ratioMode, BtLimitMode::Custom);
     QCOMPARE(got->ratioPercent, 250);
     QCOMPARE(got->seedTimeMode, BtLimitMode::Unlimited);
+    QCOMPARE(got->minSeedsMode, BtLimitMode::Custom);
+    QCOMPARE(got->minSeeds, 3);
     QVERIFY(!seeder.options(QStringLiteral("bt:v1:0000000000000000000000000000000000000000")).has_value());
 
     BtSession leecher;
@@ -476,6 +480,8 @@ void tst_BtLocalSwarm::peersTrackersAndOptions()
     QCOMPARE(restored->ratioMode, BtLimitMode::Custom);
     QCOMPARE(restored->ratioPercent, 250);
     QCOMPARE(restored->seedTimeMode, BtLimitMode::Unlimited);
+    QCOMPARE(restored->minSeedsMode, BtLimitMode::Custom);
+    QCOMPARE(restored->minSeeds, 3);
 
     // back to the defaults: the JSON entry goes
     QVERIFY(again.setOptions(seedId, BtTorrentOptions{}));
@@ -483,6 +489,7 @@ void tst_BtLocalSwarm::peersTrackersAndOptions()
     QCOMPARE(cleared->uploadLimitKb, 0);
     QCOMPARE(cleared->maxPeers, 0);
     QCOMPARE(cleared->ratioMode, BtLimitMode::Global);
+    QCOMPARE(cleared->minSeedsMode, BtLimitMode::Global);
     eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
     QFile json(m_dir.filePath(QStringLiteral("seeder%1/BT/torrent-options.json").arg(m_seeders)));
     QVERIFY(json.open(QIODevice::ReadOnly));

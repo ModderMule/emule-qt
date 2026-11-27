@@ -3529,7 +3529,7 @@ QString UpDownClient::downloadStateDisplayString() const
 // ===========================================================================
 
 // What the GUI maps to text (ClientStateText.h): the state, an upload slot split into
-// Transferring / Standby by its position. "Stalled" is uploadStalled() on top of that.
+// Transferring / Standby by its position. uploadWait() is on top of that.
 QString UpDownClient::uploadStateToken() const
 {
     switch (m_uploadState) {
@@ -3545,17 +3545,27 @@ QString UpDownClient::uploadStateToken() const
     }
 }
 
-bool UpDownClient::uploadStalled() const
+UpDownClient::UpSlotWait UpDownClient::uploadWait() const
 {
-    // MFC: GetPayloadInBuffer() == 0 (srchybrid/BaseClient.cpp:2496). Our bigger send buffer
-    // hides blocks MFC still sees queued, so a slow but busy slot read as stalled.
-    if (m_uploadState != UploadState::Uploading || payloadInBuffer() != 0)
-        return false;
-    // unacked but not moving: the peer is not getting it (emule-qt#58)
+    // MFC shows IDS_US_STALLEDW4BR on GetPayloadInBuffer() == 0 (srchybrid/BaseClient.cpp:2496),
+    // which flips on every block of a healthy slot. Sampled per process() tick instead.
+    if (m_uploadState != UploadState::Uploading)
+        return UpSlotWait::None;
     if (m_slotUnackedStuckMs >= kUnackedStuckMs)
-        return true;
-    const EMSocket* sock = getFileUploadSocket();
-    return !sock || sock->sendBacklogBeyondMfc() == 0;
+        return UpSlotWait::Ack;
+    if (m_slotNoRequestMs >= kWaitRequestShowMs)
+        return UpSlotWait::Request;
+    return UpSlotWait::None;
+}
+
+QString UpDownClient::uploadWaitToken() const
+{
+    switch (uploadWait()) {
+    case UpSlotWait::Request: return QStringLiteral("Request");
+    case UpSlotWait::Ack:     return QStringLiteral("Ack");
+    case UpSlotWait::None:    break;
+    }
+    return {};
 }
 
 QString UpDownClient::uploadStateDisplayString() const
@@ -3573,12 +3583,17 @@ QString UpDownClient::uploadStateDisplayString() const
     case UploadState::Connecting:
         return QCoreApplication::translate("UpDownClient", "Connecting");
     case UploadState::Uploading:
-        // Nothing left in the send buffers means the peer has stopped asking for blocks, not
-        // that we stopped sending. MFC shows this only in advanced mode, because on a healthy
-        // link it flickers between states between two block requests.
-        if (thePrefs.showExtControls() && uploadStalled())
-            return QCoreApplication::translate("UpDownClient",
-                                               "Stalled! Waiting for block request.");
+        // MFC shows this in advanced mode only
+        if (thePrefs.showExtControls()) {
+            switch (uploadWait()) {
+            case UpSlotWait::Request:
+                return QCoreApplication::translate("UpDownClient", "Stalled! Waiting for block request.");
+            case UpSlotWait::Ack:
+                return QCoreApplication::translate("UpDownClient", "Stalled! Waiting for acknowledgement.");
+            case UpSlotWait::None:
+                break;
+            }
+        }
         if (theApp.uploadQueue
             && m_slotNumber <= static_cast<uint32>(theApp.uploadQueue->maxActiveClientsShortTime()))
         {

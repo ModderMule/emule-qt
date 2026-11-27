@@ -849,10 +849,19 @@ public:
     /// appends its own marker, the way MFC's PeerCache appended " Cache".
     [[nodiscard]] virtual QString downloadStateDisplayString() const;
     [[nodiscard]] QString uploadStateDisplayString() const;
-    /// The same as a token for the GUI, which owns the wording; see uploadStalled().
+    /// The same as a token for the GUI, which owns the wording; see uploadWait().
     [[nodiscard]] QString uploadStateToken() const;
-    /// Holding a slot with nothing left to send: the peer stopped asking for blocks.
-    [[nodiscard]] bool uploadStalled() const;
+    /// Why a slot moves nothing, shown in place of Transferring/Standby.
+    enum class UpSlotWait {
+        None,
+        Request,   ///< all sent data acked, no request open for kWaitRequestShowMs (MFC IDS_US_STALLEDW4BR)
+        Ack        ///< sent data sat unacked for kUnackedStuckMs: not reaching the peer
+    };
+    [[nodiscard]] UpSlotWait uploadWait() const;
+    /// uploadWait() as an IPC token: "", "Request" or "Ack".
+    [[nodiscard]] QString uploadWaitToken() const;
+    /// Debounce: a healthy peer asks for the next block within an RTT of the last one.
+    static constexpr uint32 kWaitRequestShowMs = 3'000;
 
     // -- Phase 3 — secure identity ------------------------------------------
 
@@ -1653,6 +1662,8 @@ private:
     uint64 m_slotLastBacklog = 0;           // unacked bytes at the last noteSendBacklog()
     uint64 m_slotAckProgressTick = 0;       // last time unacked went down or was 0
     uint32 m_slotUnackedStuckMs = 0;        // time since then, while unacked > 0
+    uint64 m_slotNoRequestSinceTick = 0;    // all acked, nothing asked or queued since; 0: busy
+    uint64 m_slotNoRequestMs = 0;           // time since then, as of the last noteSendBacklog()
     std::optional<QString> m_upSlotInfoAtSocketGone;   // upSlotDebugInfo() before the socket went
     // Blocks on the socket not yet sent in full, oldest first. sentMark is
     // m_addedPayloadQueueSession right after the block was queued.

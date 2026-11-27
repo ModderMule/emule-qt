@@ -4,6 +4,7 @@
 /// file, verifies, moves and shares it; pause/resume; a part file taken up after a restart.
 
 #include "utils/BackgroundFileWriter.h"
+#include "prefs/Preferences.h"
 #include "Ed3kDownloads.h"
 #include "Ed3kDownloadsBridge.h"
 #include "Ed3kSession.h"
@@ -152,6 +153,7 @@ private slots:
     void anOldStateFileMovesToMetFiles();
     void theIpcListsAndControls();
     void cancelDeletesACompleteFile();
+    void autoClearDropsTheRowKeepsTheFile();
     void downloadsOfOneSourceTakeTurns();
     void aHigherPriorityGetsMoreBlocks();
     void aRaisedPriorityTakesTheSource();
@@ -665,6 +667,36 @@ void tst_Ed3kDownloads::cancelDeletesACompleteFile()
     QVERIFY(!d.contains(other));
     QVERIFY(QFile::exists(kept));
     Ed3kDownloadsBridge::setDownloads(nullptr);
+    d.stop();
+    a.shared->stop();
+}
+
+// "Auto clear completed downloads": the row goes, the file stays (as eD2K)
+void tst_Ed3kDownloads::autoClearDropsTheRowKeepsTheFile()
+{
+    const QByteArray data = payload(int(kBlock + 77), 9);
+    Seeder a;
+    QVERIFY(a.start(data, QStringLiteral("cleared.bin")));
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    QString path;
+    d.setCompletedHook([&](const Ed3kDownloadInfo& i) { path = i.path; });
+    d.start();
+    const bool was = thePrefs.autoRemoveFinishedDownloads();
+    thePrefs.setAutoRemoveFinishedDownloads(true);
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    QSignalSpy removed(&d, &Ed3kDownloads::removed);
+    QVERIFY(d.add(Ed3kDownloadSpec{a.root, std::uint64_t(data.size()), QStringLiteral("cleared.bin")}).has_value());
+    d.addSourceTo(a.root, sourceOf(a.session));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 60000);
+    QTRY_COMPARE(removed.count(), 1);
+    thePrefs.setAutoRemoveFinishedDownloads(was);
+    QVERIFY(!d.contains(a.root));
+    QVERIFY(readFile(path) == data);
     d.stop();
     a.shared->stop();
 }

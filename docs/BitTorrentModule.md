@@ -132,7 +132,8 @@ metadata while the ed3k node runs. What BtSession gives it, without libtorrent t
 
 Shared Files › right-click › **Create Torrent...**: one complete file, several complete files of
 one folder (a torrent named after the folder holding just those), or a folder from the directory
-tree. Dialog after qBittorrent's (`TorrentCreatorDialog`): format, piece size (Auto, 16 KiB–128 MiB),
+tree. Files or a folder dropped on the Torrents tab open it too (`.torrent` files are added
+instead; local core only, as the dialog's own drop). Dialog after qBittorrent's (`TorrentCreatorDialog`): format, piece size (Auto, 16 KiB–128 MiB),
 private, ignore dotfiles, start seeding, tracker tiers (empty line = next tier), web seeds,
 comment, `source`. Fields kept in `uistate.yml` `torrentCreator`.
 
@@ -174,7 +175,7 @@ Transmission's layout, split between the tab and one inspector window:
 | filter bar | All / Downloading / Seeding / Paused / Active / Error with counts (`controls/TorrentFilterProxy`); the choice is in `uistate.yml` |
 | list | `controls/TorrentListModel`, one row per torrent |
 | bottom pane | `controls/TorrentListsPane`: Peers (Transmission's status letters, tooltip per letter), Trackers (status, next announce, scrape counts; Add/Remove/Reannounce, backup tiers toggle), Files (folder tree with sums, Download check box, priority menu). Follows the current row; polls `GetTorrentDetails` every 2 s while shown |
-| inspector | `dialogs/TorrentDetailsDialog` (double click / Details): Info (size, location, hashes, privacy, origin, magnet, comment), Activity (transfer, piece grid with Progress/Available, dates, times), Options (speed limits, seed ratio and seed time, max peers). Only what the tab does not list. Prev/Next walk the list |
+| inspector | `dialogs/TorrentDetailsDialog` (double click / Details): Info (size, location, hashes, privacy, origin, magnet, comment), Activity (transfer, piece grid with Progress/Available, dates, times), Options (speed limits, seed ratio, seed time and minimum seeds, max peers). Only what the tab does not list. Prev/Next walk the list |
 
 Context menu "Paste Magnet Links" (and Ctrl+V) adds every magnet in the clipboard to the default
 folder, started, without the Add dialog, like "Paste eD2K Links".
@@ -201,7 +202,10 @@ Half-open connection attempts are not listed.
 
 Per-torrent options (IPC 810): speed limits and max peers are libtorrent's (in the resume data,
 speed limits clamped to the global limits, max peers 0 = `btMaxConnectionsPerTorrent`);
-seed ratio and seed time override the global ones from `<config>/BT/torrent-options.json`. libtorrent
+seed ratio, seed time and minimum seeds override the global ones from `<config>/BT/torrent-options.json`.
+Minimum seeds (`btSeedMinSeeds`, 0 = off): a finished torrent stops once the swarm has that many
+seeds besides us, `max(connected seeds, scrape complete - 1)`. A seed has no seed peers (libtorrent
+drops seed-to-seed links), so it needs a tracker scrape; DHT-only torrents never hit it. libtorrent
 does not rate-limit peers on the local network. Trackers: 811 add (last tier, no duplicates),
 812 remove.
 
@@ -273,7 +277,7 @@ GUI and REST share one implementation. `docs/openapi.json` is the default build'
 | `GET /api/v1/torrents[?filter=all\|downloading\|seeding\|paused\|active\|error]` | paged rows, state by name, no piece map; empty while switched off | `200 {items, total, offset, limit}` |
 | `POST /api/v1/torrents` | `{magnet, paused}` as JSON, or the `.torrent` as the body (`?paused=`); saved to the BT download folder | `200 {id, outcome}` · `400` · `409` duplicate · `503` |
 | `GET /api/v1/torrents/<id>` | row + `options`, `pieceMap`, `availabilityMap` (base64url; empty while seeding) | `200` · `404` |
-| `PATCH /api/v1/torrents/<id>` | options, only the fields sent: `downloadLimitKb`, `uploadLimitKb`, `maxPeers`, `ratioMode`/`seedTimeMode` (`global`\|`unlimited`\|`custom`), `ratio`, `seedTimeMinutes` | `200 options` |
+| `PATCH /api/v1/torrents/<id>` | options, only the fields sent: `downloadLimitKb`, `uploadLimitKb`, `maxPeers`, `ratioMode`/`seedTimeMode`/`minSeedsMode` (`global`\|`unlimited`\|`custom`), `ratio`, `seedTimeMinutes`, `minSeeds` | `200 options` |
 | `DELETE /api/v1/torrents/<id>?confirm=true[&deleteFiles=true]` | remove | `200` · `400` |
 | `GET /api/v1/torrents/<id>/files` · `peers` · `trackers` | the bottom pane's lists | `200 {items}` |
 | `PATCH /api/v1/torrents/<id>/files` | `{files: [index…], priority: 0-7}` (0 = skip) | `200 {items}` |
@@ -289,8 +293,8 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
 
 - On in every build (`EMULE_BITTORRENT` defaults to ON; CI, Docker and the scripts pass it
   explicitly). `-DEMULE_BITTORRENT=OFF` builds without it.
-- `find_package(LibtorrentRasterbar 2.1 CONFIG)` first (vcpkg `libtorrent` ≥ 2.1.2, Homebrew),
-  else FetchContent v2.1.2 **static**, ABI 100, without WebTorrent. Headers are system
+- `find_package(LibtorrentRasterbar 2.1 CONFIG)` first (vcpkg `libtorrent` ≥ 2.1.3, Homebrew),
+  else FetchContent v2.1.3 **static**, ABI 100, without WebTorrent. Headers are system
   includes. Link the exported target: it carries `TORRENT_ABI_VERSION`.
 - FetchContent needs Boost ≥ 1.74 headers (a CMake config, or a bare tree under `BOOST_ROOT`
   / the prefix path). Missing → configure stops (`FATAL_ERROR`); it no longer drops to OFF

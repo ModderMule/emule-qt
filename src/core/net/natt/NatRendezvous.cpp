@@ -372,6 +372,23 @@ void NatRendezvous::endpointKnown(Attempt& a, const Endpoint& udp, uint16 tcpPor
     }
 }
 
+void NatRendezvous::addPeerUdp6(Attempt& a, const Endpoint& udp6)
+{
+    if (a.finished || a.state == Attempt::State::Requested || !udp6.address().isIPv6()
+        || udp6.port() == 0 || a.peerUdp6 == udp6 || m_env->ourPublicIPv6().isNull()
+        || !isGoodIP(udp6.address()) || !m_env->admit(udp6.address()))
+        return;
+    a.peerUdp6 = udp6;
+    logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 peer IPv6 endpoint %2")
+                 .arg(a.id).arg(udp6.toString()); });
+    m_env->sendPeerUdp(std::make_unique<Packet>(OP_HOLEPUNCH, 0, OP_EMULEPROT), udp6,
+                       peerCryptHash(a, true));
+    if (!a.peerHandoffSeen)
+        sendHandoff(a, false);
+    if (m_env->quicAvailable())
+        m_env->armQuic(a);
+}
+
 void NatRendezvous::fail(Attempt& a, const QString& why)
 {
     if (a.finished)
@@ -393,7 +410,7 @@ void NatRendezvous::fail(Attempt& a, const QString& why)
 
 void NatRendezvous::failOrNext(Attempt& a, const QString& why)
 {
-    if (!tryNextPath(a))
+    if (!tryNextPath(a, why))
         fail(a, why);
 }
 
@@ -429,7 +446,7 @@ void NatRendezvous::process()
         if (a.finished)
             continue;
         if (now >= a.deadlineMs) {
-            if (!tryNextPath(a))
+            if (!tryNextPath(a, QStringLiteral("timed out")))
                 fail(a, QStringLiteral("timeout"));
             continue;
         }
@@ -525,6 +542,9 @@ void NatRendezvous::sendHandoff(Attempt& a, bool answer)
     pokeUInt16(out + 23, m_env->ourTcpPort());
     if (withV6)
         std::memcpy(out + 25, v6.ipv6Bytes().data(), 16);
+    // also over IPv6 when known: the IPv4 punch may never open (symmetric NAT)
+    if (a.peerUdp6.port() != 0 && a.peerUdp6 != a.peerUdp)
+        m_env->sendPeerUdp(std::make_unique<Packet>(*packet), a.peerUdp6, peerCryptHash(a, false));
     m_env->sendPeerUdp(std::move(packet), a.peerUdp, peerCryptHash(a, false));
 }
 
@@ -764,7 +784,11 @@ void NatRendezvous::handleHandoff(const uint8* data, uint32 size, const Endpoint
     Attempt* a = findAttempt([&](const Attempt& x) {
         const bool fromPeer = sameHost(x.peerUdp, from.address()) || sameHost(x.peerUdp6, from.address())
                            || sameHost(x.peer.kadEndpoint, from.address());
-        return fromPeer && (!x.peer.hashKnown || x.peer.hash == hash);
+        // we sent our IPv6 UDP endpoint in a Kad rendezvous: the target answers there
+        // from an address we never saw, so its hash must match
+        const bool offered = x.offeredUdp6 && from.address().isIPv6() && x.peerUdp6.port() == 0
+                          && x.peer.hashKnown;
+        return (fromPeer || offered) && (!x.peer.hashKnown || x.peer.hash == hash);
     });
     if (!a) {
         // A late repeat for an attempt that just ended is expected; anything else is noise.
@@ -791,6 +815,8 @@ void NatRendezvous::handleHandoff(const uint8* data, uint32 size, const Endpoint
     if (sameHost(a->peerUdp6, from.address()))
         a->peerUdp6 = from;
     a->peerHandoffSeen = true;
+    if (from.address().isIPv6() && a->peerUdp6.port() == 0)
+        addPeerUdp6(*a, from);
 
     a->peerIPv6 = Address();
     a->peerSentNoAddress = true;
@@ -841,7 +867,7 @@ std::vector<NatPath*> NatRendezvous::orderedPaths(const PeerInfo& peer, bool pro
     return out;
 }
 
-bool NatRendezvous::tryNextPath(Attempt& a)
+bool NatRendezvous::tryNextPath(Attempt& a, const QString& why)
 {
     // Only a path that never answered is worth replacing; once an endpoint is known the
     // data path failed, and another introduction would not change that.
@@ -861,9 +887,9 @@ bool NatRendezvous::tryNextPath(Attempt& a)
         a.deadlineMs = now + kAttemptTimeoutMs;
         if (!p->request(a))
             continue;
-        logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 %2 timed out, trying %3")
+        logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 %2: %3, trying %4")
                      .arg(a.id)
-                     .arg(QLatin1StringView(pathName(previous)), QLatin1StringView(pathName(a.path))); });
+                     .arg(QLatin1StringView(pathName(previous)), why, QLatin1StringView(pathName(a.path))); });
         return true;
     }
     return false;

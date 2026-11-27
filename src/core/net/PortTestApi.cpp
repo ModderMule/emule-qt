@@ -70,6 +70,22 @@ QUrl url(const Request& request)
     return result;
 }
 
+QUrl sourceUrl()
+{
+    return QUrl(QLatin1String(kWebsiteUrl) + QLatin1String(kPortTestApiPath) + QLatin1String("/source"));
+}
+
+QStringList parseSources(const QByteArray& body)
+{
+    const QJsonObject data = QJsonDocument::fromJson(body).object().value(QStringLiteral("data")).toObject();
+    QStringList out;
+    for (const auto* key : {"ip4", "ip6"})
+        for (const QJsonValue& v : data.value(QLatin1String(key)).toArray())
+            if (const QHostAddress a(v.toString()); !a.isNull())
+                out << a.toString();
+    return out;
+}
+
 QString protoName(Network network)
 {
     switch (network) {

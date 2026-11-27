@@ -21,6 +21,7 @@
 #include <openssl/err.h>
 
 #include <QDir>
+#include <QFileInfo>
 #include <QFile>
 #include <QString>
 
@@ -254,51 +255,15 @@ void ClientCredits::clearWaitStartTime()
 
 bool ClientCreditsList::loadList(const QString& filePath)
 {
-    SafeFile file;
-    if (!file.open(filePath, QIODevice::ReadOnly)) {
-        logWarning(QStringLiteral("Failed to load credit file \"%1\", 0 clients are known").arg(filePath));
-        return false;
-    }
-
-    try {
-        uint8 version = file.readUInt8();
-        if (version != CREDITFILE_VERSION && version != CREDITFILE_VERSION_29) {
-            logWarning(QStringLiteral("Credit file has unsupported version: %1").arg(version));
-            return false;
-        }
-
-        uint32 count = file.readUInt32();
-        const auto expired = static_cast<uint32>(std::time(nullptr) - DAY2S(150));
-        uint32 deleted = 0;
-
-        for (uint32 i = 0; i < count; ++i) {
-            CreditStruct cs{};
-            std::size_t readSize = (version == CREDITFILE_VERSION_29)
-                ? sizeof(CreditStruct_29a)
-                : sizeof(CreditStruct);
-            file.read(&cs, static_cast<qint64>(readSize));
-
-            if (cs.lastSeen < expired) {
-                ++deleted;
-            } else {
-                auto credits = std::make_unique<ClientCredits>(cs, this);
-                HashKeyOwn hk(credits->key());
-                m_clients[hk] = std::move(credits);
-            }
-        }
-
-        // MFC wording: "Creditfile loaded, %u clients are known"
-        if (deleted > 0)
-            logInfo(QStringLiteral("Credit file loaded, %1 clients are known (%2 expired entries skipped)")
-                        .arg(count - deleted).arg(deleted));
-        else
-            logInfo(QStringLiteral("Credit file loaded, %1 clients are known").arg(count));
-
+    if (readList(filePath))
         return true;
-    } catch (const FileException& e) {
-        logError(QStringLiteral("Error reading credit file: %1").arg(QLatin1StringView(e.what())));
+    // saveList keeps the previous file as .bak: a damaged one must not cost all credits
+    const QString bak = filePath + QStringLiteral(".bak");
+    if (!QFileInfo::exists(filePath) || !QFileInfo::exists(bak))
         return false;
-    }
+    logWarning(QStringLiteral("Credit file damaged, reading %1").arg(QFileInfo(bak).fileName()));
+    m_clients.clear();
+    return readList(bak);
 }
 
 bool ClientCreditsList::saveList(const QString& filePath) const
@@ -839,6 +804,55 @@ float ClientCredits::creditRatio(uint64 received, uint64 sent, bool newFormula)
     }
 
     return std::clamp(result, 1.0f, 10.0f);
+}
+
+bool ClientCreditsList::readList(const QString& filePath)
+{
+    SafeFile file;
+    if (!file.open(filePath, QIODevice::ReadOnly)) {
+        logWarning(QStringLiteral("Failed to load credit file \"%1\", 0 clients are known").arg(filePath));
+        return false;
+    }
+
+    try {
+        uint8 version = file.readUInt8();
+        if (version != CREDITFILE_VERSION && version != CREDITFILE_VERSION_29) {
+            logWarning(QStringLiteral("Credit file has unsupported version: %1").arg(version));
+            return false;
+        }
+
+        uint32 count = file.readUInt32();
+        const auto expired = static_cast<uint32>(std::time(nullptr) - DAY2S(150));
+        uint32 deleted = 0;
+
+        for (uint32 i = 0; i < count; ++i) {
+            CreditStruct cs{};
+            std::size_t readSize = (version == CREDITFILE_VERSION_29)
+                ? sizeof(CreditStruct_29a)
+                : sizeof(CreditStruct);
+            file.read(&cs, static_cast<qint64>(readSize));
+
+            if (cs.lastSeen < expired) {
+                ++deleted;
+            } else {
+                auto credits = std::make_unique<ClientCredits>(cs, this);
+                HashKeyOwn hk(credits->key());
+                m_clients[hk] = std::move(credits);
+            }
+        }
+
+        // MFC wording: "Creditfile loaded, %u clients are known"
+        if (deleted > 0)
+            logInfo(QStringLiteral("Credit file loaded, %1 clients are known (%2 expired entries skipped)")
+                        .arg(count - deleted).arg(deleted));
+        else
+            logInfo(QStringLiteral("Credit file loaded, %1 clients are known").arg(count));
+
+        return true;
+    } catch (const FileException& e) {
+        logError(QStringLiteral("Error reading credit file: %1").arg(QLatin1StringView(e.what())));
+        return false;
+    }
 }
 
 } // namespace eMule

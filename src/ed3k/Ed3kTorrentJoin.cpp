@@ -421,6 +421,9 @@ std::vector<std::uint64_t> Ed3kTorrentJoin::wantedBlocks(const Download& d) cons
     const auto m = j->torrent.member(std::uint64_t(d.member));
     if (!m || m->status != ffi::MemberStatus::Open)
         return {};
+    // #264: in a (re)check, nothing: takeBlock would refuse it anyway
+    if (!m_bt.filesChecked(d.owner))
+        return {};
     // was: ToDo: skip the blocks libtorrent has already (done: Join::have, piecesHad)
     // was: #224 nothing while copying (members[].copying); now the base holds its requests
     const auto& received = j->members[std::size_t(d.member)].received;
@@ -1177,6 +1180,10 @@ void Ed3kTorrentJoin::startDownloads(const QString& id)
     Join* j = findJoin(id);
     if (!j)
         return;
+    // #264: a torrent queued for its check has no pieces yet: every block would look
+    // wanted, and its whole files overwritten. onTorrentChecked starts them
+    if (!m_bt.filesChecked(id))
+        return;
     j->have = m_bt.havePieces(id);
     for (std::size_t i = 0; i < j->members.size(); ++i) {
         const auto m = j->torrent.member(i);
@@ -1257,13 +1264,39 @@ bool Ed3kTorrentJoin::takeBlock(const QString& id, int index, std::uint64_t offs
     Join* j = findJoin(id);
     if (!j || index < 0 || std::size_t(index) >= j->members.size())
         return false;
+    // #264: never into files libtorrent has not checked yet (a queued check of existing
+    // data), never over pieces it passed: a false set claim (§4.2) overwrote whole data
+    if (!m_bt.filesChecked(id)) {
+        logDebug([&]() -> QString { return QStringLiteral("block %1 of member %2 not written: \"%3\" not checked yet").arg(offset).arg(index).arg(name(id)); });
+        return false;
+    }
+    const auto tm = j->torrent.member(std::uint64_t(index));
+    if (!tm)
+        return false;
+    j->have = m_bt.havePieces(id);
     const QString path = memberPath(*j, index);
     QDir().mkpath(QFileInfo(path).absolutePath());
     QFile f(path);
-    if (!f.open(QIODevice::ReadWrite) || !f.seek(qint64(offset))
-        || f.write(reinterpret_cast<const char*>(data.data()), qint64(data.size())) != qint64(data.size())) {
+    if (!f.open(QIODevice::ReadWrite)) {
         logWarning(QStringLiteral("cannot write a block into %1").arg(path));
         return false;
+    }
+    // the parts of the block in pieces libtorrent lacks, in member offsets
+    const auto pieceLength = std::uint64_t(j->layout.pieceLength);
+    const std::uint64_t end = offset + data.size();
+    for (std::uint64_t at = offset; at < end;) {
+        std::uint64_t next = end;
+        if (pieceLength > 0) {
+            const std::uint64_t abs = tm->start + at;
+            next = std::min(end, (abs / pieceLength + 1) * pieceLength - tm->start);
+        }
+        if (!piecesHad(*j, tm->start + at, tm->start + next)
+            && (!f.seek(qint64(at))
+                || f.write(reinterpret_cast<const char*>(data.data() + (at - offset)), qint64(next - at)) != qint64(next - at))) {
+            logWarning(QStringLiteral("cannot write a block into %1").arg(path));
+            return false;
+        }
+        at = next;
     }
     f.close();
     j->members[std::size_t(index)].received.insert(offset);

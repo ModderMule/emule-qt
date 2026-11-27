@@ -307,7 +307,7 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
                                    : QStringLiteral("%1 (%2)").arg(hmCell(c.waitStartTime), lowId);
         }
         case 5: return hmCell(c.uploadStartDelay);
-        case 6: return uploadStateText(c.uploadState, c.uploadStalled && thePrefs.showExtControls());
+        case 6: return uploadStateText(c.uploadState, thePrefs.showExtControls() ? c.uploadWait : QString{});
         case 7: return {};   // UploadStatusDelegate draws the bar
         default: return {};
         }
@@ -355,7 +355,7 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         // (ClientListCtrl.cpp:166-200); the two byte columns are the credit totals.
         switch (column) {
         case 0: return clientNameText(c.userName);
-        case 1: return uploadStateText(c.uploadState, c.uploadStalled && thePrefs.showExtControls());
+        case 1: return uploadStateText(c.uploadState, thePrefs.showExtControls() ? c.uploadWait : QString{});
         case 2: return sizeCell(c.uploadedTotal);
         case 3: return downloadStateText(c.downloadState, c.remoteQueueFull);
         case 4: return sizeCell(c.downloadedTotal);

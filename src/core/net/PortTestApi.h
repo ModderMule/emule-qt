@@ -18,11 +18,13 @@
 /// are the server's (open, closed, rejected, filtered, server_egress_blocked, server_no_ipv6,
 /// send_failed, ...). ed3k: `copies` = datagrams the server sent (plugin >= 1.7.0), `packets` =
 /// all the node waited for, over every attempt. Peer evidence: `peerAddress`, `peerSame`,
-/// `peerTcp` / `peerUdp` (the proof's source: kProof*).
+/// `peerTcp` / `peerUdp` (the proof's source: kProof*). eD2K, result level: `filterHits`
+/// [{address, description, tcp}] = peers the IP filter rejected during the test (#266).
 
 #include <QByteArray>
 #include <QCborArray>
 #include <QString>
+#include <QStringList>
 #include <QUrl>
 #include <QtGlobal>
 
@@ -77,6 +79,8 @@ struct Reply {
 inline constexpr QLatin1StringView kReasonSent{"sent"};
 inline constexpr QLatin1StringView kReasonOpen{"open"};
 inline constexpr QLatin1StringView kReasonFiltered{"filtered"};
+/// eD2K TCP (plugin >= 1.9.0): the client closed the link at once, without a byte (IP filter, ban)
+inline constexpr QLatin1StringView kReasonDropped{"dropped"};
 
 /// Family bits of PortTestRunner / ed3k_port_test_seen.
 inline constexpr int kSeenIPv4 = 1;
@@ -87,6 +91,14 @@ inline constexpr int kBothFamilies = kSeenIPv4 | kSeenIPv6;
 inline constexpr QLatin1StringView kReasonNoTarget{"no_target"};
 
 [[nodiscard]] QUrl url(const Request& request);
+
+/// `porttest/source` (plugin >= 1.9.0): the addresses the server dials from, so the core lets
+/// them past its IP filter for the test (#266).
+[[nodiscard]] QUrl sourceUrl();
+
+/// The addresses of a `porttest/source` reply (`data.ip4[]`, `data.ip6[]`); empty from an older
+/// server (404) or a bad body.
+[[nodiscard]] QStringList parseSources(const QByteArray& body);
 
 /// The `proto` value of @p network ("bt", "ed3k", "ed2k").
 [[nodiscard]] QString protoName(Network network);

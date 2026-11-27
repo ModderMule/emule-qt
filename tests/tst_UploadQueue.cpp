@@ -150,6 +150,7 @@ private slots:
     void upSlotActivity_busyWhileThePeerIsStillReceiving();
     void upSlotActivity_stalledWhenUnackedStopsMoving();
     void upSlotActivity_busyWhileOurDiskReadIsOut();
+    void uploadWait_requestAfterDebounceClearedByRequest();
     void deadSlot_goesToAWaitingClient();
     void deadSlot_staysWithoutSomeoneToTakeIt();
     void deadSlot_goesToALowIdWeCanCallBack();
@@ -3310,11 +3311,48 @@ void tst_UploadQueue::upSlotActivity_stalledWhenUnackedStopsMoving()
     QCOMPARE(client->upSlotActivity(0), Activity::Busy);
     client->noteSendBacklog(t0 + UpDownClient::kUnackedStuckMs);
     QCOMPARE(client->upSlotActivity(0), Activity::Stalled);
-    QVERIFY(client->uploadStalled());
+    QCOMPARE(client->uploadWait(), UpDownClient::UpSlotWait::Ack);
 
     // a new slot starts clean
     client->flushSendBlocks();
     QCOMPARE(client->upSlotActivity(0), Activity::Busy);
+}
+
+// "Stalled! Waiting for block request." only once nothing was asked for kWaitRequestShowMs,
+// not between two blocks of a healthy slot (MFC's GetPayloadInBuffer() == 0 flickers)
+void tst_UploadQueue::uploadWait_requestAfterDebounceClearedByRequest()
+{
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xEB, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* client = env.makeClient(88, file);
+    QVERIFY(env.connectSocket(client));
+    QVERIFY(queue.addClientToQueue(client));
+    QCOMPARE(client->uploadState(), UploadState::Uploading);
+
+    using Wait = UpDownClient::UpSlotWait;
+    const uint64 t0 = 1'000'000;
+    client->noteSendBacklog(t0);
+    QCOMPARE(client->uploadWait(), Wait::None);
+    client->noteSendBacklog(t0 + UpDownClient::kWaitRequestShowMs - 1);
+    QCOMPARE(client->uploadWait(), Wait::None);
+    client->noteSendBacklog(t0 + UpDownClient::kWaitRequestShowMs);
+    QCOMPARE(client->uploadWait(), Wait::Request);
+    QCOMPARE(client->uploadWaitToken(), QStringLiteral("Request"));
+
+    // a request ends the wait at the next sample, and the debounce starts over after it
+    client->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+    client->noteSendBacklog(t0 + 10'000);
+    QCOMPARE(client->uploadWait(), Wait::None);
+
+    client->flushSendBlocks();
+    client->noteSendBacklog(t0 + 20'000);
+    QCOMPARE(client->uploadWait(), Wait::None);
+    client->noteSendBacklog(t0 + 20'000 + UpDownClient::kWaitRequestShowMs);
+    QCOMPARE(client->uploadWait(), Wait::Request);
 }
 
 void tst_UploadQueue::deadSlot_goesToAWaitingClient()
