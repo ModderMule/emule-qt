@@ -171,7 +171,7 @@ void tst_Ed3kFilters::aFilterFetchIsFetchedAndHandedIn()
     // the core's ask for the list file of a version (filter-list.md §2), as it comes from a
     // manifest: answered by the host (handled), the file fetched from A
     bool handled = false;
-    emit b.eventPolled(::ed3k::event::FilterFetch{*id, *root, std::uint64_t(file.size()), "fakes.ed3kflt"}, &handled);
+    emit b.eventPolled(::ed3k::Event{::ed3k::event::FilterFetch{*id, *root, std::uint64_t(file.size()), "fakes.ed3kflt"}}, &handled);
     QVERIFY(handled);
     f.addListSource(*root, sourceOf(a));
     QTRY_COMPARE_WITH_TIMEOUT(fetched.count(), 1, 30000);
@@ -180,7 +180,7 @@ void tst_Ed3kFilters::aFilterFetchIsFetchedAndHandedIn()
     handled = false;
     ::ed3k::Root other;
     other.bytes.fill(3);
-    emit b.eventPolled(::ed3k::event::FilterFetch{*id, other, Ed3kFilters::kListFileMax + 1, "big.ed3kflt"}, &handled);
+    emit b.eventPolled(::ed3k::Event{::ed3k::event::FilterFetch{*id, other, Ed3kFilters::kListFileMax + 1, "big.ed3kflt"}}, &handled);
     QVERIFY(handled);
     QTest::qWait(300);
     QCOMPARE(fetched.count(), 1);

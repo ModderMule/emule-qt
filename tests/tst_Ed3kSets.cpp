@@ -415,7 +415,7 @@ void tst_Ed3kSets::theFilterChoosesNewFilesUnderDownload()
         for (char c : f)
             m.file.push_back(std::byte(c));
         bool handled = false;
-        emit m_c.session->eventPolled(m, &handled);
+        emit m_c.session->eventPolled(::ed3k::Event{m}, &handled);
         return handled;
     };
     const auto skippedOf = [&](const QString& path) {
@@ -756,7 +756,7 @@ void tst_Ed3kSets::aMountsNewVersionWaitsUnderBrowse()
     ::ed3k::Topic mounted;
     mounted.bytes.fill(0x77);
     bool handled = false;
-    emit m_c.session->eventPolled(::ed3k::event::SetMount{*m_c.topic, "extras", "extras", mounted}, &handled);
+    emit m_c.session->eventPolled(::ed3k::Event{::ed3k::event::SetMount{*m_c.topic, "extras", "extras", mounted}}, &handled);
     QVERIFY(handled);
     const auto manifestOf = [&](const QByteArray& data, std::uint64_t seq) {
         const QByteArray f = signedManifest(m_author, QStringLiteral("Extras"), {}, {{QStringLiteral("x.bin"), 0, data}}, "extras", seq);
@@ -767,16 +767,16 @@ void tst_Ed3kSets::aMountsNewVersionWaitsUnderBrowse()
     };
     // the first version of the mount is taken
     handled = false;
-    emit m_c.session->eventPolled(manifestOf("extra one", 1), &handled);
+    emit m_c.session->eventPolled(::ed3k::Event{manifestOf("extra one", 1)}, &handled);
     QVERIFY(handled);
     QVERIFY(m_c.sets->info(m_cSet)->pendingMounts.isEmpty());
     // a newer one under Ask: offered, nothing taken
     QSignalSpy asked(m_c.sets.get(), &Ed3kSets::newVersion);
-    emit m_c.session->eventPolled(manifestOf("extra two", 2), &handled);
+    emit m_c.session->eventPolled(::ed3k::Event{manifestOf("extra two", 2)}, &handled);
     QCOMPARE(asked.count(), 1);
     QCOMPARE(m_c.sets->info(m_cSet)->pendingMounts, QStringList{QStringLiteral("extras")});
     // the same again: still one offer
-    emit m_c.session->eventPolled(manifestOf("extra two", 2), &handled);
+    emit m_c.session->eventPolled(::ed3k::Event{manifestOf("extra two", 2)}, &handled);
     QCOMPARE(m_c.sets->info(m_cSet)->pendingMounts.size(), 1);
     QCOMPARE(asked.count(), 1);
     // kept in sets.json, taken by "Download Selected"
@@ -785,7 +785,7 @@ void tst_Ed3kSets::aMountsNewVersionWaitsUnderBrowse()
     QVERIFY(m_c.sets->info(m_cSet)->pendingMounts.isEmpty());
     QVERIFY(m_c.sets->setPolicy(m_cSet, Ed3kSets::Policy::Download));
     // under Download a newer one is taken at once
-    emit m_c.session->eventPolled(manifestOf("extra three", 3), &handled);
+    emit m_c.session->eventPolled(::ed3k::Event{manifestOf("extra three", 3)}, &handled);
     QVERIFY(m_c.sets->info(m_cSet)->pendingMounts.isEmpty());
 }
 

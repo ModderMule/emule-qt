@@ -53,6 +53,15 @@ namespace eMule::ed3k {
 
 class Ed3kHttp;
 
+/// A polled event as signal argument. Keeps the ~200-way ::ed3k::Event variant out of Qt's
+/// metatype machinery: every connect() instantiated it, MSVC took 20-40 min per ed3k TU.
+/// Converts both ways, so emit sites pass an Event and slots/lambdas take const Event&.
+struct PolledEvent {
+    PolledEvent(const ::ed3k::Event& e) : ev(&e) {}   // NOLINT(google-explicit-constructor)
+    operator const ::ed3k::Event&() const { return *ev; }   // NOLINT(google-explicit-constructor)
+    const ::ed3k::Event* ev;
+};
+
 /// What start() needs. The daemon fills it from thePrefs; tests set the rest.
 struct Ed3kSettings {
     std::uint16_t udpPort = 0;   ///< 0 = any free port
@@ -296,11 +305,11 @@ signals:
     /// Each polled event, synchronously inside the pump. Set *handled when the slot
     /// answered an event that needs an answer (WantBlock ...); else the session answers
     /// it with a failure so the core does not wait.
-    void eventPolled(const ::ed3k::Event& event, bool* handled);
+    void eventPolled(const eMule::ed3k::PolledEvent& event, bool* handled);
     /// Every polled event with the node that had it (KeyKind::Anon: the anonymous node), before
     /// eventPolled. eventPolled gets the node key's events only: a slot that does not know the
     /// anonymous key never takes its events for the node key's (hops.md §1).
-    void keyedEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled);
+    void keyedEventPolled(const eMule::ed3k::PolledEvent& event, ::ed3k::KeyKind key, bool* handled);
     /// declined() changed and went to the engine: joins withdraw or publish again, search
     /// rows are judged again.
     void declinedChanged();
