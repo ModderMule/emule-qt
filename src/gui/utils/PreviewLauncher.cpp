@@ -29,17 +29,48 @@ namespace {
 /// Pause before a failed player launch is tried again.
 constexpr int kLaunchRetryDelayMs = 1000;
 
-/// The scheme the daemon's HTTP surface answers on.
-///
-/// Mirrors the daemon's own SSL precondition (WebServer::start): HTTPS only with
-/// httpsEnabled and both paths set. It still falls back to plain HTTP when the
-/// cert or key cannot be opened, and that is not visible from here.
-QString daemonWebScheme()
+/// What the core reports about its web server (IpcClientHandler stats)
+struct DaemonWebEndpoint {
+    bool known = false;
+    bool https = false;
+    QString localHost;
+};
+DaemonWebEndpoint& webEndpoint()
 {
-    const bool ssl = thePrefs.webServerHttpsEnabled()
-                     && !thePrefs.webServerCertPath().isEmpty()
-                     && !thePrefs.webServerKeyPath().isEmpty();
-    return ssl ? QStringLiteral("https") : QStringLiteral("http");
+    static DaemonWebEndpoint ep;
+    return ep;
+}
+
+/// `<scheme>://<host>:<port>` of the daemon's HTTP surface, path and query unset.
+///
+/// Scheme as the core reports it: preview-only mode serves plain HTTP whatever the
+/// HTTPS option says. A local core is reached at the address it bound, never by
+/// name ("localhost" may resolve to ::1 while the server sits on 127.0.0.1).
+/// QUrl brackets an IPv6 host.
+QUrl daemonBaseUrl(const IpcClient* ipc)
+{
+    const DaemonWebEndpoint& ep = webEndpoint();
+    const bool ssl = ep.known ? ep.https
+                              : thePrefs.webServerHttpsEnabled()
+                                    && !thePrefs.webServerCertPath().isEmpty()
+                                    && !thePrefs.webServerKeyPath().isEmpty();
+    QUrl url;
+    url.setScheme(ssl ? QStringLiteral("https") : QStringLiteral("http"));
+    url.setHost(ipc->isLocalConnection() && !ep.localHost.isEmpty() ? ep.localHost
+                                                                    : ipc->daemonHost());
+    url.setPort(thePrefs.webServerPort());
+    return url;
+}
+
+/// daemonBaseUrl() plus @p path and the stream token, as one string.
+QString daemonTokenUrl(const IpcClient* ipc, const QString& path, const QString& streamToken)
+{
+    QUrl url = daemonBaseUrl(ipc);
+    url.setPath(path);
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("token"), streamToken);
+    url.setQuery(query);
+    return url.toString(QUrl::FullyEncoded);
 }
 
 /// Run @p program and log a failure, exit code included.
@@ -140,6 +171,11 @@ QString titledPlaylist(const QString& url, const QString& title)
 
 } // namespace
 
+void setDaemonWebEndpoint(bool known, bool https, const QString& localHost)
+{
+    webEndpoint() = known ? DaemonWebEndpoint{true, https, localHost} : DaemonWebEndpoint{};
+}
+
 void launchPreview(const QString& url, const QString& title)
 {
     const QString playerCmd = thePrefs.videoPlayerCommand();
@@ -164,6 +200,9 @@ bool launchPlayer(const QString& command, const QString& playerArgs, const QStri
     if (playerName == QStringLiteral("vlc") && !title.isEmpty())
         if (const QString playlist = titledPlaylist(streamTarget, title); !playlist.isEmpty())
             target = playlist;
+    // Windows VLC silently drops "C:/…" (playlist stays empty, #274); players want native paths
+    if (!target.contains(QLatin1String("://")))
+        target = QDir::toNativeSeparators(target);
 
     QString args = playerArgs;
     QStringList argList;
@@ -226,11 +265,8 @@ QString daemonHosterStreamUrl(const IpcClient* ipc, qint64 itemId, const QString
 {
     if (!ipc || !ipc->isConnected() || itemId <= 0 || streamToken.isEmpty())
         return {};
-    return QStringLiteral("%1://%2:%3/api/v1/hoster/%4/preview?token=%5")
-        .arg(daemonWebScheme(), ipc->daemonHost())
-        .arg(thePrefs.webServerPort())
-        .arg(itemId)
-        .arg(streamToken);
+    return daemonTokenUrl(ipc, QStringLiteral("/api/v1/hoster/%1/preview").arg(itemId),
+                          streamToken);
 }
 
 const PreviewApps& previewApps()
@@ -262,10 +298,8 @@ QString daemonStreamUrl(const IpcClient* ipc, const QString& fileHash,
 
     // ToDo: each GUI preview should mint its own short-lived token via IPC
     // instead of handing the one long-lived "gui" token to every player.
-    return QStringLiteral("%1://%2:%3/api/v1/downloads/%4/preview?token=%5")
-        .arg(daemonWebScheme(), ipc->daemonHost())
-        .arg(thePrefs.webServerPort())
-        .arg(fileHash, streamToken);
+    return daemonTokenUrl(ipc, QStringLiteral("/api/v1/downloads/%1/preview").arg(fileHash),
+                          streamToken);
 }
 
 QString daemonUsenetStreamUrl(const IpcClient* ipc, const QString& itemId, int fileIndex,
@@ -276,12 +310,9 @@ QString daemonUsenetStreamUrl(const IpcClient* ipc, const QString& itemId, int f
         return {};
     }
 
-    QString url = QStringLiteral("%1://%2:%3/api/v1/usenet/%4/%5/preview?token=%6")
-                      .arg(daemonWebScheme(), ipc->daemonHost())
-                      .arg(thePrefs.webServerPort())
-                      .arg(itemId)
-                      .arg(fileIndex)
-                      .arg(streamToken);
+    QString url = daemonTokenUrl(
+        ipc, QStringLiteral("/api/v1/usenet/%1/%2/preview").arg(itemId).arg(fileIndex),
+        streamToken);
 
     // Appended only when a file was actually chosen, so the default URL stays
     // exactly what it was.
@@ -296,12 +327,16 @@ QString daemonTorrentStreamUrl(const IpcClient* ipc, const QString& torrentId, i
 {
     if (!ipc || !ipc->isConnected() || torrentId.isEmpty() || fileIndex < -1 || streamToken.isEmpty())
         return {};
-    return QStringLiteral("%1://%2:%3/api/v1/torrents/%4/%5/preview?token=%6")
-        .arg(daemonWebScheme(), ipc->daemonHost())
-        .arg(thePrefs.webServerPort())
-        .arg(QString::fromLatin1(QUrl::toPercentEncoding(torrentId, QByteArrayLiteral(":"))))
-        .arg(fileIndex)
-        .arg(streamToken);
+    // id encoded here, path set tolerant: a '/' in it must not split the route
+    QUrl url = daemonBaseUrl(ipc);
+    url.setPath(QStringLiteral("/api/v1/torrents/%1/%2/preview")
+                    .arg(QString::fromLatin1(QUrl::toPercentEncoding(torrentId, QByteArrayLiteral(":"))))
+                    .arg(fileIndex),
+                QUrl::TolerantMode);
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("token"), streamToken);
+    url.setQuery(query);
+    return url.toString(QUrl::FullyEncoded);
 }
 
 QString daemonIncomingUrl(const IpcClient* ipc, const QString& streamToken,
@@ -313,10 +348,7 @@ QString daemonIncomingUrl(const IpcClient* ipc, const QString& streamToken,
     // Assembled through QUrl rather than by hand: a release folder carries
     // spaces, brackets and ampersands, and only the query encoder gets those
     // back to the daemon intact.
-    QUrl url;
-    url.setScheme(daemonWebScheme());
-    url.setHost(ipc->daemonHost());
-    url.setPort(thePrefs.webServerPort());
+    QUrl url = daemonBaseUrl(ipc);
     url.setPath(QStringLiteral("/api/v1/incoming"));
 
     QUrlQuery query;
@@ -334,10 +366,7 @@ QString daemonIncomingFileUrl(const IpcClient* ipc, const QString& streamToken,
     if (!ipc || !ipc->isConnected() || streamToken.isEmpty() || relPath.isEmpty())
         return {};
 
-    QUrl url;
-    url.setScheme(daemonWebScheme());
-    url.setHost(ipc->daemonHost());
-    url.setPort(thePrefs.webServerPort());
+    QUrl url = daemonBaseUrl(ipc);
 
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("token"), streamToken);
@@ -378,10 +407,7 @@ QString daemonWebUiUrl(const IpcClient* ipc)
     if (!ipc || !ipc->isConnected())
         return {};
 
-    QUrl url;
-    url.setScheme(daemonWebScheme());
-    url.setHost(ipc->daemonHost());
-    url.setPort(thePrefs.webServerPort());
+    QUrl url = daemonBaseUrl(ipc);
     url.setPath(QStringLiteral("/"));
     return url.toString(QUrl::FullyEncoded);
 }

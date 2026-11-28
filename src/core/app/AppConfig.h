@@ -50,7 +50,8 @@ public:
     /// Returns the user config directory (where preferences.yml lives), creating
     /// it if it does not exist yet. Same answer in GUI and daemon: nothing here
     /// depends on the application name.
-    ///   macOS, Linux:  ~/eMuleQt/Config
+    ///   macOS, Linux:  ~/eMuleQt/Config, or <app dir>/eMuleQt/Config when that
+    ///                  eMuleQt/ dir exists next to the app (portable)
     ///   Windows (multiUserSharing=2, default): <exe-dir>/config  (portable)
     ///   Windows (multiUserSharing=0): %LOCALAPPDATA%/eMuleQt
     ///   Windows (multiUserSharing=1): %LOCALAPPDATA%/eMule/eMule Qt
@@ -110,6 +111,11 @@ public:
     /// The default core, if one runs now.
     [[nodiscard]] static std::optional<UserCore> runningUserCore();
 
+    /// Portable copy (no --config): Windows config inside the exe dir, elsewhere an
+    /// eMuleQt/ dir next to the app. A profile of its own, like --config. Never the
+    /// user's default core, so copies run side by side.
+    [[nodiscard]] static bool isPortableProfile();
+
     /// Same dir however spelled: symlinks, trailing slash, case on Windows.
     [[nodiscard]] static bool sameDir(const QString& a, const QString& b);
 
@@ -140,6 +146,14 @@ public:
     /// 2=program-dir).  Determined once on first call to configDir() by
     /// peeking at <exe-dir>/config/preferences.yml.  Default is 2.
     [[nodiscard]] static int multiUserSharingMode();
+#else
+    /// Dir the user placed the app in: holds the .app bundle (macOS), the .AppImage,
+    /// or the binary itself (tarball).
+    [[nodiscard]] static QString appRootDir();
+
+    /// <appRootDir>/eMuleQt when the user created it: per-folder portable data root,
+    /// laid out like ~/eMuleQt (Config/, Incoming/, Temp/). Empty: home default.
+    [[nodiscard]] static QString portableBaseDir();
 #endif
 
     /// What one seeding pass did. Counts, so a caller can log a single line

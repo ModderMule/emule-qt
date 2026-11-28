@@ -72,6 +72,7 @@ static void unixSignalHandler(int)
 #include "utils/BackgroundFileWriter.h"
 #include "utils/ColumnTooltip.h"
 #include "utils/SafeRemove.h"
+#include "utils/PreviewLauncher.h"
 #include "utils/MessageBoxButtonOrder.h"
 #include "utils/CountryFlags.h"
 #include "utils/FileAssociation.h"
@@ -728,7 +729,8 @@ int main(int argc, char* argv[])
     // Load preferences early so language setting is available for translators
     if (!cli.configOverride().isEmpty()) {
         eMule::AppConfig::setConfigDirOverride(cli.configOverride());
-    } else if (const auto core = eMule::AppConfig::runningUserCore();
+    } else if (const auto core = eMule::AppConfig::isPortableProfile()
+                                     ? std::nullopt : eMule::AppConfig::runningUserCore();
                core && !eMule::AppConfig::sameDir(core->configDir,
                                                   eMule::AppConfig::defaultConfigDir())) {
         // The user's core runs from another install (setup vs portable copy): attach
@@ -785,8 +787,8 @@ int main(int argc, char* argv[])
     }
 
     // One GUI per user when it starts its own core (issue #29), whatever dir it was
-    // installed to, as there is one core per user. Another --config, a remote or
-    // "local" core, or --new-instance each get a window of their own.
+    // installed to, as there is one core per user. Another --config, a portable copy,
+    // a remote or "local" core, or --new-instance each get a window of their own.
     std::unique_ptr<eMule::SingleInstance> singleInstance;
     // --core-host (connect script) never owns a core: a window of its own
     const bool coreOverride = !cli.coreHost().isEmpty();
@@ -794,7 +796,8 @@ int main(int argc, char* argv[])
         && !eMule::CoreAttachment::isRemoteAddress(eMule::thePrefs.ipcListenAddress())) {
         const QString ownedPath = resolveDaemonPath();
         if (!ownedPath.isEmpty() && ownedPath != QStringLiteral("local")) {
-            const bool profile = !cli.configOverride().isEmpty();
+            const bool profile = !cli.configOverride().isEmpty()
+                                 || eMule::AppConfig::isPortableProfile();
             singleInstance = std::make_unique<eMule::SingleInstance>(
                 profile ? QCoreApplication::applicationDirPath() : QString(),
                 profile ? configDir : QString());
@@ -1554,6 +1557,11 @@ int main(int argc, char* argv[])
                 // Update stream token for preview streaming
                 if (auto st = stats.value(QStringLiteral("streamToken")); st.isString())
                     mainWindow.setStreamToken(st.toString());
+                if (const QCborValue https = stats.value(QStringLiteral("streamHttps")); https.isBool())
+                    eMule::setDaemonWebEndpoint(true, https.toBool(),
+                        stats.value(QStringLiteral("streamLocalHost")).toString());
+                else
+                    eMule::setDaemonWebEndpoint(false);
 
                 // Update MiniMule popup stats
                 const int completedDl = static_cast<int>(

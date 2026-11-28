@@ -67,6 +67,38 @@ int AppConfig::multiUserSharingMode()
     return s_multiUserSharing;
 }
 
+#else
+
+QString AppConfig::appRootDir()
+{
+    // AppImage: our dir is a per-run mount, the image file is what the user placed
+    if (const QString image = appImagePath(); !image.isEmpty())
+        return QFileInfo(image).absolutePath();
+    // macOS: the dir holding the outermost .app, not Contents/MacOS
+    QDir dir(QCoreApplication::applicationDirPath());
+    QString root = dir.absolutePath();
+    do {
+        if (dir.dirName().endsWith(QLatin1String(".app"), Qt::CaseInsensitive)) {
+            QDir parent = dir;
+            if (parent.cdUp())
+                root = parent.absolutePath();
+        }
+    } while (dir.cdUp());
+    return root;
+}
+
+QString AppConfig::portableBaseDir()
+{
+    static const QString dir = [] {
+        const QString candidate = appRootDir() + QStringLiteral("/eMuleQt");
+        // ~/eMuleQt itself is the default, not a portable copy
+        return QFileInfo(candidate).isDir()
+                       && !sameDir(candidate, QDir::homePath() + QStringLiteral("/eMuleQt"))
+                   ? QDir::cleanPath(candidate) : QString();
+    }();
+    return dir;
+}
+
 #endif // Q_OS_WIN
 
 namespace {
@@ -110,6 +142,8 @@ QString AppConfig::baseDir()
         return QCoreApplication::applicationDirPath();
     }
 #else
+    if (const QString portable = portableBaseDir(); !portable.isEmpty())
+        return portable;
     return QDir::homePath() + QStringLiteral("/eMuleQt");
 #endif
 }
@@ -241,6 +275,15 @@ std::optional<AppConfig::UserCore> AppConfig::runningUserCore()
         || holder != core.pid)
         return std::nullopt;
     return core;
+}
+
+bool AppConfig::isPortableProfile()
+{
+#ifdef Q_OS_WIN
+    return s_configDirOverride.isEmpty() && multiUserSharingMode() == 2;
+#else
+    return s_configDirOverride.isEmpty() && !portableBaseDir().isEmpty();
+#endif
 }
 
 bool AppConfig::sameDir(const QString& a, const QString& b)

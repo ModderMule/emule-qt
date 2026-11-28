@@ -113,7 +113,9 @@ enum class IpcMsgType : int {
                                 ///<   peer goes back to ChatState::None and a dial we
                                 ///<   started for it is cancelled. MFC does this from
                                 ///<   CChatSelector::EndSession (ChatSelector.cpp:464).
-    /// {...StatsSnapshot, streamToken, maxDownloadKb, usenetLimitKb, ed2kBudgetKb}.
+    /// {...StatsSnapshot, streamToken, streamHttps?, streamLocalHost?, maxDownloadKb,
+    /// usenetLimitKb, ed2kBudgetKb}. streamToken is empty while the web server is not
+    /// listening; the two stream* fields come only while it is (TLS, host for a local player).
     /// The last three are the live download split, effective caps in KB/s with
     /// every sentinel resolved: 0 only when maxDownloadKb is 0 (unlimited), and a
     /// cap below maxDownloadKb means the other engine is busy.
