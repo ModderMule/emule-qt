@@ -31,6 +31,9 @@ class IpcListenWatch;
 class ApiEventFeeder;
 class ApiEventHub;
 class DaemonApiBackend;
+class ArrSearchBridge;
+class ArrWanted;
+class GluetunPortSync;
 class DaemonEd3kWebBackend;
 class DaemonIndexerWebBackend;
 class DaemonHosterWebBackend;
@@ -150,6 +153,9 @@ private:
     void stopWebServer();
     void restartWebServer();
     void onWebServerConfigChanged();
+    /// Sonarr/Radarr feed poller and Gluetun port sync follow the preferences.
+    void applyArrAndGluetun();
+    void onGluetunPort(quint16 port);
 
     /// Re-apply the news-server list after an Options save. Reached from any
     /// IPC client through IpcServer::usenetConfigChanged.
@@ -222,6 +228,10 @@ private:
     std::unique_ptr<DaemonEd3kWebBackend> m_ed3kWebBackend;
     std::unique_ptr<DaemonIndexerWebBackend> m_indexerWebBackend;
     std::unique_ptr<DaemonApiBackend> m_apiBackend;
+    /// Sonarr/Radarr Torznab searches + synthetic feed, and its Wanted poller
+    std::unique_ptr<ArrSearchBridge> m_arrBridge;
+    std::unique_ptr<ArrWanted> m_arrWanted;
+    std::unique_ptr<GluetunPortSync> m_gluetun;
     /// Events for GET /api/v1/events; outlive a web-server restart.
     ApiEventHub* m_eventHub = nullptr;
     ApiEventFeeder* m_eventFeeder = nullptr;

@@ -88,8 +88,9 @@ public:
     [[nodiscard]] static const BandwidthCoordinator* instance();
 
     /// ed3k upload slots for an upload share of upKb KB/s: 25 each, at least 2 (Protocol.md
-    /// §12.5: 9 to 55 KiB/s per slot); 0 = no limit, the node chooses.
-    [[nodiscard]] static std::uint32_t ed3kSlotsFor(qint64 upKb);
+    /// §12.5: 9 KiB/s to 5 MiB/s per slot); 0 = no limit, the node chooses. At most
+    /// MAX_UP_CLIENTS_ALLOWED less eD2K's ed2kHeld slots, and a third of maxConnections.
+    [[nodiscard]] static std::uint32_t ed3kSlotsFor(qint64 upKb, int ed2kHeld = 0);
     /// Whether a new slot count is applied over the one in force: on/off always, else a move
     /// of 10 % or more (at least 1); the share jitters every tick, each apply re-ranks the queue.
     [[nodiscard]] static bool ed3kSlotsMoved(std::uint32_t current, std::uint32_t wanted);

@@ -156,6 +156,7 @@ private slots:
     void searchFindsSettingsTreeRows();
     void searchWithoutMatchKeepsEveryPage();
     void searchEnterStepsPagesNotOk();
+    void searchTooltipOnlyAsFallback();
     void usenetPageHasAccountAndAdvancedTabs();
 
     // --- values loaded into the pages (offline: IpcClient nullptr) ---------
@@ -1609,6 +1610,29 @@ void TestOptionsDialogSizing::searchEnterStepsPagesNotOk()
     QVERIFY(dlg.isVisible());
     QVERIFY(edit->text().isEmpty());
     dlg.reject();
+}
+
+/// Issue #284: "enabled" in a tooltip's prose must not light up a control while visible
+/// text matches elsewhere; a word found only in tooltips still finds the control.
+void TestOptionsDialogSizing::searchTooltipOnlyAsFallback()
+{
+    OptionsDialog dlg(nullptr, nullptr);
+    auto* search = dlg.findChild<OptionsSearch*>();
+    const auto randomPorts = [&] {
+        for (auto* box : stackOf(dlg)->widget(OptionsDialog::PageConnection)->findChildren<QCheckBox*>())
+            if (box->text().startsWith(QStringLiteral("Randomize ports")))
+                return box;
+        return static_cast<QCheckBox*>(nullptr);
+    };
+    QCheckBox* box = randomPorts();
+    QVERIFY(box && box->toolTip().contains(QStringLiteral("enabled")));
+
+    search->search(QStringLiteral("enabled"));
+    QVERIFY(!search->matchingPages().isEmpty());
+    QVERIFY(!search->highlightedWidgets(OptionsDialog::PageConnection).contains(box));
+
+    search->search(QStringLiteral("forward the whole range"));
+    QVERIFY(search->highlightedWidgets(OptionsDialog::PageConnection).contains(box));
 }
 
 QTEST_MAIN(TestOptionsDialogSizing)

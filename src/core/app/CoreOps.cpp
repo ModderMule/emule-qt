@@ -5,9 +5,12 @@
 #include "app/CoreOps.h"
 
 #include "app/AppContext.h"
+#include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "enodemeta/MetaHash.h"
 #include "files/KnownFile.h"
+#include "friends/Friend.h"
+#include "friends/FriendList.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "kademlia/KadRoutingZone.h"
@@ -328,6 +331,37 @@ Status swapA4AFToDownload(const QString& hashHex, int* swapped)
     if (swapped)
         *swapped = moved;
     return st;
+}
+
+Status deleteSharedFile(const QString& hashHex, QString* deletedPath)
+{
+    if (!theApp.sharedFileList)
+        return Status::fail(503, QStringLiteral("Shared files unavailable"));
+    uint8 hash[16]{};
+    if (!hexToHash(hashHex, hash))
+        return Status::fail(400, QStringLiteral("Invalid hash"));
+    auto* file = theApp.sharedFileList->getFileByID(hash);
+    if (!file)
+        return Status::fail(404, QStringLiteral("Shared file not found"));
+    const QString path = file->filePath();
+    if (theApp.uploadQueue)
+        theApp.uploadQueue->releaseUploadFile(path);
+    // MFC MPG_DELETE (srchybrid/SharedFilesCtrl.cpp:938-950): delete first, unshare only
+    // if that worked; a file unshared but still on disk comes back with the next rescan
+    if (!QFile::remove(path) && QFileInfo::exists(path)) {
+        logWarning(QStringLiteral("Could not delete shared file: %1").arg(path));
+        return Status::fail(500, QStringLiteral("Could not delete \"%1\"").arg(path));
+    }
+    theApp.sharedFileList->removeFile(file);
+    // Its finished download leaves the transfer list too (MFC ClearCompleted)
+    if (theApp.downloadQueue) {
+        PartFile* pf = theApp.downloadQueue->fileByID(hash);
+        if (pf && pf == file && pf->status() == PartFileStatus::Complete)
+            theApp.downloadQueue->removeFile(pf);
+    }
+    if (deletedPath)
+        *deletedPath = path;
+    return {};
 }
 
 int clearCompletedDownloads(const QSet<QString>& onlyIn)
@@ -809,6 +843,34 @@ Status setFileComments(const QStringList& hashHexes, const QString& commentIn, q
     if (count == 0)
         return Status::fail(404, QStringLiteral("File is not shared"));
     return {};
+}
+
+Status sendChatMessage(const QString& hashHex, const QString& message)
+{
+    if (!theApp.clientList)
+        return Status::fail(503, QStringLiteral("ClientList unavailable"));
+    std::array<uint8, 16> hash{};
+    if (hashHex.size() != 32 || decodeBase16(hashHex, hash.data(), 16) != 16)
+        return Status::fail(400, QStringLiteral("Invalid hash"));
+
+    auto* client = theApp.clientList->findByUserHash(hash.data(), 0, 0);
+    if (client && client->socket() && client->socket()->isConnected()) {
+        client->sendChatMessage(message);
+        return {};
+    }
+    // Offline friend with an address or Kad ID: park the text and dial (Friend decides)
+    if (theApp.friendList) {
+        if (Friend* f = theApp.friendList->searchFriend(hash.data()); f && f->sendOrQueueChatMessage(message))
+            return {};
+    }
+    // A known client that is not connected: park and dial (MFC ChatSelector.cpp:314-322)
+    if (client) {
+        client->setPendingChatMessage(message);
+        if (client->tryToConnect(true))
+            return {};
+        (void)client->takePendingChatMessage();
+    }
+    return Status::fail(404, QStringLiteral("Client not found or not connected"));
 }
 
 } // namespace eMule::ops

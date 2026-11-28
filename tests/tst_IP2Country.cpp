@@ -124,6 +124,7 @@ public:
     QByteArray lastRequest;
     QByteArrayList paths;     ///< request path of every request
     QByteArray notFoundPath;  ///< a request for this path gets 404
+    QByteArray extraHeaders;  ///< raw "Name: value\r\n" lines added to every response
     int requests = 0;
 
     explicit FakeMaxMind(const QHostAddress& bind = QHostAddress::LocalHost)
@@ -147,7 +148,7 @@ public:
                     const QByteArray extra = location.isEmpty() ? QByteArray()
                                                                 : "Location: " + location + "\r\n";
                     s->write("HTTP/1.1 " + QByteArray::number(code) + ' ' + reason + "\r\n"
-                             + extra +
+                             + extra + extraHeaders +
                              "Content-Type: application/gzip\r\n"
                              "Content-Length: " + QByteArray::number(payload.size()) + "\r\n"
                              "Connection: close\r\n\r\n" + payload);
@@ -229,6 +230,8 @@ private slots:
     void dbip_fallsBackToPreviousMonth();
     void dbip_keepsGeoLiteUntilDownloaded();
     void dbip_scheduleRunsWithoutCredentials();
+    void dbip_reusesServerValidators();
+    void dbip_sameBuildIsUpToDate();
 
     void bundle_adoptedWhenLiveMissingOrInvalid();
     void bundle_adoptedWhenNewer();
@@ -598,6 +601,57 @@ void tst_IP2Country::dbip_scheduleRunsWithoutCredentials()
     QVERIFY(QTest::qWaitFor([&] { return changed.count() == 1; }, 10000));
     QCOMPARE(server.requests, 1);
     QCOMPARE(m_db.path(), dbIpPath());
+}
+
+void tst_IP2Country::dbip_reusesServerValidators()
+{
+    // Server Last-Modified is later than build_epoch: the next check must send the
+    // server's validators, not the build date, or it downloads the same file again
+    thePrefs.setGeoIpSource(static_cast<int>(GeoIpSource::DbIp));
+    FakeMaxMind server;
+    server.body = makeGz(readFile(testDb()));
+    server.extraHeaders = "ETag: \"abc-123\"\r\nLast-Modified: Sun, 01 Nov 2026 07:41:36 GMT\r\n";
+
+    GeoIpUpdater updater(&m_db, m_dir.path());
+    updater.setDbIpUrlTemplate(server.dbIpTemplate());
+    bool ok = false;
+    QString message;
+    QVERIFY(runUpdate(updater, ok, message));
+    QVERIFY2(ok, qPrintable(message));
+    QVERIFY(server.header("If-None-Match").isEmpty());
+
+    server.status = 304;
+    QSignalSpy changed(&updater, &GeoIpUpdater::databaseChanged);
+    QVERIFY(runUpdate(updater, ok, message));
+    QVERIFY2(ok, qPrintable(message));
+    QCOMPARE(server.requests, 2);
+    QCOMPARE(server.header("If-None-Match"), QByteArray("\"abc-123\""));
+    QCOMPARE(server.header("If-Modified-Since"), QByteArray("Sun, 01 Nov 2026 07:41:36 GMT"));
+    QCOMPARE(changed.count(), 0);
+    QVERIFY2(message.contains(QStringLiteral("up to date")), qPrintable(message));
+}
+
+void tst_IP2Country::dbip_sameBuildIsUpToDate()
+{
+    // A server ignoring the condition sends the same build: not reported as an update
+    thePrefs.setGeoIpSource(static_cast<int>(GeoIpSource::DbIp));
+    FakeMaxMind server;
+    server.body = makeGz(readFile(testDb()));
+
+    GeoIpUpdater updater(&m_db, m_dir.path());
+    updater.setDbIpUrlTemplate(server.dbIpTemplate());
+    bool ok = false;
+    QString message;
+    QVERIFY(runUpdate(updater, ok, message));
+    QVERIFY2(message.contains(QStringLiteral("updated")), qPrintable(message));
+
+    QSignalSpy changed(&updater, &GeoIpUpdater::databaseChanged);
+    QVERIFY(runUpdate(updater, ok, message));
+    QVERIFY2(ok, qPrintable(message));
+    QCOMPARE(server.requests, 2);
+    QCOMPARE(changed.count(), 0);
+    QVERIFY2(message.contains(QStringLiteral("up to date")), qPrintable(message));
+    QCOMPARE(m_db.countryCode(QHostAddress(QStringLiteral("81.2.69.160"))), QStringLiteral("GB"));
 }
 
 void tst_IP2Country::bundle_adoptedWhenLiveMissingOrInvalid()

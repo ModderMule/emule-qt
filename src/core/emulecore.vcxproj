@@ -245,6 +245,8 @@
     <ClCompile Include="geo\HostCountryResolver.cpp" />
     <ClCompile Include="geo\IP2Country.cpp" />
     <ClCompile Include="transfer\ImportParts.cpp" />
+    <ClCompile Include="transfer\LocalCopyScan.cpp" />
+    <ClCompile Include="files\LocalCopyWalk.cpp" />
     <ClCompile Include="chat\IrcClient.cpp" />
     <ClCompile Include="chat\IrcEmuleProto.cpp" />
     <ClCompile Include="chat\IrcNickList.cpp" />
@@ -285,6 +287,7 @@
     <ClCompile Include="portmap\NatPmpMessages.cpp" />
     <ClCompile Include="portmap\PcpMessages.cpp" />
     <ClCompile Include="portmap\PortMapper.cpp" />
+    <ClCompile Include="portmap\GluetunPortSync.cpp" />
     <ClCompile Include="portmap\UPnPBackend.cpp" />
     <ClCompile Include="portmap\UPnPWorker.cpp" />
     <ClCompile Include="net\HostResolver.cpp" />
@@ -429,8 +432,13 @@
     <ClCompile Include="webserver\WebServerApi.cpp" />
     <ClCompile Include="webserver\WebServerMcp.cpp" />
     <ClCompile Include="webserver\WebServerTorrents.cpp" />
+    <ClCompile Include="webserver\WebServerUi.cpp" />
     <ClCompile Include="webserver\WebServerEd3k.cpp" />
     <ClCompile Include="webserver\WebServerIndexer.cpp" />
+    <ClCompile Include="webserver\WebServerArr.cpp" />
+    <ClCompile Include="webserver\ArrCompat.cpp" />
+    <ClCompile Include="webserver\ArrSearchBridge.cpp" />
+    <ClCompile Include="webserver\ArrWanted.cpp" />
     <ClCompile Include="webserver\StreamTokenStore.cpp" />
     <ClCompile Include="webserver\WebSessionManager.cpp" />
     <ClCompile Include="webserver\WebTemplateEngine.cpp" />
@@ -528,6 +536,7 @@
     <QtMoc Include="net\HostResolver.h" />
     <QtMoc Include="portmap\PortMapBackend.h" />
     <QtMoc Include="portmap\PortMapper.h" />
+    <QtMoc Include="portmap\GluetunPortSync.h" />
     <QtMoc Include="utils\SidecarProcess.h" />
     <QtMoc Include="net\I2pRouter.h" />
     <QtMoc Include="net\I2pdInstaller.h" />
@@ -544,6 +553,8 @@
     <ClInclude Include="geo\HostCountryResolver.h" />
     <ClInclude Include="geo\IP2Country.h" />
     <ClInclude Include="transfer\ImportParts.h" />
+    <ClInclude Include="transfer\LocalCopyScan.h" />
+    <ClInclude Include="files\LocalCopyWalk.h" />
     <ClInclude Include="transfer\UploadQueueStore.h" />
     <ClInclude Include="transfer\BandwidthSplit.h" />
     <ClInclude Include="transfer\QueuePositions.h" />
@@ -565,6 +576,8 @@
     <ClInclude Include="webserver\HosterWebBackend.h" />
     <ClInclude Include="webserver\Ed3kWebBackend.h" />
     <ClInclude Include="webserver\IndexerWebBackend.h" />
+    <ClInclude Include="webserver\ArrCompat.h" />
+    <ClInclude Include="webserver\FormParts.h" />
     <ClInclude Include="webserver\ApiOpBuilder.h" />
     <ClInclude Include="webserver\MetaGrabWebBackend.h" />
     <ClInclude Include="webserver\TorrentWebBackend.h" />
@@ -657,6 +670,7 @@
     <ClInclude Include="net\Pinger.h" />
     <ClInclude Include="utils\PlatformUtils.h" />
     <ClInclude Include="prefs\IndexerConfig.h" />
+    <ClInclude Include="prefs\ArrInstance.h" />
     <ClInclude Include="prefs\DownloadCategory.h" />
     <ClInclude Include="prefs\CategoryView.h" />
     <ClInclude Include="prefs\IndexerFeed.h" />
@@ -721,6 +735,7 @@
     <ClInclude Include="stats\SaveFolderSpace.h" />
     <ClInclude Include="stats\StatsSnapshot.h" />
     <ClInclude Include="utils\StringUtils.h" />
+    <ClInclude Include="utils\DateTimeText.h" />
     <ClInclude Include="utils\UsenetDisplay.h" />
     <ClInclude Include="protocol\Tag.h" />
     <ClInclude Include="utils\ThreadUtils.h" />
@@ -745,6 +760,8 @@
     <QtMoc Include="transfer\UploadQueue.h" />
     <QtMoc Include="webserver\ApiEventHub.h" />
     <QtMoc Include="webserver\WebServer.h" />
+    <QtMoc Include="webserver\ArrSearchBridge.h" />
+    <QtMoc Include="webserver\ArrWanted.h" />
     <ClInclude Include="webserver\StreamTokenStore.h" />
     <ClInclude Include="webserver\WebSessionManager.h" />
     <ClInclude Include="webserver\WebTemplateEngine.h" />

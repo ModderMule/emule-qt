@@ -39,6 +39,7 @@
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -147,8 +148,7 @@ void UsenetDetailsDialog::applyDetails(const QCborMap& details)
     m_poster->setText(aggregate(posters));
     m_groups->setText(aggregate(groups));
     m_date->setText(newest > 0
-                        ? QLocale::system().toString(
-                              QDateTime::fromSecsSinceEpoch(newest), QLocale::ShortFormat)
+                        ? toDisplayString(QDateTime::fromSecsSinceEpoch(newest))
                         : QString());
 
     // Rebuild rather than patch: a release's file list never changes shape once

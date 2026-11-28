@@ -49,6 +49,7 @@
 #include "utils/StringUtils.h"
 
 #include <memory>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -73,7 +74,7 @@ QString fmtTime(qint64 epoch)
 {
     if (epoch <= 0)
         return QStringLiteral("\u2014");
-    return QLocale().toString(QDateTime::fromSecsSinceEpoch(epoch), QLocale::ShortFormat);
+    return toDisplayString(QDateTime::fromSecsSinceEpoch(epoch));
 }
 
 /// MFC's "%s   (%s ago)" date, or @p none when not set (FileDetailDialogInfo.cpp:136-182)

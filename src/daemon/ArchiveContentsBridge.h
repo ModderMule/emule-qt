@@ -45,6 +45,7 @@ void downloadEntries(const QCborArray& entries, const QString& folder, int categ
 /// from there into incoming/<@p folder>/, the archives' volumes in @p target are skipped.
 void takeFromDisk(const QCborMap& target, const QCborArray& archives, const QString& folder, int category, Reply reply);
 /// LocateLocalCopies (#224): a folder scan for the open ed3k downloads; @p reply when it ends.
+/// The eD2K part (#251) is LocalCopyScan, run first by IpcClientHandler.
 /// One at a time.
 void locateLocalCopies(const QStringList& folders, Reply reply);
 

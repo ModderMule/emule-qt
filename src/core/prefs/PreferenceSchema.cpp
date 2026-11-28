@@ -406,6 +406,15 @@ using Kind = PrefSpec::Kind;
     t << readOnly(number("webServerPort", 1, 65535, "", "Port of the web server."));
     t << readOnly(text("webServerListenAddress", 255, "Address the web server listens on. Empty = "
                        "all interfaces."));
+    t << readOnly(flag("arrApiEnabled", "Sonarr/Radarr bridge: qBittorrent API (/api/v2) and Torznab "
+                       "(/torznab/api) on the web server port, key = the REST API key."));
+    t << number("arrWantedPollMinutes", 0, 1440, "min", "Minutes between polls of the Sonarr/Radarr "
+                "Wanted lists for the synthetic Torznab RSS. 0 = no feed.");
+    t << number("arrSearchWaitSeconds", 5, 90, "s", "How long a Torznab search waits for eD2K/Kad results.");
+    t << advanced(flag("gluetunEnabled", "Take the VPN's forwarded port from the Gluetun control server."));
+    t << advanced(text("gluetunUrl", 2048, "Gluetun control server, e.g. http://127.0.0.1:8000."));
+    t << advanced(text("gluetunPortTarget", 4, "Which port follows Gluetun's forwarded port: "
+                       "ed2k (TCP and UDP) or bt."));
     return t;
 }
 

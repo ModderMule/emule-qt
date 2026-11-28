@@ -9,12 +9,47 @@
 #include "transfer/ImportParts.h"
 #include "crypto/MD4Hash.h"
 #include "files/PartFile.h"
+#include "transfer/DownloadQueue.h"
+#include "app/AppContext.h"
+#include "utils/Log.h"
+#include "utils/OtherFunctions.h"
 
 #include <QFile>
+#include <QCoreApplication>
 #include <QFileInfo>
+#include <QHash>
+#include <QTimer>
 
 
 namespace eMule {
+
+namespace {
+
+/// Background imports: download hash → source path and next part.
+struct PartImport {
+    QString path;
+    uint32 nextPart = 0;
+    int imported = 0;
+};
+
+QHash<QString, PartImport>& partImports()
+{
+    static QHash<QString, PartImport> imports;
+    return imports;
+}
+
+PartFile* partFileOf(const QString& hashHex)
+{
+    uint8 hash[16]{};
+    if (!theApp.downloadQueue || decodeBase16(hashHex, hash, 16) != 16)
+        return nullptr;
+    PartFile* file = theApp.downloadQueue->fileByID(hash);
+    return file && file->status() != PartFileStatus::Complete ? file : nullptr;
+}
+
+void stepPartImport(const QString& hashHex);
+
+} // namespace
 
 bool canImportParts(const PartFile* partFile, const QString& sourceFilePath)
 {
@@ -92,5 +127,66 @@ int importParts(PartFile* partFile, const QString& sourceFilePath,
 
     return importedCount;
 }
+
+bool startPartImport(PartFile* partFile, const QString& sourceFilePath)
+{
+    if (!partFile || !canImportParts(partFile, sourceFilePath))
+        return false;
+    const QString key = md4str(partFile->fileHash());
+    if (partImports().contains(key))
+        return false;
+    partFile->flushBuffer();
+    partFile->setFileOp(PartFileOp::ImportParts);
+    partImports().insert(key, PartImport{sourceFilePath, 0, 0});
+    QTimer::singleShot(0, qApp, [key] { stepPartImport(key); });
+    return true;
+}
+
+bool stopPartImport(PartFile* partFile)
+{
+    if (!partFile || partImports().remove(md4str(partFile->fileHash())) == 0)
+        return false;
+    partFile->setFileOp(PartFileOp::None);
+    partFile->updateCompletedInfos();
+    partFile->savePartFile();
+    return true;
+}
+
+bool partImportRunning(const PartFile* partFile)
+{
+    return partFile && partImports().contains(md4str(partFile->fileHash()));
+}
+
+namespace {
+
+/// One part per turn of the event loop: a part is 9.28 MB to read, hash and write.
+void stepPartImport(const QString& hashHex)
+{
+    auto it = partImports().find(hashHex);
+    if (it == partImports().end())
+        return;   // stopped
+
+    PartFile* file = partFileOf(hashHex);
+    if (!file || it->nextPart >= file->partCount()) {
+        if (file) {
+            file->setFileOp(PartFileOp::None);
+            if (it->imported > 0) {
+                file->flushBuffer();
+                file->updateCompletedInfos();
+                file->savePartFile();
+            }
+            logInfo(QStringLiteral("Imported %1 part(s) into %2").arg(it->imported).arg(file->fileName()));
+        }
+        partImports().erase(it);
+        return;
+    }
+
+    if (importPart(file, it->path, it->nextPart))
+        ++it->imported;
+    ++it->nextPart;
+    QTimer::singleShot(0, qApp, [hashHex] { stepPartImport(hashHex); });
+}
+
+} // namespace
 
 } // namespace eMule

@@ -4,7 +4,7 @@
 <-- ################################################################# -->
 
 <--TMPL_VERSION-->
-9
+10
 <--TMPL_VERSION_END-->
 
 
@@ -17,7 +17,9 @@
 <html lang="[HtmlLang]">
 <head>
 <meta charset="[CharSet]">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="favicon.ico">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="sprites.css">
 <link rel="stylesheet" href="sprite-rating.css">
 <title>[eMuleAppName] [version] - [WebControl]</title>
@@ -39,7 +41,8 @@ body {
   border-radius: 4px;
   padding: 30px 40px;
   text-align: center;
-  min-width: 320px;
+  min-width: min(320px, calc(100vw - 32px));
+  box-sizing: border-box;
 }
 .login-box .logo { margin-bottom: 16px; }
 .login-box h2 { margin: 0 0 4px; font-size: 14pt; }
@@ -68,6 +71,7 @@ form { display: inline; }
   <div class="version">[version] - [WebControl]</div>
   [FailedLogin]
   <form name="login" action="/" method="POST">
+   <input type="hidden" name="next" value="[LoginNext]">
    <div><input type="password" name="p" placeholder="{{Password}}" autofocus></div>
    <div><input type="submit" value="{{Login}}"></div>
   </form>
@@ -88,19 +92,43 @@ form { display: inline; }
 <head>
 <meta charset="[CharSet]">
 <meta http-equiv="pragma" content="no-cache">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#003C6E">
 <link rel="icon" href="favicon.ico">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="app-icon-180.png">
 <link rel="stylesheet" href="sprites.css">
 <link rel="stylesheet" href="sprite-rating.css">
 <title>[eMuleAppName] [version] - [WebControl]</title>
+<script>
+// Per-browser conveniences only; every read and write may fail (private window).
+function sget(k,ses){try{return (ses?sessionStorage:localStorage).getItem(k);}catch(e){return null;}}
+function sset(k,v,ses){try{(ses?sessionStorage:localStorage).setItem(k,v);}catch(e){}}
+// Theme before the first paint: auto follows the system, dark or the classic blue.
+var EMQ_THEME=sget('emqTheme')||'auto';
+function applyTheme(t){var d=t;if(t==='auto')d=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'classic';document.documentElement.setAttribute('data-theme',d);}
+function setTheme(t){EMQ_THEME=t;sset('emqTheme',t);applyTheme(t);}
+applyTheme(EMQ_THEME);
+if(window.matchMedia){var mq=matchMedia('(prefers-color-scheme: dark)');if(mq.addEventListener)mq.addEventListener('change',function(){if(EMQ_THEME==='auto')applyTheme('auto');});}
+</script>
 [StyleSheet]
 <script>
+var ADMIN='[IsAdmin]'==='1';
 var activeMenu=null;
-function showMenu(e,m){hideMenu();m.style.left=e.pageX+'px';m.style.top=e.pageY+'px';m.style.display='block';activeMenu=m;e.preventDefault();}
+function showMenu(e,m){
+ hideMenu();m.style.display='block';activeMenu=m;
+ // kept on screen: a menu opened near the right edge or on a phone moves left
+ var x=e.pageX,maxX=window.scrollX+document.documentElement.clientWidth-m.offsetWidth-4;
+ m.style.left=Math.max(window.scrollX+4,Math.min(x,maxX))+'px';m.style.top=e.pageY+'px';
+ e.preventDefault();
+}
 function hideMenu(){if(activeMenu){activeMenu.style.display='none';activeMenu=null;}}
 document.addEventListener('click',hideMenu);
 
 // Labels arrive as plain text in the page's language; every one is escaped on its way into markup.
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// "%1".."%9" in a translated sentence.
+function emqFmt(s){var a=arguments;return String(s).replace(/%(\d)/g,function(m,i){return a[+i]==null?'':String(a[+i]);});}
 function ic(n){return '<span class="icon icon-'+n+'"></span> ';}
 // State changes are POSTed with the session cookie; nothing that acts is a link.
 function post(q){var f=document.createElement('form');f.method='POST';f.action='/';new URLSearchParams(q).forEach(function(v,k){var i=document.createElement('input');i.type='hidden';i.name=k;i.value=v;f.appendChild(i);});document.body.appendChild(f);f.submit();return false;}
@@ -111,6 +139,269 @@ var SEP='<div class="menusep"></div>';
 var STREAM_TOKEN='';
 function previewItem(path){return STREAM_TOKEN?'<a class="menuitems" href="'+esc(path+'?token='+encodeURIComponent(STREAM_TOKEN))+'" target="_blank" onclick="hideMenu()">'+ic('filetype_video')+esc('{{js:Preview}}')+'</a>'+SEP:'';}
 function setlang(code){var q=new URLSearchParams(location.search);q.set('setlang',code);location.search=q.toString();}
+
+// --- notices
+function toast(msg,err){
+ if(!msg)return;
+ var box=document.getElementById('toasts');if(!box)return;
+ var t=document.createElement('div');t.className='toast'+(err?' failed':'');t.textContent=msg;
+ t.onclick=function(){t.remove();};box.appendChild(t);
+ setTimeout(function(){t.classList.add('gone');setTimeout(function(){t.remove();},400);},err?9000:5000);
+}
+
+// --- live updates: the page's [data-live] parts are fetched again and swapped in place,
+// keeping scroll positions and ticked boxes. The page is never reloaded.
+var LIVE={busy:false};
+function curPage(){return new URLSearchParams(location.search).get('w')||'transfer';}
+// where an action sends the page back to: this page, and the open conversation
+function curRet(){var q=new URLSearchParams(location.search),r=curPage();if(q.get('peer'))r+='&peer='+q.get('peer');return r;}
+function liveRegions(){return document.querySelectorAll('[data-live]');}
+function liveUrl(){var q=new URLSearchParams(location.search);q.delete('setlang');if(STREAM_TOKEN)q.set('st',STREAM_TOKEN);return '/?'+q.toString();}
+function liveApply(html){
+ var doc=new DOMParser().parseFromString(html,'text/html');
+ // the login page instead: the session ran out
+ if(doc.querySelector('form[name=login]')){location.reload();return;}
+ liveRegions().forEach(function(old){
+  var neu=doc.querySelector('[data-live="'+old.getAttribute('data-live')+'"]');if(!neu)return;
+  var ticked={};old.querySelectorAll('input[type=checkbox]').forEach(function(c){if(c.name&&c.value)ticked[c.name+'\n'+c.value]=c.checked;});
+  var sc=old.scrollTop,atEnd=old.scrollHeight-old.scrollTop-old.clientHeight<8;
+  old.innerHTML=neu.innerHTML;
+  old.querySelectorAll('input[type=checkbox]').forEach(function(c){var k=c.name+'\n'+c.value;if(k in ticked)c.checked=ticked[k];});
+  old.scrollTop=old.hasAttribute('data-stick-end')&&atEnd?old.scrollHeight:sc;
+ });
+ doc.querySelectorAll('#ui-notice,[data-notice] p').forEach(function(n){toast(n.textContent,n.classList.contains('failed'));});
+ document.dispatchEvent(new Event('emq:live'));
+}
+function liveRefresh(){
+ if(LIVE.busy||!liveRegions().length)return;
+ LIVE.busy=true;
+ fetch(liveUrl(),{cache:'no-store',credentials:'same-origin'}).then(function(r){return r.text();})
+  .then(liveApply).catch(function(){}).then(function(){LIVE.busy=false;});
+}
+function liveBlocked(){
+ if(document.hidden||activeMenu||DROP.on)return true;
+ // typing inside a part that would be swapped
+ var a=document.activeElement;
+ return !!(a&&a.closest&&a.closest('[data-live]')&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)&&a.type!=='checkbox');
+}
+setInterval(function(){if(!liveBlocked())liveRefresh();},3000);
+
+// An action without leaving the page: the answer is this page again, swapped in.
+function ajaxPost(body){
+ if(!(body instanceof FormData)&&!(body instanceof URLSearchParams))body=new URLSearchParams(body);
+ if(!body.has('ret'))body.append('ret',curRet());
+ LIVE.busy=true;
+ return fetch('/',{method:'POST',credentials:'same-origin',body:body}).then(function(r){return r.text();})
+  .then(liveApply).catch(function(){toast('{{js:Could not reach the eMule core.}}',true);})
+  .then(function(){LIVE.busy=false;});
+}
+// <form class="ajax">: the pressed button's name/value travels along; data-reset empties it after.
+document.addEventListener('submit',function(e){
+ var f=e.target;if(!f.classList||!f.classList.contains('ajax'))return;
+ e.preventDefault();
+ var b=e.submitter,fd=new FormData(f);
+ if(b&&b.name)fd.set(b.name,b.value);
+ if(f.classList.contains('bulk')&&!f.querySelector('tbody input[type=checkbox]:checked')){toast('{{js:Tick one or more rows first.}}',true);return;}
+ var files=f.querySelector('input[type=file]');
+ ajaxPost(files?fd:new URLSearchParams(fd)).then(function(){if(f.hasAttribute('data-reset'))f.reset();});
+});
+// A bulk menu (priority, category): its option value is "op" or "op:cat".
+function bulkSelect(sel){
+ var f=sel.form,v=sel.value;sel.selectedIndex=0;if(!v)return;
+ if(!f.querySelector('tbody input[type=checkbox]:checked')){toast('{{js:Tick one or more rows first.}}',true);return;}
+ var fd=new URLSearchParams(new FormData(f)),p=v.split(':');fd.set('op',p[0]);if(p.length>1)fd.set('cat',p[1]);
+ ajaxPost(fd);
+}
+document.addEventListener('change',function(e){
+ var c=e.target;if(!c.classList||!c.classList.contains('checkall'))return;
+ var f=c.closest('form');if(!f)return;
+ f.querySelectorAll('tbody tr:not([hidden]) input[type=checkbox]').forEach(function(x){x.checked=c.checked;});
+});
+
+// --- list filter: a text box and a status menu above every table marked data-filter
+function filterInit(){
+ document.querySelectorAll('table[data-filter]').forEach(function(t){
+  var key=t.getAttribute('data-filter'),bar=document.querySelector('.filterbar[data-for="'+key+'"]');
+  if(!bar){
+   var host=t.closest('[data-live]')||t;
+   bar=document.createElement('div');bar.className='filterbar';bar.setAttribute('data-for',key);
+   bar.innerHTML='<input type="search" class="flt-text" placeholder="'+esc('{{js:Filter}}')+'" aria-label="'+esc('{{js:Filter}}')+'">'
+    +' <select class="flt-status" aria-label="'+esc('{{js:Status}}')+'"><option value="">'+esc('{{js:All}}')+'</option></select>'
+    +' <span class="flt-count"></span>';
+   host.parentNode.insertBefore(bar,host);
+   bar.querySelector('.flt-text').value=sget('flt:'+key,true)||'';
+   bar.dataset.status=sget('flts:'+key,true)||'';
+   bar.querySelector('.flt-text').addEventListener('input',function(){sset('flt:'+key,this.value,true);filterApply(key);});
+   bar.querySelector('.flt-status').addEventListener('change',function(){bar.dataset.status=this.value;sset('flts:'+key,this.value,true);filterApply(key);});
+  }
+  filterApply(key);
+ });
+}
+function filterApply(key){
+ var t=document.querySelector('table[data-filter="'+key+'"]'),bar=document.querySelector('.filterbar[data-for="'+key+'"]');
+ if(!t||!bar||!t.tBodies.length)return;
+ var txt=bar.querySelector('.flt-text').value.trim().toLowerCase(),st=bar.dataset.status||'',sel=bar.querySelector('.flt-status');
+ var rows=[].slice.call(t.tBodies[0].rows).filter(function(r){return !r.classList.contains('flt-skip');});
+ // the status menu lists what the rows have
+ var names={},order=[];
+ rows.forEach(function(r){var s=r.getAttribute('data-status');if(s&&!(s in names)){names[s]=r.getAttribute('data-status-text')||s;order.push(s);}});
+ var want=order.join('|');
+ if(sel.dataset.have!==want){
+  sel.innerHTML='<option value="">'+esc('{{js:All}}')+'</option>'+order.map(function(s){return '<option value="'+esc(s)+'">'+esc(names[s])+'</option>';}).join('');
+  sel.dataset.have=want;
+ }
+ sel.hidden=!order.length;
+ if(st&&!(st in names))st='';
+ sel.value=st;
+ var shown=0;
+ rows.forEach(function(r){var ok=(!txt||r.textContent.toLowerCase().indexOf(txt)>=0)&&(!st||r.getAttribute('data-status')===st);r.hidden=!ok;if(ok)shown++;});
+ bar.querySelector('.flt-count').textContent=(txt||st)?emqFmt('{{js:%1 of %2 shown}}',shown,rows.length):'';
+}
+document.addEventListener('emq:live',filterInit);
+
+// --- drag and drop, and paste: files and links go to the network that takes them
+var DROP={on:false,depth:0};
+function dropHas(e){var t=e.dataTransfer&&e.dataTransfer.types;return !!t&&[].some.call(t,function(x){return x==='Files'||x==='text/uri-list'||x==='text/plain';});}
+function dropShow(on){DROP.on=on;var o=document.getElementById('dropzone');if(o)o.hidden=!on;}
+function isLink(s){return /^(ed2k|ed3k):\/\/|^magnet:\?|^https?:\/\//i.test(s);}
+function linksIn(text){return String(text||'').split(/[\s]+/).map(function(s){return s.trim();}).filter(isLink);}
+function addThings(files,links){
+ if(!ADMIN){toast('{{js:Guests cannot add downloads}}',true);return;}
+ if(!files.length&&!links.length){toast('{{js:Nothing to add: drop .torrent, .nzb, .emulecollection or link container files, or ed2k, ed3k, magnet or web links.}}',true);return;}
+ var fd=new FormData();fd.append('w','add');
+ files.forEach(function(f){fd.append('files',f,f.name);});
+ if(links.length)fd.append('links',links.join('\n'));
+ toast(emqFmt('{{js:Adding %1 item(s)…}}',files.length+links.length));
+ ajaxPost(fd);
+}
+document.addEventListener('dragenter',function(e){if(!dropHas(e))return;DROP.depth++;dropShow(true);e.preventDefault();});
+document.addEventListener('dragover',function(e){if(DROP.on)e.preventDefault();});
+document.addEventListener('dragleave',function(){if(DROP.on&&--DROP.depth<=0){DROP.depth=0;dropShow(false);}});
+document.addEventListener('drop',function(e){
+ if(!DROP.on)return;
+ e.preventDefault();DROP.depth=0;dropShow(false);
+ var dt=e.dataTransfer;
+ addThings([].slice.call(dt.files||[]),dt.files&&dt.files.length?[]:linksIn(dt.getData('text/uri-list')||dt.getData('text/plain')));
+});
+document.addEventListener('paste',function(e){
+ if(/INPUT|TEXTAREA|SELECT/.test((e.target||{}).tagName||'')||e.target.isContentEditable)return;
+ var links=linksIn((e.clipboardData||window.clipboardData).getData('text'));
+ if(links.length&&confirm(emqFmt('{{js:Add %1 pasted link(s)?}}',links.length)+'\n\n'+links.join('\n')))addThings([],links);
+});
+
+// --- header: speeds, unread messages and finished downloads, polled
+var NOTIFY_ON=sget('emqNotify')==='1';
+function canNotify(){return 'Notification' in window&&window.isSecureContext;}
+function notify(title,body){
+ toast(title+': '+body);
+ if(NOTIFY_ON&&canNotify()&&Notification.permission==='granted'){try{new Notification(title,{body:body,icon:'app-icon-192.png'});}catch(e){}}
+}
+function notifyToggle(){
+ hideMenu();
+ if(NOTIFY_ON){NOTIFY_ON=false;sset('emqNotify','0');toast('{{js:Notifications off.}}');return;}
+ if(!canNotify()){toast('{{js:Browser notifications need HTTPS, or the page opened as localhost. Pop-ups on this page still show.}}',true);NOTIFY_ON=true;sset('emqNotify','1');return;}
+ Notification.requestPermission().then(function(p){
+  NOTIFY_ON=p==='granted';sset('emqNotify',NOTIFY_ON?'1':'0');
+  toast(NOTIFY_ON?'{{js:Notifications on: finished and failed downloads and new messages.}}':'{{js:The browser refused notifications.}}',!NOTIFY_ON);
+ });
+}
+var SEEN=null;
+function statusDiff(j){
+ // the first poll of a tab only learns what is already there
+ var now={};(j.done||[]).forEach(function(x){now['d'+x[0]]=x[1];});(j.failed||[]).forEach(function(x){now['f'+x[0]]=x[1];});
+ if(!SEEN){try{SEEN=JSON.parse(sget('emqSeen',true)||'null');}catch(e){SEEN=null;}}
+ if(SEEN){
+  Object.keys(now).forEach(function(k){if(!(k in SEEN))notify(k[0]==='d'?'{{js:Download completed}}':'{{js:Download failed}}',now[k]);});
+ }
+ SEEN={};Object.keys(now).forEach(function(k){SEEN[k]=1;});
+ sset('emqSeen',JSON.stringify(SEEN),true);
+ // unread messages: counted from the last visit of the Messages page
+ var inCount=+j.chatIn||0,seen=sget('emqChatSeen');
+ if(seen===null||curPage()==='messages'||+seen>inCount){sset('emqChatSeen',String(inCount));seen=inCount;}
+ var prev=+(sget('emqChatLast',true)||inCount);
+ if(inCount>prev&&curPage()!=='messages')notify('{{js:New message}}',emqFmt('{{js:%1 unread}}',inCount-(+seen)));
+ sset('emqChatLast',String(inCount),true);
+ var b=document.getElementById('chat-badge');if(b){var n=inCount-(+seen);b.textContent=n>0?String(n):'';b.hidden=n<=0;}
+}
+function statusPoll(){
+ if(document.hidden)return;
+ fetch('/ui/status',{cache:'no-store',credentials:'same-origin'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
+  if(!j)return;
+  var d=document.getElementById('hdr-down'),u=document.getElementById('hdr-up'),s=document.getElementById('hdr-server');
+  if(d&&j.down!=null)d.textContent=j.down;if(u&&j.up!=null)u.textContent=j.up;if(s&&j.server!=null)s.textContent=j.server;
+  var m=document.getElementById('speedmenu');
+  if(m&&j.limitDown!=null){m.dataset.down=j.limitDown;m.dataset.up=j.limitUp;m.dataset.alt=j.altSpeed?'1':'0';}
+  statusDiff(j);
+ }).catch(function(){});
+}
+setInterval(statusPoll,5000);
+
+// --- speed menu: presets of the line's capacity, own values, turtle mode
+function speedPreset(kind,v){hideMenu();var q={w:'speed'};q[kind]=v;ajaxPost(q);}
+function speedMenu(e){
+ e.stopPropagation();
+ var m=document.getElementById('speedmenu'),d=+m.dataset.down,u=+m.dataset.up,cd=+m.dataset.capdown,cu=+m.dataset.capup;
+ function col(kind,label,cur,cap){
+  var h='<div class="sm-col"><div class="sm-head">'+esc(label)+'</div>';
+  h+='<a class="menuitems'+(cur===0?' sm-cur':'')+'" href="#" onclick="speedPreset(\''+kind+'\',0);return false;">'+esc('{{js:Unlimited}}')+'</a>';
+  if(cap>0)[10,25,50,75,100].forEach(function(p){var v=Math.max(1,Math.round(cap*p/100));
+   h+='<a class="menuitems'+(cur===v?' sm-cur':'')+'" href="#" onclick="speedPreset(\''+kind+'\','+v+');return false;">'+p+'% &middot; '+v+' '+esc('{{js:KB/s}}')+'</a>';});
+  h+='<div class="sm-own"><input type="number" min="0" max="1000000" class="sm-'+kind+'" value="'+cur+'"> '+esc('{{js:KB/s}}')+'</div></div>';
+  return h;
+ }
+ var h='<div class="sm-cols">'+col('maxdown','{{js:Download}}',d,cd)+col('maxup','{{js:Upload}}',u,cu)+'</div>'
+  +'<div class="sm-foot"><label><input type="checkbox" id="sm-alt"'+(m.dataset.alt==='1'?' checked':'')+'> '+esc('{{js:Alternative speed (turtle)}}')+'</label>'
+  +' <button type="button" id="sm-apply">'+esc('{{js:Apply}}')+'</button></div>';
+ m.innerHTML=h;
+ m.onclick=function(ev){ev.stopPropagation();};
+ document.getElementById('sm-apply').onclick=function(){
+  hideMenu();ajaxPost({w:'speed',maxdown:m.querySelector('.sm-maxdown').value,maxup:m.querySelector('.sm-maxup').value,
+   alt:document.getElementById('sm-alt').checked?'1':'0'});
+ };
+ showMenu(e,m);
+}
+
+// --- app menu: install, magnet links, notifications
+var INSTALL=null;
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();INSTALL=e;});
+function appInstall(){
+ hideMenu();
+ if(INSTALL){INSTALL.prompt();INSTALL=null;return;}
+ toast('{{js:Use the browser menu: Install app, or Share and Add to Home Screen. Browsers offer it on HTTPS or localhost.}}');
+}
+function magnetHandler(){
+ hideMenu();
+ try{navigator.registerProtocolHandler('magnet',location.origin+'/?w=addlink&link=%s');toast('{{js:Asked the browser to open magnet links here.}}');}
+ catch(e){toast('{{js:This browser cannot open magnet links here (it needs HTTPS or localhost).}}',true);}
+}
+function appMenu(e){
+ e.stopPropagation();
+ var m=document.getElementById('appmenu');
+ m.innerHTML='<a class="menuitems" href="#" onclick="notifyToggle();return false;">'+ic(NOTIFY_ON?'l_timer_off':'l_timer')+esc(NOTIFY_ON?'{{js:Turn notifications off}}':'{{js:Notify me of finished downloads}}')+'</a>'
+  +'<a class="menuitems" href="#" onclick="magnetHandler();return false;">'+ic('l_ed2klink')+esc('{{js:Open magnet links here}}')+'</a>'
+  +'<a class="menuitems" href="#" onclick="appInstall();return false;">'+ic('l_add')+esc('{{js:Install as app}}')+'</a>'
+  +SEP+'<a class="menuitems" href="?w=addlink" onclick="hideMenu()">'+ic('l_add')+esc('{{js:Add Links…}}')+'</a>';
+ showMenu(e,m);
+}
+
+// --- phones: a long press opens the row menus a right click opens
+(function(){
+ var t=null;
+ document.addEventListener('touchstart',function(e){
+  if(e.touches.length!==1)return;
+  var tr=e.target.closest&&e.target.closest('tr[oncontextmenu],#un-list tr');if(!tr)return;
+  var p=e.touches[0];
+  t=setTimeout(function(){t=null;tr.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:p.clientX,clientY:p.clientY,view:window}));},550);
+ },{passive:true});
+ ['touchend','touchmove','touchcancel'].forEach(function(n){document.addEventListener(n,function(){if(t){clearTimeout(t);t=null;}},{passive:true});});
+})();
+
+document.addEventListener('DOMContentLoaded',function(){
+ var ts=document.getElementById('theme-select');if(ts)ts.value=EMQ_THEME;
+ var n=document.getElementById('ui-notice');if(n)setTimeout(function(){n.hidden=true;},9000);
+ filterInit();
+ statusPoll();
+});
 
 function downmenu(e,hash,st){
  var m=document.getElementById('downmenu');
@@ -166,34 +457,38 @@ function sharedmenu(e,link,hash){
 <body>
 
 <div class="topbar">
- <table border="0" cellpadding="0" cellspacing="0" width="100%">
-  <tr>
-   <td class="topbar-left">
-    <span class="icon icon-h_emule" style="vertical-align:middle"></span>
-    <b>[eMuleAppName] [version]</b>
-   </td>
-   <td class="topbar-right" align="right">
-    <span class="status-text">[ServerName]</span>
-    &nbsp;&nbsp;
-    <span class="icon icon-arrow_down" style="vertical-align:middle"></span> [SpeedDown] {{KB/s}}
-    &nbsp;
-    <span class="icon icon-arrow_up" style="vertical-align:middle"></span> [SpeedUp] {{KB/s}}
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    <select class="lang-select" title="{{Language}}" onchange="setlang(this.value)">[LanguageOptions]</select>
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    <a href="#" onclick="return post('w=logout')"><span class="icon icon-l_logout" style="vertical-align:middle"></span> {{Logout}}</a>
-   </td>
-  </tr>
- </table>
+ <div class="topbar-left">
+  <span class="icon icon-h_emule" style="vertical-align:middle"></span>
+  <b>[eMuleAppName] [version]</b>
+ </div>
+ <div class="topbar-right">
+  <span class="status-text" id="hdr-server">[ServerName]</span>
+  <span class="hdr-speeds">
+   <span class="icon icon-arrow_down" style="vertical-align:middle"></span> <span id="hdr-down">[SpeedDown]</span> {{KB/s}}
+   <span class="icon icon-arrow_up" style="vertical-align:middle"></span> <span id="hdr-up">[SpeedUp]</span> {{KB/s}}
+  </span>
+  <a href="#" class="hdr-btn admin-only" title="{{Speed limits}}" onclick="speedMenu(event);return false;"><span class="icon icon-l_speed" style="vertical-align:middle"></span> {{Limits}}</a>
+  <select class="lang-select" id="theme-select" title="{{Theme}}" aria-label="{{Theme}}" onchange="setTheme(this.value)">
+   <option value="auto">{{Theme: Auto}}</option>
+   <option value="classic">{{Theme: Classic}}</option>
+   <option value="light">{{Theme: Light}}</option>
+   <option value="dark">{{Theme: Dark}}</option>
+  </select>
+  <select class="lang-select" title="{{Language}}" aria-label="{{Language}}" onchange="setlang(this.value)">[LanguageOptions]</select>
+  <a href="#" class="hdr-btn" title="{{More}}" onclick="appMenu(event);return false;">&#8942;</a>
+  <a href="#" class="hdr-btn" onclick="return post('w=logout')"><span class="icon icon-l_logout" style="vertical-align:middle"></span> {{Logout}}</a>
+ </div>
 </div>
 
 <div class="nav">
  <div class="nav-main">
   <div class="nav-tab [Page_transfer]"><a href="?w=transfer"><span class="icon icon-h_transfer"></span><br>{{Transfer}}</a></div>
+  <div class="nav-tab [Page_ed3k]" [Ed3kTabHidden]><a href="?w=ed3k"><span class="icon icon-h_ed3k"></span><br>{{ed3k}}</a></div>
   <div class="nav-tab [Page_kad]"><a href="?w=kad"><span class="icon icon-h_kad"></span><br>{{Kad}}</a></div>
   <div class="nav-tab [Page_server]"><a href="?w=server"><span class="icon icon-h_server"></span><br>{{Server}}</a></div>
   <div class="nav-tab [Page_search]"><a href="?w=search"><span class="icon icon-h_search"></span><br>{{Search}}</a></div>
   <div class="nav-tab [Page_shared]"><a href="?w=shared"><span class="icon icon-h_shared"></span><br>{{Shared}}</a></div>
+  <div class="nav-tab [Page_messages]"><a href="?w=messages"><span class="icon icon-h_messages"></span><span class="badge" id="chat-badge" hidden></span><br>{{Messages}}</a></div>
   <div class="nav-tab [Page_usenet]"><a href="?w=usenet"><span class="icon icon-h_usenet"></span><br>{{Usenet}}</a></div>
   <div class="nav-tab [Page_torrents]"><a href="?w=torrents"><span class="icon icon-h_torrent"></span><br>{{Torrents}}</a></div>
   <div class="nav-tab [Page_hoster]"><a href="?w=hoster"><span class="icon icon-h_hoster"></span><br>{{Hoster}}</a></div>
@@ -205,9 +500,16 @@ function sharedmenu(e,link,hash){
   <a class="nav-link [Page_sinfo]" href="?w=sinfo"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Server Info}}</a><br>
   <a class="nav-link [Page_log]" href="?w=log"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Log}}</a><br>
   <a class="nav-link [Page_debuglog]" href="?w=debuglog"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Debug}}</a><br>
+  <a class="nav-link [Page_scheduler]" href="?w=scheduler"><span class="icon icon-l_scheduler" style="vertical-align:middle"></span>&nbsp;{{Scheduler}}</a><br>
   <a class="nav-link [Page_myinfo]" href="?w=myinfo"><span class="icon icon-l_info" style="vertical-align:middle"></span>&nbsp;{{My Info}}</a>
  </div>
 </div>
+[UiNotice]
+<div id="speedmenu" class="popmenu speedmenu" data-down="[LimitDown]" data-up="[LimitUp]" data-capdown="[CapDown]" data-capup="[CapUp]" data-alt="[AltSpeed]"></div>
+<div id="appmenu" class="popmenu"></div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<div id="dropzone" class="dropzone" hidden><div>{{Drop to add: .torrent, .nzb, .emulecollection, link containers, or links}}</div></div>
+<script>if(!ADMIN)document.querySelectorAll('.topbar .admin-only').forEach(function(x){x.hidden=true;});</script>
 
 <div class="page-content">
 <--TMPL_HEADER_END-->
@@ -493,6 +795,172 @@ img { border: 0; }
 .un-details-grid { display:grid; grid-template-columns:auto 1fr auto 1fr; gap:3px 12px; margin-bottom:8px; }
 .un-details-grid .k { color:#99CCFF; }
 .un-chooser { position:fixed; left:50%; top:25%; transform:translateX(-50%); background:#005784; border:1px solid #000; padding:8px; z-index:200; min-width:380px; }
+
+/* === Header controls, notices, drag and drop === */
+.topbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:4px 12px; }
+.topbar-right { display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px; justify-content:flex-end; }
+.hdr-speeds { white-space:nowrap; }
+.hdr-btn { white-space:nowrap; padding:1px 4px; }
+.nav-tab a { position:relative; }
+/* two columns, so a fifth link does not make the bar taller */
+.nav-right { display:grid; grid-template-columns:auto auto; gap:0 14px; align-content:center; }
+.nav-right br { display:none; }
+.badge { position:absolute; top:-2px; right:-6px; background:#D00000; color:#fff; border-radius:8px; padding:0 5px; font-size:7pt; line-height:14px; }
+.ui-notice { margin:6px 12px 0; padding:4px 8px; background:#005784; border-left:3px solid #00CC00; font-weight:bold; }
+.ui-notice.failed { border-left-color:#FF4040; color:#FFB0B0; }
+.toasts { position:fixed; right:12px; bottom:12px; z-index:300; display:flex; flex-direction:column; gap:6px; max-width:min(420px, calc(100vw - 24px)); }
+.toast { background:#003C6E; border:1px solid #002244; border-left:4px solid #00CC00; padding:6px 10px; font-size:8.5pt; box-shadow:0 2px 8px rgba(0,0,0,.4); cursor:pointer; transition:opacity .4s; word-break:break-word; }
+.toast.failed { border-left-color:#FF4040; }
+.toast.gone { opacity:0; }
+.dropzone { position:fixed; inset:0; z-index:400; background:rgba(0,40,80,.75); display:flex; align-items:center; justify-content:center; pointer-events:none; }
+.dropzone div { border:3px dashed #FFC412; padding:40px 60px; font-size:14pt; font-weight:bold; color:#fff; text-align:center; max-width:80vw; }
+.speedmenu { padding:4px; min-width:300px; }
+.sm-cols { display:flex; gap:8px; }
+.sm-col { flex:1; }
+.sm-head { font-weight:bold; padding:2px 6px; border-bottom:1px solid #003C6E; margin-bottom:2px; }
+.sm-cur { font-weight:bold; color:#FFC412 !important; }
+.sm-own { padding:4px 6px; }
+.sm-own input { width:70px; }
+.sm-foot { padding:4px 6px; border-top:1px solid #003C6E; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+
+/* === List filter and bulk actions === */
+.filterbar { display:flex; align-items:center; gap:6px; padding:3px 6px; background:#003C6E; }
+.filterbar input[type="search"] { width:220px; max-width:60vw; padding:2px 4px; font-size:8pt; }
+.filterbar select { font-size:8pt; }
+.flt-count { color:#99CCFF; }
+.bulkbar { display:flex; align-items:center; flex-wrap:wrap; gap:4px; padding:3px 6px; background:#003C6E; }
+.bulkbar button, .bulkbar select { font-size:8pt; }
+.data-table td.chk, .data-table th.chk { width:18px; text-align:center; }
+
+/* === ed3k, Messages, Scheduler, Add Link === */
+.ed3k-status { width:60%; margin:6px auto; }
+.msg-wrap { display:flex; gap:8px; align-items:flex-start; }
+.msg-friends { flex:0 0 340px; max-width:100%; }
+.msg-chat { flex:1; min-width:0; }
+.data-table tr.active td { background:#2E8FC2; }
+.friend-online { color:#00FF00; }
+.chat-log { background:#FFFFFF; color:#000; height:360px; overflow-y:auto; padding:6px 8px; font-size:9pt; }
+.chat-line { padding:1px 0; word-wrap:break-word; }
+.chat-line .chat-time { color:#808080; font-size:7.5pt; }
+.chat-in b { color:#0050A0; }
+.chat-out b { color:#A05000; }
+.chat-form { display:flex; gap:4px; padding:4px 0; }
+.chat-form input[type="text"] { flex:1; padding:4px; font-size:9pt; }
+.add-friend input { width:120px; }
+form.add-friend, form.sched-add { display:block; margin-top:6px; }
+.sched-add td { padding:3px 6px; }
+.addlink-box textarea { width:100%; box-sizing:border-box; height:120px; font-size:8.5pt; }
+
+/* === Phones === */
+@media (max-width: 760px) {
+  body { font-size:9pt; }
+  .topbar { padding:6px 8px; }
+  .topbar-right { justify-content:flex-start; }
+  .nav { flex-direction:column; }
+  .nav-main { overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:thin; }
+  .nav-tab { padding:4px 8px 2px; }
+  .nav-right { display:flex; flex-direction:row; flex-wrap:wrap; gap:2px 14px; padding:4px 8px; line-height:2; }
+  .nav-right br { display:none; }
+  .page-content { padding:6px 4px; }
+  [data-live], .table-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .data-table .opt { display:none; }
+  .data-table td.left { white-space:normal; word-break:break-word; min-width:120px; }
+  .progress-bar { width:64px; }
+  table[width] { width:100% !important; }
+  .kad-table, .ed3k-status { width:100%; }
+  .menuitems { padding:8px 10px; font-size:10pt; }
+  input, select, textarea, button { font-size:16px !important; }
+  .search-form textarea, .un-panel textarea { width:100%; box-sizing:border-box; }
+  .msg-wrap { flex-direction:column; }
+  .msg-friends { flex:none; width:100%; }
+  .chat-log { height:50vh; }
+  .speedmenu { min-width:0; width:calc(100vw - 24px); }
+  .sm-cols { flex-direction:column; }
+  .un-chooser { min-width:0; width:calc(100vw - 24px); }
+  .un-cattabs { margin-left:0; }
+}
+
+/* === Themes: classic is the rules above; dark and light override them === */
+html[data-theme="dark"] body { background:#1B1D22; color:#E4E6EA; }
+html[data-theme="dark"] .topbar { background:#121418; border-bottom-color:#000; }
+html[data-theme="dark"] .status-text, html[data-theme="dark"] .flt-count { color:#9FB4CC; }
+html[data-theme="dark"] .nav { background:#24272E; border-bottom-color:#121418; }
+html[data-theme="dark"] .nav-tab.active { background:#1B1D22; }
+html[data-theme="dark"] .data-table th { background:#2C3038; }
+html[data-theme="dark"] .data-table td { background:#24272E; border-bottom-color:#1B1D22; }
+html[data-theme="dark"] .data-table tfoot td, html[data-theme="dark"] .pref-section,
+html[data-theme="dark"] .message, html[data-theme="dark"] .un-notice, html[data-theme="dark"] .ui-notice { background:#2C3038; }
+html[data-theme="dark"] .pref-row, html[data-theme="dark"] .kad-table td, html[data-theme="dark"] .search-form,
+html[data-theme="dark"] .un-panel { background:#24272E; }
+html[data-theme="dark"] .smallheader, html[data-theme="dark"] .un-toolbar, html[data-theme="dark"] .un-summary,
+html[data-theme="dark"] .filterbar, html[data-theme="dark"] .bulkbar, html[data-theme="dark"] .toast { background:#121418; border-color:#000; }
+html[data-theme="dark"] .commontext, html[data-theme="dark"] .log-box, html[data-theme="dark"] .chat-log { background:#14161A; color:#D0D4DA; }
+html[data-theme="dark"] .chat-in b { color:#7FB2F0; }
+html[data-theme="dark"] .chat-out b { color:#F0B070; }
+html[data-theme="dark"] .popmenu { background:#2C3038; border-color:#000; }
+html[data-theme="dark"] .menuitems:hover { background:#3A3F49; }
+html[data-theme="dark"] .menuitems .icon { background-color:#3A3F49; border-color:#3A3F49; }
+html[data-theme="dark"] .menusep, html[data-theme="dark"] .sm-head, html[data-theme="dark"] .sm-foot { border-color:#3A3F49; }
+html[data-theme="dark"] .lang-select { background:#2C3038; border-color:#000; }
+html[data-theme="dark"] .un-cattab { background:#2C3038; border-color:#1B1D22; }
+html[data-theme="dark"] .un-cattab.active { background:#1B1D22; }
+html[data-theme="dark"] .un-table tr.un-selected td, html[data-theme="dark"] .data-table tr.active td { background:#3A4A63; }
+html[data-theme="dark"] .un-table tr.un-file td { background:#2A2D34; }
+html[data-theme="dark"] .un-chooser { background:#2C3038; }
+html[data-theme="dark"] input[type="text"], html[data-theme="dark"] input[type="search"], html[data-theme="dark"] input[type="number"],
+html[data-theme="dark"] input[type="password"], html[data-theme="dark"] input[type="time"],
+html[data-theme="dark"] textarea, html[data-theme="dark"] select { background:#14161A; color:#E4E6EA; border:1px solid #3A3F49; }
+html[data-theme="dark"] .dl-complete, html[data-theme="dark"] .dl-complete a { color:#8FB3D9; }
+html[data-theme="dark"] .graph-box { background:#101218; border-color:#2C3038; }
+html[data-theme="dark"] .graph-title { background:#121418; }
+
+html[data-theme="light"] body { background:#F3F5F8; color:#1A1A1A; }
+html[data-theme="light"] a:active, html[data-theme="light"] a:link, html[data-theme="light"] a:visited { color:#0B4F8A; }
+html[data-theme="light"] a:hover { color:#C77700; }
+html[data-theme="light"] .topbar { background:#FFFFFF; border-bottom-color:#C8D2DE; }
+html[data-theme="light"] .status-text, html[data-theme="light"] .flt-count { color:#3B6FA0; }
+html[data-theme="light"] .nav { background:#E4EBF3; border-bottom-color:#B8C6D6; }
+html[data-theme="light"] .nav-tab a, html[data-theme="light"] .nav-link { color:#1A3550; }
+html[data-theme="light"] .nav-tab.active { background:#F3F5F8; border-bottom-color:#E09000; }
+html[data-theme="light"] .nav-tab.active a, html[data-theme="light"] .nav-link.active { color:#B06A00; }
+html[data-theme="light"] .section-header { background:#D7E2EE; color:#10253A; }
+html[data-theme="light"] .data-table th { background:#C9D7E6; color:#10253A; }
+html[data-theme="light"] .data-table th a { color:#10253A; }
+html[data-theme="light"] .data-table td { background:#FFFFFF; border-bottom-color:#E1E7EE; }
+html[data-theme="light"] .data-table tfoot td, html[data-theme="light"] .pref-section { background:#C9D7E6; color:#10253A; }
+html[data-theme="light"] .pref-row, html[data-theme="light"] .kad-table td { background:#FFFFFF; }
+html[data-theme="light"] .kad-table td[style] { color:#FFFFFF; }
+html[data-theme="light"] .search-form, html[data-theme="light"] .un-panel, html[data-theme="light"] .message,
+html[data-theme="light"] .un-notice, html[data-theme="light"] .ui-notice { background:#E9EEF4; }
+html[data-theme="light"] .smallheader, html[data-theme="light"] .un-toolbar, html[data-theme="light"] .un-summary,
+html[data-theme="light"] .filterbar, html[data-theme="light"] .bulkbar { background:#D7E2EE; color:#10253A; }
+html[data-theme="light"] .toast { background:#FFFFFF; color:#1A1A1A; border-color:#9FB0C3; }
+html[data-theme="light"] .popmenu { background:#FFFFFF; border-color:#9FB0C3; }
+html[data-theme="light"] .popmenu a, html[data-theme="light"] .popmenu a:link, html[data-theme="light"] .popmenu a:visited { color:#1A1A1A; }
+html[data-theme="light"] .menuitems:hover { background:#DDE7F2; }
+html[data-theme="light"] .menuitems .icon { background-color:transparent; border-color:transparent; }
+html[data-theme="light"] .menusep, html[data-theme="light"] .sm-head, html[data-theme="light"] .sm-foot { border-color:#C8D2DE; }
+html[data-theme="light"] .sm-cur { color:#B06A00 !important; }
+html[data-theme="light"] .lang-select { background:#FFFFFF; color:#1A1A1A; border-color:#9FB0C3; }
+html[data-theme="light"] .un-cattab { background:#E4EBF3; border-color:#C8D2DE; }
+html[data-theme="light"] .un-cattab.active { background:#FFFFFF; }
+html[data-theme="light"] .un-table tr.un-selected td, html[data-theme="light"] .data-table tr.active td { background:#CFE0F5; }
+html[data-theme="light"] .un-table tr.un-file td { background:#F4F7FA; }
+html[data-theme="light"] .un-chooser { background:#FFFFFF; border-color:#9FB0C3; }
+html[data-theme="light"] .dl-downloading, html[data-theme="light"] .dl-downloading a,
+html[data-theme="light"] .ul-uploading, html[data-theme="light"] .ul-uploading a,
+html[data-theme="light"] .srv-connected, html[data-theme="light"] .srv-connected a,
+html[data-theme="light"] .friend-online { color:#0A7A0A; }
+html[data-theme="light"] .dl-paused, html[data-theme="light"] .dl-paused a, html[data-theme="light"] .dl-stopped,
+html[data-theme="light"] .dl-stopped a, html[data-theme="light"] .un-table tr.un-paused td { color:#707070; }
+html[data-theme="light"] .dl-waiting, html[data-theme="light"] .dl-waiting a, html[data-theme="light"] .ul-connecting,
+html[data-theme="light"] .srv-disconnected, html[data-theme="light"] .srv-disconnected a { color:#1A1A1A; }
+html[data-theme="light"] .dl-hashing, html[data-theme="light"] .dl-hashing a { color:#8A7A00; }
+html[data-theme="light"] .dl-stalled, html[data-theme="light"] .dl-stalled a { color:#B06A00; }
+html[data-theme="light"] .dl-error, html[data-theme="light"] .dl-error a, html[data-theme="light"] .un-table tr.un-failed td { color:#C00000; }
+html[data-theme="light"] .un-table tr.un-post td { color:#1060B0; }
+html[data-theme="light"] .data-table tr.un-par2 td, html[data-theme="light"] .data-table tr.tf-skip td { color:#7A8A96; }
+html[data-theme="light"] .un-details-grid .k { color:#3B6FA0; }
 </style>
 <--TMPL_HEADER_STYLESHEET_END-->
 
@@ -520,16 +988,17 @@ img { border: 0; }
 <div class="section-header">
  <span class="icon icon-l_server" style="vertical-align:middle"></span>&nbsp; {{Server List}}
 </div>
-<table class="data-table">
+<div data-live="servers">
+<table class="data-table" data-filter="servers">
  <thead>
   <tr>
    <th class="left">{{Server Name}}</th>
-   <th>{{Address}}</th>
-   <th>{{Port}}</th>
-   <th>{{Description}}</th>
-   <th>{{Ping}}</th>
+   <th class="opt">{{Address}}</th>
+   <th class="opt">{{Port}}</th>
+   <th class="opt">{{Description}}</th>
+   <th class="opt">{{Ping}}</th>
    <th>{{Users}}</th>
-   <th>{{Files}}</th>
+   <th class="opt">{{Files}}</th>
    <th>{{Status}}</th>
   </tr>
  </thead>
@@ -537,18 +1006,19 @@ img { border: 0; }
  [ServerList]
  </tbody>
 </table>
+</div>
 <--TMPL_SERVER_LIST_END-->
 
 
 <--TMPL_SERVER_LINE-->
-<tr class="srv-[ServerStatus]" data-ip="[ServerAddr]" data-port="[ServerPort]" oncontextmenu="servermenu(event,this.dataset.ip,this.dataset.port)">
+<tr class="srv-[ServerStatus]" data-ip="[ServerAddr]" data-port="[ServerPort]" data-status="[ServerStatus]" data-status-text="[ServerStatusText]" oncontextmenu="servermenu(event,this.dataset.ip,this.dataset.port)">
  <td class="left">[ServerName]</td>
- <td class="center">[ServerAddr][ServerAddr6]</td>
- <td class="center">[ServerPort]</td>
- <td class="left">[ServerDescription]</td>
- <td class="center">[ServerPing]</td>
+ <td class="center opt">[ServerAddr][ServerAddr6]</td>
+ <td class="center opt">[ServerPort]</td>
+ <td class="left opt">[ServerDescription]</td>
+ <td class="center opt">[ServerPing]</td>
  <td class="center">[ServerUsers]</td>
- <td class="center">[ServerFiles]</td>
+ <td class="center opt">[ServerFiles]</td>
  <td class="center"><span class="icon icon-[ServerStatus]" style="vertical-align:middle"></span> [ServerStatusText]</td>
 </tr>
 <--TMPL_SERVER_LINE_END-->
@@ -612,21 +1082,44 @@ img { border: 0; }
 
 <--TMPL_TRANSFER_DOWN_HEADER-->
 <script>STREAM_TOKEN='[StreamToken]';</script>
+<form action="/" method="POST" class="ajax bulk" id="dl-form">
+<input type="hidden" name="w" value="transfer">
 <div class="section-header">
  <span class="icon icon-arrow_down" style="vertical-align:middle"></span>&nbsp;
- <b>{{Downloads}} ([DownloadCount])</b>
+ <b>{{Downloads}} (<span data-live="dlcount">[DownloadCount]</span>)</b>
 </div>
-<table class="data-table">
+<div class="bulkbar" [AdminHidden]>
+ <label><input type="checkbox" class="checkall"> {{All}}</label>
+ <button type="submit" name="op" value="resume">{{Resume}}</button>
+ <button type="submit" name="op" value="pause">{{Pause}}</button>
+ <button type="submit" name="op" value="stop">{{Stop}}</button>
+ <button type="submit" name="op" value="cancel" onclick="return confirm('{{js:Cancel the ticked downloads?}}')">{{Cancel}}</button>
+ <select onchange="bulkSelect(this)" aria-label="{{Priority}}">
+  <option value="">{{Priority…}}</option>
+  <option value="priolow">{{Low}}</option>
+  <option value="prionormal">{{Normal}}</option>
+  <option value="priohigh">{{High}}</option>
+  <option value="prioauto">{{Auto}}</option>
+ </select>
+ <select onchange="bulkSelect(this)" aria-label="{{Category}}">
+  <option value="">{{Category…}}</option>
+  [TransferCategoryOptions]
+ </select>
+ <button type="button" onclick="ajaxPost({w:'transfer',op:'clearcompleted'})">{{Clear Completed}}</button>
+</div>
+<div data-live="downloads">
+<table class="data-table" data-filter="downloads">
  <thead>
   <tr>
+   <th class="chk" [AdminHidden]></th>
    <th class="left">{{File Name}}</th>
    <th>{{Size}}</th>
-   <th>{{Completed}}</th>
+   <th class="opt">{{Completed}}</th>
    <th>{{Progress}}</th>
    <th>{{Speed}}</th>
-   <th>{{Sources}}</th>
-   <th>{{Priority}}</th>
-   <th>{{Confidence}}</th>
+   <th class="opt">{{Sources}}</th>
+   <th class="opt">{{Priority}}</th>
+   <th class="opt">{{Confidence}}</th>
   </tr>
  </thead>
  <tbody>
@@ -635,12 +1128,15 @@ img { border: 0; }
 <--TMPL_TRANSFER_DOWN_FOOTER-->
  </tbody>
 </table>
+</div>
+</form>
 <br>
 <--TMPL_TRANSFER_DOWN_FOOTER_END-->
 
 
 <--TMPL_TRANSFER_DOWN_LINE-->
-<tr oncontextmenu="downmenu(event,'[DownloadFileHash]','[DownloadStatusKey]')">
+<tr data-status="[DownloadStatusKey]" data-status-text="[DownloadStatusText]" oncontextmenu="downmenu(event,'[DownloadFileHash]','[DownloadStatusKey]')">
+ <td class="chk" [AdminHidden]><input type="checkbox" name="file" value="[DownloadFileHash]"></td>
  <td class="left">
   <span class="icon icon-[DownloadStatus]" style="vertical-align:middle"></span>
   &nbsp;
@@ -651,7 +1147,7 @@ img { border: 0; }
   &nbsp;[DownloadFileName]
  </td>
  <td class="right">[DownloadFileSize]</td>
- <td class="right">[DownloadCompleted]</td>
+ <td class="right opt">[DownloadCompleted]</td>
  <td class="center">
   <div class="progress-bar">
    <div class="progress-fill" style="width:[DownloadPercent]%"></div>
@@ -659,9 +1155,9 @@ img { border: 0; }
   </div>
  </td>
  <td class="right">[DownloadSpeed]</td>
- <td class="center">[DownloadSources]</td>
- <td class="center">[DownloadPriority]</td>
- <td class="center confidence-[DownloadConfidenceKey]" title="[DownloadConfidenceTitle]">[DownloadConfidence]</td>
+ <td class="center opt">[DownloadSources]</td>
+ <td class="center opt">[DownloadPriority]</td>
+ <td class="center opt confidence-[DownloadConfidenceKey]" title="[DownloadConfidenceTitle]">[DownloadConfidence]</td>
 </tr>
 <--TMPL_TRANSFER_DOWN_LINE_END-->
 
@@ -671,13 +1167,14 @@ img { border: 0; }
  <span class="icon icon-arrow_up" style="vertical-align:middle"></span>&nbsp;
  <b>{{Uploads}}</b>
 </div>
+<div data-live="uploads">
 <table class="data-table">
  <thead>
   <tr>
    <th class="left">{{User Name}}</th>
-   <th>{{Client}}</th>
+   <th class="opt">{{Client}}</th>
    <th class="left">{{File Name}}</th>
-   <th>{{Transferred}}</th>
+   <th class="opt">{{Transferred}}</th>
    <th>{{Speed}}</th>
   </tr>
  </thead>
@@ -690,11 +1187,12 @@ img { border: 0; }
  <tfoot>
   <tr>
    <td class="left" colspan="3">{{Total}}</td>
-   <td class="center">[TotalUpTransferred]</td>
+   <td class="center opt">[TotalUpTransferred]</td>
    <td class="center">[TotalUpSpeed]</td>
   </tr>
  </tfoot>
 </table>
+</div>
 <--TMPL_TRANSFER_UP_FOOTER_END-->
 
 
@@ -708,9 +1206,9 @@ img { border: 0; }
   <span class="icon icon-is_[ClientExtra]" style="vertical-align:middle"></span>
   &nbsp;[1]
  </td>
- <td class="center">[ClientSoftV]</td>
+ <td class="center opt">[ClientSoftV]</td>
  <td class="left">[2]</td>
- <td class="right">[3]</td>
+ <td class="right opt">[3]</td>
  <td class="right">[4]</td>
 </tr>
 <--TMPL_TRANSFER_UP_LINE_END-->
@@ -1224,28 +1722,31 @@ unRestore();
   <input type="checkbox" name="paused" value="1"> {{Add paused}}&nbsp;
   <input type="submit" value="{{Add}}" [FormOff]>
  </form>
- [TorrentNotice]
+<div data-notice>[TorrentNotice]</div>
 </div>
-<form action="/" method="POST">
+<script>STREAM_TOKEN='[StreamToken]';</script>
+<form action="/" method="POST" class="ajax bulk">
  <input type="hidden" name="w" value="torrents">
- <p>[TorrentSummary] &nbsp; <a href="?w=torrents">{{Refresh}}</a></p>
- <table class="data-table">
+ <div data-live="torrents">
+ <p>[TorrentSummary]</p>
+ <table class="data-table" data-filter="torrents">
   <thead>
    <tr>
-    <th style="width:18px"></th>
+    <th class="chk"><input type="checkbox" class="checkall" aria-label="{{All}}"></th>
     <th class="left">{{Name}}</th>
-    <th>{{Size}}</th>
+    <th class="opt">{{Size}}</th>
     <th>{{Progress}}</th>
     <th class="left">{{Status}}</th>
     <th>{{Down}}</th>
-    <th>{{Up}}</th>
-    <th>{{Seeds}}</th>
-    <th>{{Peers}}</th>
-    <th>{{Ratio}}</th>
+    <th class="opt">{{Up}}</th>
+    <th class="opt">{{Seeds}}</th>
+    <th class="opt">{{Peers}}</th>
+    <th class="opt">{{Ratio}}</th>
    </tr>
   </thead>
   <tbody>[TorrentLines]</tbody>
  </table>
+ </div>
  <br>
  <button type="submit" name="op" value="resume" [FormOff]>{{Resume}}</button>
  <button type="submit" name="op" value="pause" [FormOff]>{{Pause}}</button>
@@ -1253,13 +1754,13 @@ unRestore();
  <button type="submit" name="op" value="remove" [FormOff]>{{Remove}}</button>
  <button type="submit" name="op" value="delete" [FormOff] onclick="return confirm('{{js:Remove the ticked torrents and delete their files?}}')">{{Remove and delete files}}</button>
 </form>
-[TorrentFiles]
+<div data-live="torrent-files">[TorrentFiles]</div>
 <--TMPL_TORRENTS_END-->
 
 
 <--TMPL_TORRENT_FILES-->
 <br>
-<p><b>{{Files:}}</b> [TorrentName] &nbsp; <a href="?w=torrents&amp;id=[TorrentIdUrl]">{{Refresh}}</a> &nbsp; <a href="?w=torrents">{{Close}}</a></p>
+<p><b>{{Files:}}</b> [TorrentName] &nbsp; <a href="?w=torrents">{{Close}}</a></p>
 <table class="data-table">
  <thead>
   <tr>
@@ -1296,10 +1797,10 @@ unRestore();
 
 
 <--TMPL_TORRENT_LINE-->
-<tr>
+<tr data-status="[TorrentStatusKey]" data-status-text="[TorrentStatusName]">
  <td class="center"><input type="checkbox" name="ids" value="[TorrentId]"></td>
  <td class="left" title="[TorrentTitle]"><a href="?w=torrents&amp;id=[TorrentIdUrl]">[TorrentName]</a></td>
- <td class="right">[TorrentSize]</td>
+ <td class="right opt">[TorrentSize]</td>
  <td class="center">
   <div class="progress-bar">
    <div class="progress-fill" style="width:[TorrentPercent]%"></div>
@@ -1308,10 +1809,10 @@ unRestore();
  </td>
  <td class="left">[TorrentStatus]</td>
  <td class="right">[TorrentDown]</td>
- <td class="right">[TorrentUp]</td>
- <td class="center">[TorrentSeeds]</td>
- <td class="center">[TorrentPeers]</td>
- <td class="center">[TorrentRatio]</td>
+ <td class="right opt">[TorrentUp]</td>
+ <td class="center opt">[TorrentSeeds]</td>
+ <td class="center opt">[TorrentPeers]</td>
+ <td class="center opt">[TorrentRatio]</td>
 </tr>
 <--TMPL_TORRENT_LINE_END-->
 
@@ -1342,19 +1843,20 @@ unRestore();
   {{Package:}} <input name="package" type="text" size="30">&nbsp;
   <input type="submit" value="{{Add}}" [FormOff]>
  </form>
- [HosterNotice]
+<div data-notice>[HosterNotice]</div>
 </div>
-<form action="/" method="POST">
+<form action="/" method="POST" class="ajax bulk">
  <input type="hidden" name="w" value="hoster">
- <p>[HosterSummary] &nbsp; <a href="?w=hoster">{{Refresh}}</a></p>
- <table class="data-table">
+ <div data-live="hoster">
+ <p>[HosterSummary]</p>
+ <table class="data-table" data-filter="hoster">
   <thead>
    <tr>
-    <th style="width:18px"></th>
+    <th class="chk"><input type="checkbox" class="checkall" aria-label="{{All}}"></th>
     <th class="left">{{Name}}</th>
-    <th class="left">{{Hoster}}</th>
-    <th class="left">{{Package}}</th>
-    <th>{{Size}}</th>
+    <th class="left opt">{{Hoster}}</th>
+    <th class="left opt">{{Package}}</th>
+    <th class="opt">{{Size}}</th>
     <th>{{Progress}}</th>
     <th>{{Speed}}</th>
     <th class="left">{{Status}}</th>
@@ -1362,6 +1864,7 @@ unRestore();
   </thead>
   <tbody>[HosterLines]</tbody>
  </table>
+ </div>
  <br>
  <button type="submit" name="op" value="resume" [FormOff]>{{Resume}}</button>
  <button type="submit" name="op" value="pause" [FormOff]>{{Pause}}</button>
@@ -1373,12 +1876,12 @@ unRestore();
 
 
 <--TMPL_HOSTER_LINE-->
-<tr>
+<tr data-status="[HosterStatusKey]" data-status-text="[HosterStatus]">
  <td class="center"><input type="checkbox" name="ids" value="[HosterId]"></td>
  <td class="left" title="[HosterUrl]">[HosterName]</td>
- <td class="left">[HosterHost]</td>
- <td class="left">[HosterPackage]</td>
- <td class="right">[HosterSize]</td>
+ <td class="left opt">[HosterHost]</td>
+ <td class="left opt">[HosterPackage]</td>
+ <td class="right opt">[HosterSize]</td>
  <td class="center">
   <div class="progress-bar">
    <div class="progress-fill" style="width:[HosterPercent]%"></div>
@@ -1456,15 +1959,15 @@ unRestore();
  </form>
  [SearchNotice]
 </div>
-[SearchResults]
+<div data-live="search-results">[SearchResults]</div>
 <--TMPL_SEARCH_END-->
 
 
 <--TMPL_SEARCH_RESULTS-->
 <form action="/" method="POST">
  <input type="hidden" name="w" value="search">
- <p>[SearchSummary] &nbsp; <a href="?w=search">{{Refresh}}</a></p>
- <table class="data-table">
+ <p>[SearchSummary]</p>
+ <table class="data-table" data-filter="search">
   <thead>[ResultHeader]</thead>
   <tbody>[ResultLines]</tbody>
  </table>
@@ -1476,11 +1979,11 @@ unRestore();
 <--TMPL_SEARCH_RESULT_HEADER-->
 <tr>
  <th class="left">{{File Name}}</th>
- <th>{{Network}}</th>
+ <th class="opt">{{Network}}</th>
  <th>{{Size}}</th>
- <th>{{Hash}}</th>
+ <th class="opt">{{Hash}}</th>
  <th>{{Sources}}</th>
- <th>{{Confidence}}</th>
+ <th class="opt">{{Confidence}}</th>
  <th>&nbsp;</th>
 </tr>
 <--TMPL_SEARCH_RESULT_HEADER_END-->
@@ -1489,11 +1992,11 @@ unRestore();
 <--TMPL_SEARCH_RESULT_LINE-->
 <tr>
  <td class="left"><span class="icon icon-filetype_[ResultFileType]" style="vertical-align:middle"></span>&nbsp;[ResultName]</td>
- <td class="center">[ResultNetwork]</td>
+ <td class="center opt">[ResultNetwork]</td>
  <td class="right">[ResultSize]</td>
- <td class="center" style="font-size:7pt">[ResultHash]</td>
+ <td class="center opt" style="font-size:7pt">[ResultHash]</td>
  <td class="center">[ResultSources]</td>
- <td class="center confidence-[ResultConfidenceKey]" title="[ResultConfidenceTitle]">[ResultConfidence]</td>
+ <td class="center opt confidence-[ResultConfidenceKey]" title="[ResultConfidenceTitle]">[ResultConfidence]</td>
  <td class="center"><input type="checkbox" name="downloads" value="[ResultHash]"></td>
 </tr>
 <--TMPL_SEARCH_RESULT_LINE_END-->
@@ -1509,21 +2012,23 @@ unRestore();
  <span class="icon icon-l_shared" style="vertical-align:middle"></span>&nbsp;
  <b>{{Shared Files}}</b>
 </div>
-<table class="data-table">
+<div data-live="shared">
+<table class="data-table" data-filter="shared">
  <thead>
   <tr>
    <th class="left">{{File Name}}</th>
    <th>{{Size}}</th>
-   <th>{{Requests}}</th>
-   <th>{{Accepted}}</th>
+   <th class="opt">{{Requests}}</th>
+   <th class="opt">{{Accepted}}</th>
    <th>{{Transferred}}</th>
-   <th>{{Priority}}</th>
+   <th class="opt">{{Priority}}</th>
   </tr>
  </thead>
  <tbody>
  [SharedFilesList]
  </tbody>
 </table>
+</div>
 <--TMPL_SHARED_LIST_END-->
 
 
@@ -1537,10 +2042,10 @@ unRestore();
   &nbsp;[SharedFileName]
  </td>
  <td class="right">[SharedFileSize]</td>
- <td class="center">[SharedRequests]</td>
- <td class="center">[SharedAccepted]</td>
+ <td class="center opt">[SharedRequests]</td>
+ <td class="center opt">[SharedAccepted]</td>
  <td class="right">[SharedTransferred]</td>
- <td class="center">[SharedPriority]</td>
+ <td class="center opt">[SharedPriority]</td>
 </tr>
 <--TMPL_SHARED_LINE_END-->
 
@@ -1555,6 +2060,7 @@ unRestore();
  <b>{{Statistics}}</b>
 </div>
 <br>
+<div data-live="stats">
 <table border="0" align="center" cellpadding="4" cellspacing="0" width="60%">
  <tr>
   <td class="pref-section" colspan="2">{{Session Statistics}}</td>
@@ -1596,6 +2102,7 @@ unRestore();
  </tr>
 [SaveFolderSpaceRows]
 </table>
+</div>
 <br>
 <--TMPL_STATS_END-->
 
@@ -1620,6 +2127,7 @@ unRestore();
  <b>{{Graphs}}</b>
 </div>
 <br>
+<div data-live="graphs">
 <table border="0" align="center" cellpadding="4" cellspacing="0" width="90%">
  <tr>
   <td>
@@ -1664,6 +2172,7 @@ unRestore();
   </td>
  </tr>
 </table>
+</div>
 <br>
 <--TMPL_GRAPHS_END-->
 
@@ -1751,7 +2260,7 @@ unRestore();
 <br>
 <table border="0" align="center" cellpadding="4" cellspacing="0" width="80%">
  <tr>
-  <td class="log-box"><pre>[Log]</pre></td>
+  <td class="log-box" data-live="log" data-stick-end><pre>[Log]</pre></td>
  </tr>
 </table>
 <br>
@@ -1766,7 +2275,7 @@ unRestore();
 <br>
 <table border="0" align="center" cellpadding="4" cellspacing="0" width="80%">
  <tr>
-  <td class="log-box"><pre>[DebugLog]</pre></td>
+  <td class="log-box" data-live="debuglog" data-stick-end><pre>[DebugLog]</pre></td>
  </tr>
 </table>
 <br>
@@ -1816,7 +2325,7 @@ unRestore();
  </tr>
  <tr>
   <td>{{Status}}</td>
-  <td><b>[KadStatus]</b></td>
+  <td><b data-live="kadstatus">[KadStatus]</b></td>
  </tr>
  <tr>
   <td colspan="2" style="text-align:center; padding:8px;">
@@ -1830,6 +2339,252 @@ unRestore();
 </table>
 <br>
 <--TMPL_KADDLG_END-->
+
+
+<-- ################################################################# -->
+<-- ############################ ED3K ############################### -->
+<-- ################################################################# -->
+
+<--TMPL_ED3K-->
+<div class="section-header">
+ <span class="icon icon-h_ed3k" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp; <b>{{ed3k}}</b>
+</div>
+<div data-live="ed3k-status">
+<table class="kad-table ed3k-status">
+ <tr><td colspan="2" style="background:#000;font-weight:bold">{{ed3k Network}}</td></tr>
+ <tr><td>{{Status}}</td><td><b>[Ed3kState]</b> [Ed3kReach]</td></tr>
+ <tr><td>{{Node ID}}</td><td>[Ed3kNodeId]</td></tr>
+ <tr><td>{{Contacts}}</td><td>[Ed3kContacts]</td></tr>
+ <tr><td>{{Users}}</td><td>[Ed3kUsers]</td></tr>
+ <tr><td>{{Address}}</td><td>[Ed3kEndpoints]</td></tr>
+ <tr><td>{{Speed}}</td><td>[Ed3kRates]</td></tr>
+</table>
+</div>
+<div class="search-form admin-only">
+ <form action="/" method="POST" class="ajax" data-reset>
+  <input type="hidden" name="w" value="ed3k">
+  <input type="hidden" name="op" value="add">
+  {{ed3k links, one per line:}}<br>
+  <textarea name="links" rows="2" cols="70"></textarea><br>
+  <input type="checkbox" name="paused" value="1"> {{Add paused}}&nbsp;
+  <input type="submit" value="{{Add}}" [FormOff]>
+ </form>
+</div>
+<form action="/" method="POST" class="ajax bulk">
+ <input type="hidden" name="w" value="ed3k">
+ <div class="bulkbar admin-only">
+  <label><input type="checkbox" class="checkall"> {{All}}</label>
+  <button type="submit" name="op" value="resume" [FormOff]>{{Resume}}</button>
+  <button type="submit" name="op" value="pause" [FormOff]>{{Pause}}</button>
+  <button type="submit" name="op" value="cancel" [FormOff] onclick="return confirm('{{js:Cancel the ticked downloads?}}')">{{Cancel}}</button>
+  <select onchange="bulkSelect(this)" [FormOff] aria-label="{{Priority}}">
+   <option value="">{{Priority…}}</option>
+   <option value="priolow">{{Low}}</option>
+   <option value="prionormal">{{Normal}}</option>
+   <option value="priohigh">{{High}}</option>
+  </select>
+  <button type="button" [FormOff] onclick="ajaxPost({w:'ed3k',op:'clearcompleted'})">{{Clear Completed}}</button>
+ </div>
+ <div data-live="ed3k-list">
+ <div class="un-summary">[Ed3kSummary]</div>
+ <table class="data-table" data-filter="ed3k">
+  <thead>
+   <tr>
+    <th class="chk"></th>
+    <th class="left">{{File Name}}</th>
+    <th>{{Size}}</th>
+    <th>{{Progress}}</th>
+    <th class="left">{{Status}}</th>
+    <th>{{Speed}}</th>
+    <th class="opt">{{Sources}}</th>
+    <th class="opt">{{Priority}}</th>
+   </tr>
+  </thead>
+  <tbody>[Ed3kLines]</tbody>
+ </table>
+ </div>
+</form>
+<script>if(!ADMIN)document.querySelectorAll('.page-content .admin-only').forEach(function(x){x.hidden=true;});</script>
+<--TMPL_ED3K_END-->
+
+
+<--TMPL_ED3K_LINE-->
+<tr data-status="[Ed3kStatusKey]" data-status-text="[Ed3kStatusName]">
+ <td class="chk"><input type="checkbox" name="ids" value="[Ed3kRoot]"></td>
+ <td class="left" title="[Ed3kPath]"><span class="icon icon-filetype_[Ed3kFileType]" style="vertical-align:middle"></span>&nbsp;[Ed3kName]</td>
+ <td class="right">[Ed3kSize]</td>
+ <td class="center">
+  <div class="progress-bar">
+   <div class="progress-fill" style="width:[Ed3kPercent]%"></div>
+   <div class="progress-text">[Ed3kPercent]%</div>
+  </div>
+ </td>
+ <td class="left">[Ed3kStatus]</td>
+ <td class="right">[Ed3kSpeed]</td>
+ <td class="center opt">[Ed3kSources]</td>
+ <td class="center opt">[Ed3kPriority]</td>
+</tr>
+<--TMPL_ED3K_LINE_END-->
+
+
+<--TMPL_ED3K_UNAVAILABLE-->
+<div class="section-header">
+ <span class="icon icon-h_ed3k" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp; <b>{{ed3k}}</b>
+</div>
+<div class="message">{{ed3k is off.}}</div>
+<--TMPL_ED3K_UNAVAILABLE_END-->
+
+
+<-- ################################################################# -->
+<-- ########################## MESSAGES ############################# -->
+<-- ################################################################# -->
+
+<--TMPL_MESSAGES-->
+<div class="section-header">
+ <span class="icon icon-h_messages" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp; <b>{{Messages}}</b>
+</div>
+<div class="msg-wrap">
+ <div class="msg-friends">
+  <div class="smallheader">{{Friends}} ([FriendCount])</div>
+  <div data-live="friends">
+  <table class="data-table" data-filter="friends">
+   <thead><tr><th class="left">{{Name}}</th><th>{{Status}}</th><th class="opt">{{Last Seen}}</th></tr></thead>
+   <tbody>[FriendLines]</tbody>
+  </table>
+  </div>
+  <form action="/" method="POST" class="search-form add-friend admin-only">
+   <input type="hidden" name="w" value="messages">
+   <input type="hidden" name="op" value="addfriend">
+   <b>{{Add Friend}}</b><br>
+   <input type="text" name="name" placeholder="{{Name}}" aria-label="{{Name}}">
+   <input type="text" name="hash" placeholder="{{User hash}}" aria-label="{{User hash}}" maxlength="32"><br>
+   <input type="text" name="addr" placeholder="{{IP address}}" aria-label="{{IP address}}">
+   <input type="text" name="port" placeholder="{{Port}}" aria-label="{{Port}}" size="6">
+   <input type="submit" value="{{Add}}" [FormOff]>
+  </form>
+ </div>
+ <div class="msg-chat">
+  <div class="smallheader">[ChatTitle]</div>
+  <div class="chat-log" id="chat-log" data-live="chat" data-stick-end>[ChatLines]</div>
+  <form action="/" method="POST" class="ajax chat-form" data-reset [ChatHidden]>
+   <input type="hidden" name="w" value="messages">
+   <input type="hidden" name="op" value="send">
+   <input type="hidden" name="peer" value="[ChatPeer]">
+   <input type="text" name="text" maxlength="450" autocomplete="off" placeholder="{{Type a message…}}" aria-label="{{Message}}" [FormOff]>
+   <input type="submit" value="{{Send}}" [FormOff]>
+  </form>
+  <div class="admin-only" [ChatHidden]>
+   <a href="#" data-post="w=messages&amp;op=clearchat&amp;peer=[ChatPeer]&amp;ret=messages%26peer%3D[ChatPeer]" onclick="return act(this)">{{Clear}}</a>
+   <span id="chat-unfriend" [ChatHidden]>&nbsp;|&nbsp; <a href="#" data-post="w=messages&amp;op=removefriend&amp;peer=[ChatPeer]" data-q="{{Remove this friend?}}" onclick="return act(this)">{{Remove Friend}}</a></span>
+  </div>
+ </div>
+</div>
+<script>
+(function(){
+ if(!ADMIN)document.querySelectorAll('.page-content .admin-only').forEach(function(x){x.hidden=true;});
+ if('[ChatIsFriend]'!=='1'){var u=document.getElementById('chat-unfriend');if(u)u.hidden=true;}
+ var log=document.getElementById('chat-log');if(log)log.scrollTop=log.scrollHeight;
+ var box=document.querySelector('.chat-form input[name=text]');if(box&&!box.disabled)box.focus();
+})();
+</script>
+<--TMPL_MESSAGES_END-->
+
+
+<--TMPL_FRIEND_LINE-->
+<tr class="[FriendActive]" data-status="[FriendStatusKey]" data-status-text="[FriendStatus]">
+ <td class="left"><span class="icon icon-[FriendIcon]" style="vertical-align:middle"></span>&nbsp;<a href="?w=messages&amp;peer=[FriendHash]">[FriendName]</a> <b>[FriendLines]</b></td>
+ <td class="center friend-[FriendStatusKey]">[FriendStatus]</td>
+ <td class="center opt">[FriendLastSeen]</td>
+</tr>
+<--TMPL_FRIEND_LINE_END-->
+
+
+<--TMPL_CHAT_LINE-->
+<div class="chat-line chat-[ChatDir]"><span class="chat-time">[ChatTime]</span> <b>[ChatName]:</b> [ChatText]</div>
+<--TMPL_CHAT_LINE_END-->
+
+
+<-- ################################################################# -->
+<-- ########################## SCHEDULER ############################ -->
+<-- ################################################################# -->
+
+<--TMPL_SCHEDULER-->
+<div class="section-header">
+ <span class="icon icon-l_scheduler" style="vertical-align:middle"></span>&nbsp; <b>{{Scheduler}}</b>
+</div>
+<div class="bulkbar">
+ <label><input type="checkbox" [SchedulerChecked] [FormOff] onchange="post('w=scheduler&amp;op=enable&amp;on='+(this.checked?'1':'0'))"> {{Enable scheduler}}</label>
+</div>
+<table class="data-table">
+ <thead>
+  <tr>
+   <th class="chk">{{On}}</th>
+   <th class="left">{{Title}}</th>
+   <th>{{Days}}</th>
+   <th>{{Time}}</th>
+   <th class="left">{{Actions}}</th>
+   <th></th>
+  </tr>
+ </thead>
+ <tbody>[ScheduleLines]</tbody>
+</table>
+<br>
+<form action="/" method="POST" class="search-form sched-add admin-only">
+ <input type="hidden" name="w" value="scheduler">
+ <input type="hidden" name="op" value="add">
+ <b>{{New Schedule}}</b>
+ <table>
+  <tr><td>{{Title}}</td><td><input type="text" name="title" size="30"></td></tr>
+  <tr><td>{{Days}}</td><td><select name="day">[ScheduleDayOptions]</select></td></tr>
+  <tr><td>{{Time}}</td><td><input type="time" name="start" value="00:00" required> &ndash; <input type="time" name="end"> <span class="flt-count">{{Empty end: no end time}}</span></td></tr>
+  <tr><td>{{Action}}</td><td><select name="action" id="sched-action">[ScheduleActionOptions]</select> <input type="text" name="value" id="sched-value" size="8" placeholder="{{Value}}" aria-label="{{Value}}"></td></tr>
+  <tr><td></td><td><input type="submit" value="{{Add}}" [FormOff]></td></tr>
+ </table>
+ <span class="flt-count">{{More actions per schedule: Preferences › Scheduler in the eMule window.}}</span>
+</form>
+<script>
+(function(){
+ if(!ADMIN)document.querySelectorAll('.page-content .admin-only').forEach(function(x){x.hidden=true;});
+ var a=document.getElementById('sched-action'),v=document.getElementById('sched-value');
+ function sync(){var o=a.options[a.selectedIndex];v.hidden=!o||o.getAttribute('data-value')!=='1';}
+ if(a){a.addEventListener('change',sync);sync();}
+})();
+</script>
+<--TMPL_SCHEDULER_END-->
+
+
+<--TMPL_SCHEDULE_LINE-->
+<tr data-status="[ScheduleStatusKey]">
+ <td class="chk"><input type="checkbox" [ScheduleEnabled] [FormOff] onchange="post('w=scheduler&amp;op=toggle&amp;i=[ScheduleIndex]')" aria-label="{{Enabled}}"></td>
+ <td class="left">[ScheduleTitle]</td>
+ <td class="center">[ScheduleDay]</td>
+ <td class="center">[ScheduleTime]</td>
+ <td class="left">[ScheduleActions]</td>
+ <td class="center"><a href="#" class="admin-only" data-post="w=scheduler&amp;op=remove&amp;i=[ScheduleIndex]" data-q="{{Remove this schedule?}}" onclick="return act(this)">{{Remove}}</a></td>
+</tr>
+<--TMPL_SCHEDULE_LINE_END-->
+
+
+<-- ################################################################# -->
+<-- ########################## ADD LINK ############################# -->
+<-- ################################################################# -->
+
+<--TMPL_ADDLINK-->
+<div class="section-header">
+ <span class="icon icon-l_add" style="vertical-align:middle"></span>&nbsp; <b>{{Add Links}}</b>
+</div>
+<div class="search-form addlink-box">
+ <form action="/" method="POST" enctype="multipart/form-data">
+  <input type="hidden" name="w" value="add">
+  {{ed2k, ed3k, magnet and web links, one per line:}}<br>
+  <textarea name="links">[AddLinkText]</textarea><br>
+  {{Files (.torrent, .nzb, .emulecollection, DLC, RSDF, CCF):}} <input type="file" name="files" multiple accept=".torrent,.nzb,.emulecollection,.dlc,.rsdf,.ccf"><br>
+  <input type="checkbox" name="paused" value="1"> {{Add paused}}&nbsp;
+  <input type="submit" value="{{Add}}" [FormOff]>
+ </form>
+ <p class="flt-count">{{Tip: drop files or links anywhere on any page, or paste links onto a page, to add them too.}}</p>
+</div>
+<--TMPL_ADDLINK_END-->
 
 
 <-- ################################################################# -->

@@ -169,6 +169,7 @@ void CommandLineExec::parse(QApplication& app)
             {QStringLiteral("ed3kfilters"),    OptionsDialog::PageEd3kFilters},
             {QStringLiteral("ed3kextended"),   OptionsDialog::PageEd3kExtended},
             {QStringLiteral("ed3kcredits"),    OptionsDialog::PageEd3kAutoCredits},
+            {QStringLiteral("integrations"),   OptionsDialog::PageIntegrations},
         };
         m_optionsPage = optArg.toInt(); // fallback: numeric index
         for (const auto& [name, value] : pageNames) {

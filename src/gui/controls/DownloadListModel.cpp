@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <limits>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -58,7 +59,7 @@ QString formatTimestamp(int64_t epoch, const QString& unknown)
 {
     if (epoch <= 0)
         return unknown;
-    return QLocale().toString(QDateTime::fromSecsSinceEpoch(epoch), QLocale::ShortFormat);
+    return toDisplayString(QDateTime::fromSecsSinceEpoch(epoch));
 }
 
 /// MFC appends the complete-source range to Seen Complete, also after "Never"

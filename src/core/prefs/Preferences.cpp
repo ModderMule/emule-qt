@@ -588,6 +588,16 @@ struct Preferences::Data {
     bool webServerGuestEnabled = false;
     QString webServerGuestPassword;     // pbkdf2$… of the SHA-256 hex
 
+    // Sonarr/Radarr bridge, Gluetun
+    bool arrApiEnabled = false;
+    QList<ArrInstance> arrInstances;
+    int arrWantedPollMinutes = 60;      // 0 = no synthetic feed
+    int arrSearchWaitSeconds = 30;
+    bool gluetunEnabled = false;
+    QString gluetunUrl = QStringLiteral("http://127.0.0.1:8000");
+    QString gluetunApiKey;
+    QString gluetunPortTarget = QStringLiteral("ed2k");   // ed2k | bt
+
     // Scheduler
     bool schedulerEnabled = false;
 
@@ -691,6 +701,7 @@ struct Preferences::Data {
     bool transferDoubleClick = true;
     bool showDwlPercentage = false;
     int downloadBarMode = 0;                // DownloadBarMode, 0 = MFC
+    int dateFormat = 0;                     // DateFormatMode, 0 = OS locale
     bool showActiveDownloadsBold = false;   // MFC ShowActiveDownloadsBold, INI only, off; MorphXT on
     bool showRatesInTitle = false;
     bool showStatusBarFreeSpace = false;   // #165, as qBittorrent: off
@@ -3645,6 +3656,26 @@ bool Preferences::webServerGzipEnabled() const { return get(&Data::webServerGzip
 
 void Preferences::setWebServerGzipEnabled(bool val) { set(&Data::webServerGzipEnabled, val); }
 
+bool Preferences::arrApiEnabled() const { return get(&Data::arrApiEnabled); }
+void Preferences::setArrApiEnabled(bool val) { set(&Data::arrApiEnabled, val); }
+QList<ArrInstance> Preferences::arrInstances() const { return get(&Data::arrInstances); }
+void Preferences::setArrInstances(const QList<ArrInstance>& val) { set(&Data::arrInstances, val); }
+int Preferences::arrWantedPollMinutes() const { return get(&Data::arrWantedPollMinutes); }
+void Preferences::setArrWantedPollMinutes(int val) { set(&Data::arrWantedPollMinutes, std::clamp(val, 0, 1440)); }
+int Preferences::arrSearchWaitSeconds() const { return get(&Data::arrSearchWaitSeconds); }
+void Preferences::setArrSearchWaitSeconds(int val) { set(&Data::arrSearchWaitSeconds, std::clamp(val, 5, 90)); }
+bool Preferences::gluetunEnabled() const { return get(&Data::gluetunEnabled); }
+void Preferences::setGluetunEnabled(bool val) { set(&Data::gluetunEnabled, val); }
+QString Preferences::gluetunUrl() const { return get(&Data::gluetunUrl); }
+void Preferences::setGluetunUrl(const QString& val) { set(&Data::gluetunUrl, val.trimmed()); }
+QString Preferences::gluetunApiKey() const { return get(&Data::gluetunApiKey); }
+void Preferences::setGluetunApiKey(const QString& val) { set(&Data::gluetunApiKey, val.trimmed()); }
+QString Preferences::gluetunPortTarget() const { return get(&Data::gluetunPortTarget); }
+void Preferences::setGluetunPortTarget(const QString& val)
+{
+    set(&Data::gluetunPortTarget, val == QLatin1StringView("bt") ? QStringLiteral("bt") : QStringLiteral("ed2k"));
+}
+
 QStringList Preferences::webServerCorsAllowedOrigins() const { return get(&Data::webServerCorsAllowedOrigins); }
 
 void Preferences::setWebServerCorsAllowedOrigins(const QStringList& val) { set(&Data::webServerCorsAllowedOrigins, val); }
@@ -4122,6 +4153,10 @@ void Preferences::setShowDwlPercentage(bool val) { set(&Data::showDwlPercentage,
 int Preferences::downloadBarMode() const { return get(&Data::downloadBarMode); }
 
 void Preferences::setDownloadBarMode(int val) { set(&Data::downloadBarMode, std::clamp(val, 0, 2)); }
+
+int Preferences::dateFormat() const { return get(&Data::dateFormat); }
+
+void Preferences::setDateFormat(int val) { set(&Data::dateFormat, std::clamp(val, 0, 2)); }
 
 bool Preferences::showActiveDownloadsBold() const { return get(&Data::showActiveDownloadsBold); }
 
@@ -4777,6 +4812,21 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("webServerAdminAllowHiLevFunc"), webServerAdminAllowHiLevFunc());
     prefs.insert(QStringLiteral("webServerGuestEnabled"), webServerGuestEnabled());
     prefs.insert(QStringLiteral("webServerGuestPasswordSet"), !webServerGuestPassword().isEmpty());
+    // Sonarr/Radarr bridge, Gluetun
+    prefs.insert(QStringLiteral("arrApiEnabled"), arrApiEnabled());
+    QCborArray arrList;
+    for (const ArrInstance& a : arrInstances()) {
+        arrList.append(QCborMap{{QStringLiteral("name"), a.name}, {QStringLiteral("kind"), a.kind},
+                                {QStringLiteral("url"), a.url}, {QStringLiteral("apiKey"), a.apiKey},
+                                {QStringLiteral("enabled"), a.enabled}});
+    }
+    prefs.insert(QStringLiteral("arrInstances"), arrList);
+    prefs.insert(QStringLiteral("arrWantedPollMinutes"), static_cast<qint64>(arrWantedPollMinutes()));
+    prefs.insert(QStringLiteral("arrSearchWaitSeconds"), static_cast<qint64>(arrSearchWaitSeconds()));
+    prefs.insert(QStringLiteral("gluetunEnabled"), gluetunEnabled());
+    prefs.insert(QStringLiteral("gluetunUrl"), gluetunUrl());
+    prefs.insert(QStringLiteral("gluetunApiKey"), gluetunApiKey());
+    prefs.insert(QStringLiteral("gluetunPortTarget"), gluetunPortTarget());
     return prefs;
 }
 
@@ -5184,6 +5234,44 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->webServerGuestEnabled         = p.value(QStringLiteral("webServerGuestEnabled")).toBool();
     if (const QCborValue v = p.value(QStringLiteral("webServerGuestPassword")); v.isString())
         m_data->webServerGuestPassword = upgradeWebPasswordHash(v.toString());
+
+    // Sonarr/Radarr bridge, Gluetun
+    m_data->arrApiEnabled = p.value(QStringLiteral("arrApiEnabled")).toBool();
+    m_data->arrInstances = arrInstancesFromCbor(p.value(QStringLiteral("arrInstances")).toArray());
+    if (const QCborValue v = p.value(QStringLiteral("arrWantedPollMinutes")); v.isInteger())
+        m_data->arrWantedPollMinutes = std::clamp(static_cast<int>(v.toInteger()), 0, 1440);
+    if (const QCborValue v = p.value(QStringLiteral("arrSearchWaitSeconds")); v.isInteger())
+        m_data->arrSearchWaitSeconds = std::clamp(static_cast<int>(v.toInteger()), 5, 90);
+    m_data->gluetunEnabled = p.value(QStringLiteral("gluetunEnabled")).toBool();
+    if (const QCborValue v = p.value(QStringLiteral("gluetunUrl")); v.isString())
+        m_data->gluetunUrl = v.toString();
+    m_data->gluetunApiKey = p.value(QStringLiteral("gluetunApiKey")).toString();
+    if (const QCborValue v = p.value(QStringLiteral("gluetunPortTarget")); v.isString())
+        m_data->gluetunPortTarget = v.toString() == QLatin1StringView("bt") ? QStringLiteral("bt")
+                                                                            : QStringLiteral("ed2k");
+}
+
+QList<ArrInstance> arrInstancesFromCbor(const QCborArray& list)
+{
+    QList<ArrInstance> out;
+    for (const QCborValue& v : list) {
+        const QCborMap m = v.toMap();
+        ArrInstance a;
+        a.name = m.value(QStringLiteral("name")).toString().trimmed();
+        a.kind = m.value(QStringLiteral("kind")).toString() == QLatin1StringView("radarr")
+            ? QStringLiteral("radarr") : QStringLiteral("sonarr");
+        a.url = m.value(QStringLiteral("url")).toString().trimmed();
+        a.apiKey = m.value(QStringLiteral("apiKey")).toString().trimmed();
+        a.enabled = m.value(QStringLiteral("enabled")).toBool(true);
+        if (a.url.isEmpty())
+            continue;
+        if (a.name.isEmpty())
+            a.name = a.isRadarr() ? QStringLiteral("Radarr") : QStringLiteral("Sonarr");
+        out.append(a);
+        if (out.size() >= 16)
+            break;
+    }
+    return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -6035,6 +6123,7 @@ bool Preferences::load(const QString& filePath)
                 m_data->downloadBarMode = std::clamp(mode.as<int>(m_data->downloadBarMode), 0, 2);
             else if (d["showPartProgressDetail"].as<bool>(false)) // was: bool before the 3-way mode
                 m_data->downloadBarMode = 1;
+            m_data->dateFormat = std::clamp(d["dateFormat"].as<int>(m_data->dateFormat), 0, 2);
             m_data->showActiveDownloadsBold = d["showActiveDownloadsBold"].as<bool>(m_data->showActiveDownloadsBold);
             m_data->showRatesInTitle = d["showRatesInTitle"].as<bool>(m_data->showRatesInTitle);
             m_data->showStatusBarFreeSpace = d["showStatusBarFreeSpace"].as<bool>(m_data->showStatusBarFreeSpace);
@@ -6611,6 +6700,47 @@ bool Preferences::load(const QString& filePath)
                 h.debridEnabled = ho["debridEnabled"].as<bool>(h.debridEnabled);
                 h.debrid = readAccounts("debrid", false);
             }
+        }
+
+        // Sonarr/Radarr bridge
+        if (auto arr = root["arr"]) {
+            m_data->arrApiEnabled = arr["apiEnabled"].as<bool>(m_data->arrApiEnabled);
+            m_data->arrWantedPollMinutes = std::clamp(
+                arr["wantedPollMinutes"].as<int>(m_data->arrWantedPollMinutes), 0, 1440);
+            m_data->arrSearchWaitSeconds = std::clamp(
+                arr["searchWaitSeconds"].as<int>(m_data->arrSearchWaitSeconds), 5, 90);
+            if (const auto list = arr["instances"]; list && list.IsSequence()) {
+                QCborArray entries;
+                for (const auto& node : list) {
+                    if (!node.IsMap())
+                        continue;
+                    QString key;
+                    if (node["apiKeyEnc"] && !m_data->notifyEmailEncKey.isEmpty())
+                        key = aesDecryptFromBase64(QString::fromStdString(node["apiKeyEnc"].as<std::string>("")),
+                                                   m_data->notifyEmailEncKey);
+                    else if (node["apiKey"])   // hand-edited; encrypted on the next save
+                        key = QString::fromStdString(node["apiKey"].as<std::string>(""));
+                    entries.append(QCborMap{
+                        {QStringLiteral("name"), QString::fromStdString(node["name"].as<std::string>(""))},
+                        {QStringLiteral("kind"), QString::fromStdString(node["kind"].as<std::string>("sonarr"))},
+                        {QStringLiteral("url"), QString::fromStdString(node["url"].as<std::string>(""))},
+                        {QStringLiteral("apiKey"), key},
+                        {QStringLiteral("enabled"), node["enabled"].as<bool>(true)}});
+                }
+                m_data->arrInstances = arrInstancesFromCbor(entries);
+            }
+        }
+        if (auto gt = root["gluetun"]) {
+            m_data->gluetunEnabled = gt["enabled"].as<bool>(m_data->gluetunEnabled);
+            m_data->gluetunUrl = QString::fromStdString(gt["url"].as<std::string>(m_data->gluetunUrl.toStdString())).trimmed();
+            if (gt["apiKeyEnc"] && !m_data->notifyEmailEncKey.isEmpty())
+                m_data->gluetunApiKey = aesDecryptFromBase64(
+                    QString::fromStdString(gt["apiKeyEnc"].as<std::string>("")), m_data->notifyEmailEncKey);
+            else if (gt["apiKey"])
+                m_data->gluetunApiKey = QString::fromStdString(gt["apiKey"].as<std::string>(""));
+            m_data->gluetunPortTarget =
+                QString::fromStdString(gt["portTarget"].as<std::string>("ed2k")) == QLatin1StringView("bt")
+                    ? QStringLiteral("bt") : QStringLiteral("ed2k");
         }
 
         if (auto ix = root["indexers"]) {
@@ -7699,6 +7829,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "transferDoubleClick" << YAML::Value << m_data->transferDoubleClick;
     out << YAML::Key << "showDwlPercentage" << YAML::Value << m_data->showDwlPercentage;
     out << YAML::Key << "downloadBarMode" << YAML::Value << m_data->downloadBarMode;
+    out << YAML::Key << "dateFormat" << YAML::Value << m_data->dateFormat;
     out << YAML::Key << "showActiveDownloadsBold" << YAML::Value << m_data->showActiveDownloadsBold;
     out << YAML::Key << "showRatesInTitle" << YAML::Value << m_data->showRatesInTitle;
     out << YAML::Key << "showStatusBarFreeSpace" << YAML::Value << m_data->showStatusBarFreeSpace;
@@ -7793,9 +7924,11 @@ QByteArray Preferences::encode() const
                                     || std::ranges::any_of(m_data->ed3kHoster.debrid, hasPassword);
     // ed3k:cache links carry an upload key (http-source.md §4.1)
     const bool haveEd3kCacheLink = !m_data->ed3kCacheServers.isEmpty();
+    const bool haveArrKey = !m_data->gluetunApiKey.isEmpty()
+        || std::ranges::any_of(m_data->arrInstances, [](const ArrInstance& a) { return !a.apiKey.isEmpty(); });
     if (encKey.isEmpty() && (!m_data->notifyEmailSmtpPassword.isEmpty() || haveCacheKey
                              || haveUsenetPassword || haveIndexerKey || haveFeedUrl
-                             || haveHosterPassword || haveEd3kCacheLink)) {
+                             || haveHosterPassword || haveEd3kCacheLink || haveArrKey)) {
         encKey = aesRandomKey();
         m_data->notifyEmailEncKey = encKey;
     }
@@ -8240,6 +8373,35 @@ QByteArray Preferences::encode() const
         out << YAML::EndSeq;
     }
 
+    out << YAML::EndMap;
+
+    // Sonarr/Radarr bridge; API keys encrypted like the indexer keys (no key: dropped)
+    out << YAML::Key << "arr" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "apiEnabled" << YAML::Value << m_data->arrApiEnabled;
+    out << YAML::Key << "wantedPollMinutes" << YAML::Value << m_data->arrWantedPollMinutes;
+    out << YAML::Key << "searchWaitSeconds" << YAML::Value << m_data->arrSearchWaitSeconds;
+    out << YAML::Key << "instances" << YAML::Value << YAML::BeginSeq;
+    for (const ArrInstance& a : m_data->arrInstances) {
+        out << YAML::BeginMap;
+        out << YAML::Key << "name" << YAML::Value << a.name.toStdString();
+        out << YAML::Key << "kind" << YAML::Value << a.kind.toStdString();
+        out << YAML::Key << "url" << YAML::Value << a.url.toStdString();
+        if (!a.apiKey.isEmpty() && !encKey.isEmpty())
+            out << YAML::Key << "apiKeyEnc" << YAML::Value << aesEncryptToBase64(a.apiKey, encKey).toStdString();
+        out << YAML::Key << "enabled" << YAML::Value << a.enabled;
+        out << YAML::EndMap;
+    }
+    out << YAML::EndSeq;
+    out << YAML::EndMap;
+
+    // Gluetun control server
+    out << YAML::Key << "gluetun" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "enabled" << YAML::Value << m_data->gluetunEnabled;
+    out << YAML::Key << "url" << YAML::Value << m_data->gluetunUrl.toStdString();
+    if (!m_data->gluetunApiKey.isEmpty() && !encKey.isEmpty())
+        out << YAML::Key << "apiKeyEnc" << YAML::Value
+            << aesEncryptToBase64(m_data->gluetunApiKey, encKey).toStdString();
+    out << YAML::Key << "portTarget" << YAML::Value << m_data->gluetunPortTarget.toStdString();
     out << YAML::EndMap;
 
     // UI State is now in its own uistate.yml (managed by UiState class)

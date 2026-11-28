@@ -16,6 +16,7 @@ public:
 
     [[nodiscard]] bool available() const override;
     [[nodiscard]] QCborArray downloads() const override;
+    [[nodiscard]] QCborMap status() const override;
     AddResult add(const QString& hexRoot, qint64 size, const QString& name, int category, bool paused) override;
     AddResult addLink(const QString& link, int category, bool paused) override;
     bool control(const QString& hexRoot, Control action, qint64 arg) override;

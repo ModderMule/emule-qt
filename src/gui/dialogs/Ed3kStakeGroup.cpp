@@ -31,6 +31,7 @@
 
 #include <cmath>
 #include <vector>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -156,7 +157,7 @@ void Ed3kStakeGroup::fill(const QCborMap& stake)
         it->setText(0, QString::number(id));
         it->setText(1, e3sText(c.value(QStringLiteral("amount")).toString()));
         it->setText(2, c.value(QStringLiteral("to")).toString());
-        it->setText(3, QLocale().toString(QDateTime::fromSecsSinceEpoch(readyAt), QLocale::ShortFormat));
+        it->setText(3, toDisplayString(QDateTime::fromSecsSinceEpoch(readyAt)));
         const bool ready = readyAt <= now;
         it->setText(4, state == kClaimClaiming ? tr("Claiming…")
                        : state == kClaimWaiting ? (ready ? tr("Ready") : tr("Waiting"))
@@ -225,7 +226,7 @@ QString Ed3kStakeGroup::lookupText(const QCborMap& lookup)
         return lookup.value(QStringLiteral("paid")).toBool() ? tr("Claim %1 is paid already.").arg(id)
                                                              : tr("There is no claim %1 to mint: it was never made, or it is paid already.").arg(id);
     const qint64 readyAt = lookup.value(QStringLiteral("readyAt")).toInteger();
-    const QString when = QLocale().toString(QDateTime::fromSecsSinceEpoch(readyAt), QLocale::ShortFormat);
+    const QString when = toDisplayString(QDateTime::fromSecsSinceEpoch(readyAt));
     const QString what = tr("Claim %1: %2 E3S to %3.")
                              .arg(argStr(id),
                                   argStr(e3sText(lookup.value(QStringLiteral("amount")).toString())), argStr(lookup.value(QStringLiteral("to")).toString()));

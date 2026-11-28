@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <limits>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -544,7 +545,7 @@ QVariant TorrentListModel::displayData(const TorrentRow& r, int column) const
         return formatSecondsHM(r.eta);
     case ColAdded:
         return r.addedAt > 0
-                   ? QLocale().toString(QDateTime::fromSecsSinceEpoch(r.addedAt), QLocale::ShortFormat)
+                   ? toDisplayString(QDateTime::fromSecsSinceEpoch(r.addedAt))
                    : QString();
     case ColUploaded:        return formatByteSize(r.uploaded);
     case ColSessionUploaded: return formatByteSize(r.sessionUploaded);

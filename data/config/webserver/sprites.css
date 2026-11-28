@@ -104,6 +104,10 @@
 .icon-h_usenet { background: url(usenet.png) 0 0; width: 32px; height: 32px; }
 .icon-h_torrent { background: url(torrent.png) 0 0; width: 32px; height: 32px; }
 .icon-h_hoster { background: url(hoster.png) 0 0; width: 32px; height: 32px; }
+.icon-h_ed3k { background: url(ed3k.png) 0 0; width: 32px; height: 32px; }
+.icon-h_messages { background: url(messages.png) 0 0; width: 32px; height: 32px; }
+.icon-l_scheduler { background: url(scheduler.png) 0 0; width: 16px; height: 16px; }
+.icon-l_speed { background: url(speed.png) 0 0; width: 16px; height: 16px; }
 .icon-stats_0 { background: url(sprite-stats.png) -0px 0; width: 16px; height: 16px; }
 .icon-stats_1 { background: url(sprite-stats.png) -16px 0; width: 16px; height: 16px; }
 .icon-stats_10 { background: url(sprite-stats.png) -32px 0; width: 16px; height: 16px; }

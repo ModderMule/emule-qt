@@ -9,6 +9,7 @@
 /// ProxySettings) used by already-ported modules.
 
 #include "net/HttpValidators.h"
+#include "prefs/ArrInstance.h"
 #include "prefs/DownloadCategory.h"
 #include "prefs/IndexerConfig.h"
 #include "prefs/IndexerFeed.h"
@@ -19,6 +20,7 @@
 
 #include <functional>
 #include <QByteArray>
+#include <QCborArray>
 #include <QCborMap>
 #include <QHostAddress>
 #include <QList>
@@ -2103,6 +2105,31 @@ public:
     [[nodiscard]] bool webServerGzipEnabled() const;
     void setWebServerGzipEnabled(bool val);
 
+    /// Sonarr/Radarr bridge: qBittorrent API (/api/v2) and Torznab (/torznab/api) on
+    /// the web server port, password / apikey = webServerApiKey.
+    [[nodiscard]] bool arrApiEnabled() const;
+    void setArrApiEnabled(bool val);
+    /// Arr instances polled for Wanted > Missing (synthetic Torznab RSS).
+    [[nodiscard]] QList<ArrInstance> arrInstances() const;
+    void setArrInstances(const QList<ArrInstance>& val);
+    /// Minutes between Wanted polls; 0 = no synthetic feed.
+    [[nodiscard]] int arrWantedPollMinutes() const;
+    void setArrWantedPollMinutes(int val);
+    /// How long a Torznab search waits for eD2K/Kad results.
+    [[nodiscard]] int arrSearchWaitSeconds() const;
+    void setArrSearchWaitSeconds(int val);
+
+    /// Gluetun control server: forwarded VPN port -> eD2K or BitTorrent port.
+    [[nodiscard]] bool gluetunEnabled() const;
+    void setGluetunEnabled(bool val);
+    [[nodiscard]] QString gluetunUrl() const;
+    void setGluetunUrl(const QString& val);
+    [[nodiscard]] QString gluetunApiKey() const;
+    void setGluetunApiKey(const QString& val);
+    /// "ed2k" (TCP + UDP) or "bt"
+    [[nodiscard]] QString gluetunPortTarget() const;
+    void setGluetunPortTarget(const QString& val);
+
     /// Origins allowed to call the REST API from a browser. Empty = no CORS.
     [[nodiscard]] QStringList webServerCorsAllowedOrigins() const;
     void setWebServerCorsAllowedOrigins(const QStringList& val);
@@ -2420,6 +2447,10 @@ public:
     /// (unfinished part data, boundary dots), 2 simple linear bar (GUI enum DownloadBarMode).
     [[nodiscard]] int downloadBarMode() const;
     void setDownloadBarMode(int val);
+    /// Display > date format (DateFormatMode): 0 OS locale, 1 language, 2 ISO. The GUI
+    /// keeps its own copy in uistate.yml and sends it here for the web interface (#250).
+    [[nodiscard]] int dateFormat() const;
+    void setDateFormat(int val);
     /// Downloads with a transferring source, and those sources (A4AF rows too), in bold.
     [[nodiscard]] bool showActiveDownloadsBold() const;
     void setShowActiveDownloadsBold(bool val);
@@ -2725,5 +2756,8 @@ private:
 
 /// Global preferences instance.
 extern Preferences thePrefs;
+
+/// The "arrInstances" IPC list: entries without a URL dropped, at most 16.
+[[nodiscard]] QList<ArrInstance> arrInstancesFromCbor(const QCborArray& list);
 
 } // namespace eMule

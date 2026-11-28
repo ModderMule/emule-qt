@@ -88,6 +88,15 @@ webserver:
   restApiEnabled: $(yml_bool "${EMULEQT_REST:-0}")
   mcpEnabled: $(yml_bool "${EMULEQT_MCP:-0}")
   apiKey: "${EMULEQT_API_KEY:-}"
+
+arr:
+  apiEnabled: $(yml_bool "${EMULEQT_ARR:-0}")
+
+gluetun:
+  enabled: $(yml_bool "${EMULEQT_GLUETUN:-0}")
+  url: "${EMULEQT_GLUETUN_URL:-http://127.0.0.1:8000}"
+  apiKey: "${EMULEQT_GLUETUN_API_KEY:-}"
+  portTarget: "${EMULEQT_GLUETUN_PORT_FOR:-ed2k}"
 EOF
     log "Wrote first-run $PREFS"
 fi

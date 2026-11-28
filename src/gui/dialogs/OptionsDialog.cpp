@@ -6,6 +6,7 @@
 #include "utils/FolderLister.h"
 #include "dialogs/OptionsDialog.h"
 #include "dialogs/BtI2pPage.h"
+#include "dialogs/IntegrationsPage.h"
 #include "utils/ClientIcons.h"
 #include "dialogs/Ed3kOptionsPages.h"
 #include "dialogs/FirstStartWizard.h"
@@ -112,6 +113,7 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QVBoxLayout>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -236,7 +238,9 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
 
     // Restore last selected page — General when unset or out of range (a stale
     // index from an older build must not silently land on some other page).
-    const int storedPage = theUiState.optionsLastPage();
+    // the old Feeds page lives on as a tab of Indexers/RSS
+    const int storedPage = theUiState.optionsLastPage() == PageFeeds ? int{PageIndexers}
+                                                                     : theUiState.optionsLastPage();
     const int lastPage =
         hasPage(storedPage) ? storedPage : int{PageGeneral};
     m_sidebar->setCurrentItemId(lastPage);
@@ -274,6 +278,9 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_transferDoubleClickCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showDwlPercentageCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_downloadBarModeCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    connect(m_dateFormatCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    // the language sample follows the General page's pick before it is saved
+    connect(m_langCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::refreshDateFormatSamples);
     connect(m_showActiveDownloadsBoldCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showRatesInTitleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showStatusBarFreeSpaceCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -582,6 +589,12 @@ OptionsDialog::~OptionsDialog() = default;
 
 void OptionsDialog::selectPage(int page)
 {
+    // the old Feeds page: the RSS tab of Indexers/RSS
+    if (page == PageFeeds) {
+        page = PageIndexers;
+        if (m_indexerTabs)
+            m_indexerTabs->setCurrentIndex(1);
+    }
     if (hasPage(page))
         m_sidebar->setCurrentItemId(page);
 }
@@ -769,12 +782,14 @@ void OptionsDialog::setupSidebar()
         {PageStatistics,    QT_TR_NOOP("Statistics"),          QStyle::SP_DialogHelpButton,       "Statistics.ico"},
         {PageScheduler,     QT_TR_NOOP("Scheduler"),           QStyle::SP_DialogResetButton,      "Scheduler.ico"},
         {PageWebInterface,  QT_TR_NOOP("Web Interface"),       QStyle::SP_DriveNetIcon,           "Web.ico"},
+        // indexers and feeds serve Usenet and BitTorrent alike: one page, two tabs
+        {PageIndexers,      QT_TR_NOOP("Indexers/RSS"),        QStyle::SP_FileDialogContentsView, "UsenetSearch.ico"},
+        // no MFC original: Sonarr/Radarr, Gluetun
+        {PageIntegrations,  QT_TR_NOOP("Integrations"),        QStyle::SP_FileDialogContentsView, "FileTypeVideo.ico"},
         {PageExtended,      QT_TR_NOOP("Extended"),            QStyle::SP_DialogCancelButton,     "Tweak.ico"},
     };
     static constexpr PageDef kUsenetPages[] = {
         {PageUsenet,        QT_TR_NOOP("Usenet"),              QStyle::SP_DriveNetIcon,           "Usenet.ico"},
-        {PageIndexers,      QT_TR_NOOP("Indexers"),            QStyle::SP_FileDialogContentsView, "UsenetSearch.ico"},
-        {PageFeeds,         QT_TR_NOOP("Indexers/RSS"),        QStyle::SP_BrowserReload,          "SearchEdit.ico"},
     };
     static constexpr PageDef kBitTorrentPages[] = {
         {PageBitTorrent,    QT_TR_NOOP("BitTorrent"),    QStyle::SP_DriveNetIcon,           "Torrent.ico"},
@@ -806,14 +821,14 @@ void OptionsDialog::setupSidebar()
             mask |= 1u << unsigned(def.id);
         return mask;
     };
-    // + 2: PageEd3kCredits, PageEd3kSelling, hidden for now
+    // + 3: PageEd3kCredits, PageEd3kSelling hidden for now; PageFeeds is a tab of PageIndexers
     static_assert(std::size(kGeneralPages) + std::size(kAdvancedPages)
                           + std::size(kUsenetPages) + std::size(kBitTorrentPages)
-                          + std::size(kEd3kPages) + 2
+                          + std::size(kEd3kPages) + 3
                       == std::size_t(PageCount),
                   "every Page must appear in a sidebar group");
     static_assert((idMask(kGeneralPages) | idMask(kAdvancedPages) | idMask(kUsenetPages)
-                   | idMask(kBitTorrentPages) | idMask(kEd3kPages) | (1u << unsigned(PageEd3kCredits))
+                   | idMask(kBitTorrentPages) | idMask(kEd3kPages) | (1u << unsigned(PageEd3kCredits)) | (1u << unsigned(PageFeeds))
                    | (1u << unsigned(PageEd3kSelling)))
                       == (1u << unsigned(PageCount)) - 1u,
                   "every Page must appear in exactly one sidebar group");
@@ -893,8 +908,9 @@ void OptionsDialog::setupPages()
     // tab bar stays put rather than scrolling away with the form under it.
     addPage(PageUsenet,        createUsenetPage(), PageScroll::Self);
 
-    addPage(PageIndexers,      createIndexersPage());
-    addPage(PageFeeds,         createFeedsPage());
+    // Indexers/RSS: two tabs that scroll on their own (as Usenet)
+    addPage(PageIndexers,      createIndexersRssPage(), PageScroll::Self);
+    addPage(PageFeeds,         new QWidget(this));   // slot only: the feeds are a tab of PageIndexers
 
     // Extended keeps its own scroll area: the red warning and the two sliders are
     // deliberately outside it, and a wrapper here would scroll them away.
@@ -927,6 +943,9 @@ void OptionsDialog::setupPages()
     addPage(PageBtI2p,          new QWidget(this));
 #endif
     addPage(PageEd3kExtended,   m_ed3kPages->extendedPage());
+    m_integrationsPage = new IntegrationsPage(this);
+    connect(m_integrationsPage, &IntegrationsPage::changed, this, &OptionsDialog::markDirty);
+    addPage(PageIntegrations,   m_integrationsPage);
     connect(m_ed3kPages, &Ed3kOptionsPages::changed, this, &OptionsDialog::markDirty);
     // single transfer mode (ed3k only): greyed while ed3k or the network is off
     for (QCheckBox* check : {m_ed3kPages->nodeEnabledCheck(), m_usenetEnabledCheck, m_btEnabledCheck})
@@ -1309,6 +1328,19 @@ QWidget* OptionsDialog::createDisplayPage()
     barModeRow->addWidget(m_downloadBarModeCombo);
     barModeRow->addStretch();
     layout->addLayout(barModeRow);
+
+    // index = DateFormatMode; item texts get a sample in refreshDateFormatSamples() (#250)
+    auto* dateFormatRow = new QHBoxLayout;
+    dateFormatRow->addWidget(new QLabel(tr("Date format"), page));
+    m_dateFormatCombo = new QComboBox(page);
+    for (int i = 0; i < 3; ++i)
+        m_dateFormatCombo->addItem(QString{});
+    m_dateFormatCombo->setItemData(0, tr("As set in the region settings of the operating system."), Qt::ToolTipRole);
+    m_dateFormatCombo->setItemData(1, tr("The usual format of the language chosen on the General page."), Qt::ToolTipRole);
+    m_dateFormatCombo->setItemData(2, tr("Year-month-day and 24-hour time, the same in every language."), Qt::ToolTipRole);
+    dateFormatRow->addWidget(m_dateFormatCombo);
+    dateFormatRow->addStretch();
+    layout->addLayout(dateFormatRow);
 
     // MorphXT "Show downloading files in bold" (PPgMorph); MFC INI only
     m_showActiveDownloadsBoldCheck = new QCheckBox(tr("Show active downloads in bold"), page);
@@ -4980,7 +5012,7 @@ void OptionsDialog::updateNewsServerUsageLabel()
         // the wire, not for reading.
         const QDate when = QDate::fromString(resets, Qt::ISODate);
         text += tr(", resets %1").arg(when.isValid()
-                                          ? QLocale::system().toString(when, QLocale::ShortFormat)
+                                          ? toDisplayString(when)
                                           : resets);
     }
     if (s.value(QStringLiteral("overQuota")).toBool(false))
@@ -5138,6 +5170,24 @@ void OptionsDialog::testNewsServer()
 // two answers to that would be one too many.
 // ---------------------------------------------------------------------------
 
+QWidget* OptionsDialog::createIndexersRssPage()
+{
+    auto* page = new QWidget(this);
+    auto* pageLayout = new QVBoxLayout(page);
+    pageLayout->setContentsMargins(0, 0, 0, 0);
+    m_indexerTabs = new QTabWidget(page);
+    pageLayout->addWidget(m_indexerTabs, 1);
+    const auto addTab = [this](QWidget* body, const QString& title) {
+        DialogSizing::enableHeightForWidth(body);
+        auto* area = new ContentScrollArea(m_indexerTabs);
+        area->setWidget(body);
+        m_indexerTabs->addTab(area, title);
+    };
+    addTab(createIndexersPage(), tr("Indexers"));
+    addTab(createFeedsPage(), tr("RSS feeds"));
+    return page;
+}
+
 QWidget* OptionsDialog::createIndexersPage()
 {
     auto* page = new QWidget(this);
@@ -5145,9 +5195,9 @@ QWidget* OptionsDialog::createIndexersPage()
     mainLayout->setContentsMargins(4, 4, 4, 4);
 
     auto* intro = new QLabel(
-        tr("Search indexers answer keyword searches and hand back an NZB. They are "
-           "separate from your news servers: on Usenet the provider you download "
-           "from and the service you search are different businesses."), page);
+        tr("Search indexers answer keyword searches and hand back an NZB or a torrent. "
+           "They are separate from your news servers: on Usenet the provider you "
+           "download from and the service you search are different businesses."), page);
     intro->setWordWrap(true);
     mainLayout->addWidget(intro);
 
@@ -5703,7 +5753,7 @@ void OptionsDialog::updateFeedRow(int index)
     else if (!error.isEmpty())
         item->setText(3, error);
     else if (polled > 0)
-        item->setText(3, QDateTime::fromSecsSinceEpoch(polled).toString(Qt::TextDate));
+        item->setText(3, epochToDisplayString(polled));
     else
         item->setText(3, tr("never"));
 
@@ -7667,7 +7717,7 @@ void OptionsDialog::loadSettings()
         item->setText(0, e.hostPort);
         item->setText(1, e.fingerprint.left(23) + QStringLiteral("…"));
         item->setToolTip(1, e.fingerprint);
-        item->setText(2, QLocale().toString(e.firstSeen.toLocalTime(), QLocale::ShortFormat));
+        item->setText(2, toDisplayString(e.firstSeen.toLocalTime()));
     }
     loadTunnelPeers();
 
@@ -7682,6 +7732,8 @@ void OptionsDialog::loadSettings()
     m_transferDoubleClickCheck->setChecked(thePrefs.transferDoubleClick());
     m_showDwlPercentageCheck->setChecked(thePrefs.showDwlPercentage());
     m_downloadBarModeCombo->setCurrentIndex(thePrefs.downloadBarMode());
+    refreshDateFormatSamples();
+    m_dateFormatCombo->setCurrentIndex(static_cast<int>(dateFormatModeFromInt(theUiState.dateFormat())));
     m_showActiveDownloadsBoldCheck->setChecked(thePrefs.showActiveDownloadsBold());
     m_showRatesInTitleCheck->setChecked(thePrefs.showRatesInTitle());
     m_showStatusBarFreeSpaceCheck->setChecked(thePrefs.showStatusBarFreeSpace());
@@ -7928,6 +7980,10 @@ void OptionsDialog::saveSettings()
     thePrefs.setTransferDoubleClick(m_transferDoubleClickCheck->isChecked());
     thePrefs.setShowDwlPercentage(m_showDwlPercentageCheck->isChecked());
     thePrefs.setDownloadBarMode(m_downloadBarModeCombo->currentIndex());
+    // GUI-only like the language; applies now, lists repaint after the dialog
+    theUiState.setDateFormat(m_dateFormatCombo->currentIndex());
+    thePrefs.setDateFormat(m_dateFormatCombo->currentIndex());
+    setDateFormat(dateFormatModeFromInt(m_dateFormatCombo->currentIndex()), m_langCombo->currentData().toString());
     thePrefs.setShowActiveDownloadsBold(m_showActiveDownloadsBoldCheck->isChecked());
     thePrefs.setShowRatesInTitle(m_showRatesInTitleCheck->isChecked());
     thePrefs.setShowStatusBarFreeSpace(m_showStatusBarFreeSpaceCheck->isChecked());
@@ -8416,6 +8472,8 @@ void OptionsDialog::saveSettings()
         m_btI2pPage->appendTo(req);
 #endif
 
+        m_integrationsPage->appendTo(req);
+
         // Web Interface page
         req.append(QStringLiteral("webServerEnabled"));
         req.append(m_webEnabledCheck->isChecked());
@@ -8667,6 +8725,8 @@ void OptionsDialog::saveSettings()
         req.append(m_showDwlPercentageCheck->isChecked());
         req.append(QStringLiteral("downloadBarMode"));
         req.append(static_cast<qint64>(m_downloadBarModeCombo->currentIndex()));
+        req.append(QStringLiteral("dateFormat"));   // web interface dates
+        req.append(static_cast<qint64>(m_dateFormatCombo->currentIndex()));
         req.append(QStringLiteral("showActiveDownloadsBold"));
         req.append(m_showActiveDownloadsBoldCheck->isChecked());
         req.append(QStringLiteral("showRatesInTitle"));
@@ -9435,6 +9495,9 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_btSeedMinSeedsSpin->setValue(int(prefs.value(QStringLiteral("btSeedMinSeeds")).toInteger(0)));
     m_btPortMappingCheck->setChecked(prefs.value(QStringLiteral("btPortMapping")).toBool(true));
     m_btI2pPage->load(prefs);
+#endif
+    m_integrationsPage->load(prefs);
+#ifdef EMULE_HAVE_BITTORRENT
     m_btMaxConnSpin->setValue(int(prefs.value(QStringLiteral("btMaxConnections"))
                                       .toInteger(Preferences::kDefaultBtMaxConnections)));
     m_btMaxConnPerTorrentSpin->setValue(
@@ -10042,7 +10105,7 @@ void OptionsDialog::showGeoIpStatus(const QCborMap& status, const QString& messa
                                  ? QStringLiteral("DB-IP Country Lite")
                                  : QStringLiteral("GeoLite2-Country");
         text = tr("Database: %1 from %2")
-                   .arg(name, QLocale().toString(built.date(), QLocale::ShortFormat));
+                   .arg(name, toDisplayString(built.date()));
     } else if (geoIpSourceSelection() == 1) {
         text = tr("Database: none — click \"Update now\" to download it");
     } else {
@@ -10189,6 +10252,8 @@ bool OptionsDialog::hasPage(int page) const
         return false;
     // ToDo: selling page hidden until it is decided if/how selling is used
     if (page == PageEd3kSelling)
+        return false;
+    if (page == PageFeeds)   // a tab of PageIndexers now
         return false;
     return page >= 0 && page < m_pages->count();
 }
@@ -10673,6 +10738,20 @@ void OptionsDialog::loadTunnelPeers()
             item->setData(1, Qt::UserRole, node);
         }
     });
+}
+
+void OptionsDialog::refreshDateFormatSamples()
+{
+    if (!m_dateFormatCombo)
+        return;
+    const QDateTime now = QDateTime::currentDateTime();
+    const QString lang = m_langCombo ? m_langCombo->currentData().toString() : QString{};
+    m_dateFormatCombo->setItemText(0, tr("Operating system locale (%1)")
+        .arg(dateFormatSample(DateFormatMode::System, lang, now)));
+    m_dateFormatCombo->setItemText(1, tr("Language setting (%1)")
+        .arg(dateFormatSample(DateFormatMode::Language, lang, now)));
+    m_dateFormatCombo->setItemText(2, tr("ISO 8601 (%1)")
+        .arg(dateFormatSample(DateFormatMode::Iso, lang, now)));
 }
 
 } // namespace eMule

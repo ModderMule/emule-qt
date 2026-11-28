@@ -13,6 +13,7 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QToolTip>
+#include "utils/DateTimeFormat.h"
 
 
 namespace eMule {
@@ -78,7 +79,7 @@ QString StatsGraph::tooltipAt(const QPoint& pos, const QDateTime& now) const
     return tr("%1: %2 @ %3 (%4 ago)")
         .arg(m_yUnits)
         .arg(static_cast<qint64>(std::max(value, 0.0)))
-        .arg(QLocale().toString(now.addSecs(-ago), QLocale::ShortFormat), formatSecondsLongHM(ago));
+        .arg(toDisplayString(now.addSecs(-ago)), formatSecondsLongHM(ago));
 }
 
 void StatsGraph::mouseMoveEvent(QMouseEvent* event)

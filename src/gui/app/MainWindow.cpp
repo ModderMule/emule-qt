@@ -120,6 +120,7 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -340,7 +341,7 @@ MainWindow::MainWindow(QWidget* parent)
 
         const QString released = info.date.isValid()
             ? tr("Version %1 of eMule Qt was released on %2.")
-                  .arg(info.latest, QLocale().toString(info.date, QLocale::LongFormat))
+                  .arg(info.latest, toDisplayString(info.date, QLocale::LongFormat))
             : tr("Version %1 of eMule Qt is available.").arg(info.latest);
 
         // Optional manifest "description" + "changelog" bullets; both empty = old plain text
@@ -607,6 +608,7 @@ void MainWindow::showOptionsDialog(int page)
     const int hadBarMode = thePrefs.downloadBarMode();
     const bool hadActiveBold = thePrefs.showActiveDownloadsBold();
     const int hadDepth3D = thePrefs.depth3D();
+    const int hadDateFormat = theUiState.dateFormat();
     const bool hadTorrents = !isTabHidden(TabTorrents);
     const bool hadHoster = !isTabHidden(TabHoster);
     const bool hadUsenet = !isTabHidden(TabUsenet);
@@ -626,11 +628,12 @@ void MainWindow::showOptionsDialog(int page)
     if (!hadUsenet && !isTabHidden(TabUsenet))
         toolbarChanged |= restoreToolbarButton(ToolbarButtonId::Usenet);
 
-    // Progress bars read the prefs at paint; paused rows get no push to repaint them
+    // Progress bars and date columns read the prefs at paint; paused rows get no push to repaint them
     if (thePrefs.showDwlPercentage() != hadDwlPercentage
         || thePrefs.downloadBarMode() != hadBarMode
         || thePrefs.showActiveDownloadsBold() != hadActiveBold
-        || thePrefs.depth3D() != hadDepth3D)
+        || thePrefs.depth3D() != hadDepth3D
+        || theUiState.dateFormat() != hadDateFormat)
         update();
 
     // Rebuild toolbar if speed graph visibility or the button order changed

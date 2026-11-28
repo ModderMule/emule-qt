@@ -100,6 +100,7 @@ static void unixSignalHandler(int)
 
 #include "IpcMessage.h"
 #include "utils/ArgStr.h"
+#include "utils/DateTimeFormat.h"
 
 namespace {
 
@@ -769,6 +770,8 @@ int main(int argc, char* argv[])
     QLocale appLocale;
     if (const QString lang = eMule::theUiState.language(eMule::thePrefs.language()); !lang.isEmpty())
         appLocale = QLocale(lang);
+    eMule::setDateFormat(eMule::dateFormatModeFromInt(eMule::theUiState.dateFormat()),
+                         eMule::theUiState.language(eMule::thePrefs.language()));
 
     // Load Qt's own translations (dialogs, standard buttons, etc.)
     QTranslator qtTranslator;

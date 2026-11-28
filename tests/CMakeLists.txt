@@ -376,6 +376,8 @@ emule_add_test(tst_ClientCensus    FOLDER "Stats")
 
 # Module 19: Web Server
 emule_add_test(tst_WebServer FOLDER "WebServer")
+# Sonarr/Radarr bridge helpers (qBittorrent, Torznab, Wanted lists, Gluetun)
+emule_add_test(tst_ArrCompat FOLDER "WebServer")
 # The stdio bridge is driven as a real process against the test server.
 add_dependencies(tst_WebServer emuleqt-mcp)
 # shippedGermanTranslatesTheWebContext reads the .qm; lrelease is only in ALL.

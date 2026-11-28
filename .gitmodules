@@ -8,3 +8,7 @@
 [submodule "external/specialdlp"]
 	path = external/specialdlp
 	url = https://github.com/ModderMule/specialdlp
+[submodule "dev/ed3k-chainctl"]
+	path = dev/ed3k-chainctl
+	url = https://github.com/ed3k-protocol/ed3k-chainctl.git
+	update = none

@@ -51,10 +51,14 @@ bool matchesAll(const QString& haystack, const QStringList& terms)
         && std::ranges::all_of(terms, [&](const QString& t) { return haystack.contains(t); });
 }
 
-/// Text plus tooltip of @p w, searchable.
-bool widgetMatches(const QString& text, const QWidget* w, const QStringList& terms)
+enum class Hit { None, Text, Tooltip };
+
+/// Text, else tooltip of @p w.
+Hit widgetHit(const QString& text, const QWidget* w, const QStringList& terms)
 {
-    return matchesAll(searchable(text), terms) || matchesAll(searchable(w->toolTip()), terms);
+    if (matchesAll(searchable(text), terms))
+        return Hit::Text;
+    return matchesAll(searchable(w->toolTip()), terms) ? Hit::Tooltip : Hit::None;
 }
 
 /// On the page at all: not hidden on purpose (platform-only controls), not in a pop-up.
@@ -233,20 +237,30 @@ void OptionsSearch::apply()
         return;
     }
 
+    // scan all pages first: tooltip hits are kept only if no visible text matched anywhere
+    struct PageHits { int id; QList<Match> found; bool titleMatch; };
+    QList<PageHits> pages;
+    bool anyText = false;
     for (int id : ids) {
         QWidget* root = m_pages->widget(id);
         if (!root)
             continue;
-        QList<Match> found = scanPage(root, m_terms);
-        const bool titleMatch = matchesAll(
+        PageHits hits{id, scanPage(root, m_terms), matchesAll(
             searchable(m_sidebar->itemGroupTitle(id) + QLatin1Char(' ') + m_sidebar->itemText(id)),
-            m_terms);
-        if (found.isEmpty() && !titleMatch)
+            m_terms)};
+        anyText = anyText || hits.titleMatch
+               || std::ranges::any_of(hits.found, [](const Match& m) { return !m.viaTooltip; });
+        pages.append(std::move(hits));
+    }
+    for (PageHits& page : pages) {
+        if (anyText)
+            page.found.removeIf([](const Match& m) { return m.viaTooltip; });
+        if (page.found.isEmpty() && !page.titleMatch)
             continue;
-        m_matchingPages.append(id);
-        for (const Match& m : found)
+        m_matchingPages.append(page.id);
+        for (const Match& m : page.found)
             m.widget->installEventFilter(this);
-        m_matches.insert(id, std::move(found));
+        m_matches.insert(page.id, std::move(page.found));
     }
 
     // Nothing found: keep every page listed, say so in the box.
@@ -287,19 +301,21 @@ QList<OptionsSearch::Match> OptionsSearch::scanPage(QWidget* root, const QString
             continue;
 
         if (auto* label = qobject_cast<QLabel*>(w)) {
-            if (widgetMatches(label->text(), label, terms))
-                found.append({w});
+            if (const Hit h = widgetHit(label->text(), label, terms); h != Hit::None)
+                found.append({.widget = w, .viaTooltip = h == Hit::Tooltip});
         } else if (auto* button = qobject_cast<QAbstractButton*>(w)) {
-            if (widgetMatches(button->text(), button, terms))
-                found.append({w});
+            if (const Hit h = widgetHit(button->text(), button, terms); h != Hit::None)
+                found.append({.widget = w, .viaTooltip = h == Hit::Tooltip});
         } else if (auto* box = qobject_cast<QGroupBox*>(w)) {
-            if (widgetMatches(box->title(), box, terms))
-                found.append({w, nullptr, -1, true});
+            if (const Hit h = widgetHit(box->title(), box, terms); h != Hit::None)
+                found.append({.widget = w, .titleOnly = true, .viaTooltip = h == Hit::Tooltip});
         } else if (auto* tabs = qobject_cast<QTabWidget*>(w)) {
-            for (int i = 0; i < tabs->count(); ++i)
-                if (matchesAll(searchable(tabs->tabText(i)), terms)
-                    || matchesAll(searchable(tabs->tabToolTip(i)), terms))
-                    found.append({w, nullptr, i});
+            for (int i = 0; i < tabs->count(); ++i) {
+                if (matchesAll(searchable(tabs->tabText(i)), terms))
+                    found.append({.widget = w, .tab = i});
+                else if (matchesAll(searchable(tabs->tabToolTip(i)), terms))
+                    found.append({.widget = w, .tab = i, .viaTooltip = true});
+            }
         } else if (auto* tree = qobject_cast<QTreeWidget*>(w); tree && searchesItems(tree)) {
             QList<QTreeWidgetItem*> pending{tree->invisibleRootItem()};
             while (!pending.isEmpty()) {
@@ -308,16 +324,17 @@ QList<OptionsSearch::Match> OptionsSearch::scanPage(QWidget* root, const QString
                     pending.append(item->child(c));
                 if (item == tree->invisibleRootItem() || item->isHidden())
                     continue;
-                for (int col = 0; col < tree->columnCount(); ++col) {
-                    if (matchesAll(searchable(item->text(col)), terms)
-                        || matchesAll(searchable(item->toolTip(col)), terms)) {
-                        found.append({w, item});
-                        break;
-                    }
+                bool text = false;
+                bool tip = false;
+                for (int col = 0; col < tree->columnCount() && !text; ++col) {
+                    text = matchesAll(searchable(item->text(col)), terms);
+                    tip = tip || matchesAll(searchable(item->toolTip(col)), terms);
                 }
+                if (text || tip)
+                    found.append({.widget = w, .item = item, .viaTooltip = !text});
             }
         } else if (!w->toolTip().isEmpty() && matchesAll(searchable(w->toolTip()), terms)) {
-            found.append({w});   // an input explained only by its tooltip
+            found.append({.widget = w, .viaTooltip = true});   // an input explained only by its tooltip
         }
     }
     return found;

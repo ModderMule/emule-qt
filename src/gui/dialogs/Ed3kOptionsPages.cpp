@@ -65,6 +65,7 @@
 #include <QVBoxLayout>
 
 #include <cmath>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -2054,7 +2055,7 @@ void Ed3kOptionsPages::fillAccounts(AccountList& list)
         const QString host = list.services() ? solverName(a.host) : a.host;
         auto* it = new QTreeWidgetItem({host, a.user, a.status});
         if (a.checked > 0)
-            it->setToolTip(2, tr("Checked %1").arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(a.checked), QLocale::ShortFormat)));
+            it->setToolTip(2, tr("Checked %1").arg(toDisplayString(QDateTime::fromSecsSinceEpoch(a.checked))));
         if (HosterIcons* icons = HosterIcons::of(m_ipc))
             it->setIcon(0, icons->iconWithFlag(a.host));
         list.tree->addTopLevelItem(it);
@@ -2478,7 +2479,7 @@ QString Ed3kOptionsPages::accountText(const AccountList& list, const QCborMap& c
     QString text = premium ? tr("Premium") : tr("Free");
     if (const qint64 exp = check.value(QStringLiteral("expires")).toInteger(); exp > 0)
         text = (premium ? tr("Premium until %1") : tr("Free until %1"))
-                   .arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(exp).date(), QLocale::ShortFormat));
+                   .arg(toDisplayString(QDateTime::fromSecsSinceEpoch(exp).date()));
     // traffic: none told = unlimited or unknown, said nothing
     if (const qint64 left = check.value(QStringLiteral("trafficLeft")).toInteger(-1); left >= 0) {
         const qint64 max = check.value(QStringLiteral("trafficMax")).toInteger(-1);

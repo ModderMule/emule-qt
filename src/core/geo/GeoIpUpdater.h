@@ -15,9 +15,11 @@
 /// Releases also ship a copy in config/; start() adopts it when its build is newer
 /// than the live one, so neither a release nor a download ever rolls the other back.
 ///
-/// Schedule: an hourly tick updates when the database is missing or the last
-/// successful check is a week old. A failure blocks automatic retries for 6 h —
-/// GeoLite2 caps downloads per account per day.
+/// Schedule: an hourly tick checks when the database is missing or the last
+/// successful check is a week old. The check is conditional (DB-IP: the server's
+/// ETag/Last-Modified; GeoLite2: the build date), so an unchanged file isn't
+/// fetched. A failure blocks automatic retries for 6 h — GeoLite2 caps downloads
+/// per account per day.
 
 #include <QString>
 #include <QUrl>
@@ -89,6 +91,7 @@ private:
     QString m_dbIpUrlTemplate;
     GeoIpSource m_activeSource = GeoIpSource::MaxMind;   ///< source of the running download
     int m_dbIpMonthsBack = 0;
+    QUrl m_requestUrl;   ///< first-hop URL of the running download (validator key)
     std::vector<Callback> m_waiting;
 };
 

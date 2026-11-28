@@ -25,6 +25,7 @@
 #include <QIcon>
 #include <QPainter>
 #include <QPixmap>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -170,7 +171,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         case ColSessionRatio: return formatShareRatio(f.transferred, f.fileSize);
         case ColLastRequest:
             return f.lastRequested > 0
-                ? QLocale().toString(QDateTime::fromSecsSinceEpoch(f.lastRequested), QLocale::ShortFormat)
+                ? toDisplayString(QDateTime::fromSecsSinceEpoch(f.lastRequested))
                 : QString();
         case ColEd3kKey:
             return ed3kKeyText(f.ed3kKey);

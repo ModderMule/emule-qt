@@ -46,6 +46,7 @@
 #include <algorithm>
 #include <array>
 #include <tuple>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -1399,7 +1400,7 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         const qint64 reached = cborInt(stats, QLatin1StringView("connMaxReached"));
         if (reached != m_lastMaxConnReached) {
             m_itemConnMaxReached->setText(0, tr("Max Connection Limit Reached: %1 : %2").arg(reached)
-                .arg(QLocale().toString(QDateTime::currentDateTime(), QLocale::ShortFormat)));
+                .arg(toDisplayString(QDateTime::currentDateTime())));
             m_lastMaxConnReached = reached;
         } else if (reached == 0) {
             m_itemConnMaxReached->setText(0, tr("Max Connection Limit Reached: %1").arg(reached));
@@ -1439,7 +1440,7 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     // separate numbers (srchybrid/StatisticsDlg.cpp:1543-1556).
     const qint64 lastReset = cborInt(stats, QLatin1StringView("statsLastReset"));
     const QString lastResetText = lastReset > 0
-        ? QLocale().toString(QDateTime::fromSecsSinceEpoch(lastReset), QLocale::ShortFormat)
+        ? toDisplayString(QDateTime::fromSecsSinceEpoch(lastReset))
         : tr("Unknown");
     if (lastReset > 0) {
         m_itemStatsLastReset->setText(0, tr("Statistics Last Reset: %1").arg(lastResetText));
@@ -3280,7 +3281,7 @@ void StatisticsPanel::updateNewsServers(const QCborArray& servers, qint64 sessio
             const QDate resets = QDate::fromString(
                 s.value(QStringLiteral("resetsOn")).toString(), Qt::ISODate);
             if (resets.isValid())
-                used += tr(", resets %1").arg(QLocale::system().toString(resets, QLocale::ShortFormat));
+                used += tr(", resets %1").arg(toDisplayString(resets));
         }
         if (s.value(QStringLiteral("overQuota")).toBool(false))
             used += tr(" — spent");

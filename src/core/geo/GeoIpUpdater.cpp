@@ -25,6 +25,8 @@ constexpr auto kDownloadUrl =
 constexpr auto kDbIpUrlTemplate = "https://download.db-ip.com/free/dbip-country-lite-%1.mmdb.gz";
 constexpr qint64 kRefreshSecs = 7 * 24 * 60 * 60;
 constexpr int kTimeoutMs = 120000;
+/// Key of the DB-IP validators in Preferences::downloadValidators()
+constexpr auto kDbIpValidatorKey = "geoip-dbip";
 
 [[nodiscard]] QByteArray httpDate(const QDateTime& dt)
 {
@@ -203,12 +205,20 @@ void GeoIpUpdater::startRequest(const QUrl& url)
                                     + thePrefs.geoIpLicenseKey().trimmed();
         opts.sameHostHeaders.append({"Authorization", "Basic " + credentials.toUtf8().toBase64()});
     }
-    // Only skip the download when the file we would replace is the loaded one
+    // Only skip the download when the file we would replace is the loaded one.
+    // DB-IP stamps Last-Modified hours after build_epoch, so the build date alone
+    // never matched (weekly re-download): reuse the server's own validators.
     const QString target = databasePathFor(m_activeSource);
-    if (m_ip2Country->path() == target && QFileInfo::exists(target))
-        if (const QDateTime built = m_ip2Country->buildDate(); built.isValid())
+    if (m_ip2Country->path() == target && QFileInfo::exists(target)) {
+        if (!maxMind)
+            opts.validators = thePrefs.downloadValidators(QString::fromLatin1(kDbIpValidatorKey),
+                                                          url.toString());
+        if (const QDateTime built = m_ip2Country->buildDate();
+            built.isValid() && opts.validators.isEmpty())
             (maxMind ? opts.sameHostHeaders : opts.headers)
                 .append({"If-Modified-Since", httpDate(built)});
+    }
+    m_requestUrl = url;
 
     m_job = HttpFileDownload::fetch(this, url, opts,
         [this](const HttpFileDownload::Result& r) { onDownloaded(r); });
@@ -237,6 +247,9 @@ void GeoIpUpdater::onDownloaded(const HttpFileDownload::Result& r)
         return;
     }
 
+    const QString target = databasePathFor(m_activeSource);
+    const QDateTime previousBuilt = m_ip2Country->path() == target ? m_ip2Country->buildDate()
+                                                                    : QDateTime();
     QString error;
     if (!installDatabase(r.data, error)) {
         finish(false, error);
@@ -244,7 +257,15 @@ void GeoIpUpdater::onDownloaded(const HttpFileDownload::Result& r)
     }
 
     thePrefs.setGeoIpLastCheck(QDateTime::currentSecsSinceEpoch());
+    if (m_activeSource == GeoIpSource::DbIp)
+        thePrefs.setDownloadValidators(QString::fromLatin1(kDbIpValidatorKey),
+                                       m_requestUrl.toString(), r.validators);
     const QDateTime built = m_ip2Country->buildDate();
+    // Server ignored the condition: same build, nothing changed
+    if (previousBuilt.isValid() && built == previousBuilt) {
+        finish(true, QStringLiteral("%1 is up to date").arg(sourceName(m_activeSource)), true);
+        return;
+    }
     // Source switched while downloading: the new file waits for its turn
     if (m_activeSource != selectedSource())
         reloadForSource();

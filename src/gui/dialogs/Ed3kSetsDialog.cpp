@@ -46,6 +46,7 @@
 
 #include <map>
 #include <utility>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -1384,7 +1385,7 @@ QStringList Ed3kSetsDialog::paidLines(const QCborMap& p) const
         lines << tr("Paid; the price is not known yet.");
     const int state = int(p.value(QStringLiteral("state")).toInteger());
     const qint64 until = p.value(QStringLiteral("until")).toInteger();
-    const QString end = QLocale().toString(QDateTime::fromSecsSinceEpoch(until), QLocale::ShortFormat);
+    const QString end = toDisplayString(QDateTime::fromSecsSinceEpoch(until));
     if (state == 2 && until > QDateTime::currentSecsSinceEpoch()) {
         lines << tr("Pass valid until %1.").arg(end);
         if (p.value(QStringLiteral("renewalEnded")).toBool())

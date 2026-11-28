@@ -55,6 +55,9 @@
 #include "PortTestRunner.h"
 #include "net/PortTestApi.h"
 #include "net/ReachabilityWatch.h"
+#include "portmap/GluetunPortSync.h"
+#include "webserver/ArrSearchBridge.h"
+#include "webserver/ArrWanted.h"
 #include "ipfilter/IPFilter.h"
 #include "kademlia/KadLog.h"
 #include "net/BindAddress.h"
@@ -1267,6 +1270,10 @@ void DaemonApp::stop()
     m_powerManager.reset();
 
     stopWebServer();
+    // before the core goes: the bridge removes its searches from theApp.searchList
+    m_gluetun.reset();
+    m_arrWanted.reset();
+    m_arrBridge.reset();
 
     // Before the IPC server goes away: a Test-button reply in flight holds a
     // QPointer to its handler, and the engine's own sockets must be torn down
@@ -1562,6 +1569,10 @@ void DaemonApp::startWebServer()
     if (!m_indexerWebBackend)
         m_indexerWebBackend = std::make_unique<DaemonIndexerWebBackend>();
     m_webServer->setIndexerBackend(m_indexerWebBackend.get());
+    // Sonarr/Radarr Torznab searches and feed: kept across restarts like the backends
+    if (!m_arrBridge)
+        m_arrBridge = std::make_unique<ArrSearchBridge>();
+    m_webServer->setArrBridge(m_arrBridge.get());
 
     // The REST API's daemon half and its event source, kept the same way.
     if (!m_apiBackend)
@@ -1584,6 +1595,7 @@ void DaemonApp::startWebServer()
     const WebServerConfig config = WebServerConfig::fromPreferences(thePrefs);
 
     m_webServer->start(config);
+    applyArrAndGluetun();
 
     // The web port only needs forwarding while the server is actually up, and
     // only when the user asked for it. This is what finally gives the
@@ -2370,6 +2382,7 @@ void DaemonApp::stopWebServer()
 
 void DaemonApp::onWebServerConfigChanged()
 {
+    applyArrAndGluetun();
     // Fired after every preference save. A restart ends all web sessions and changes
     // the stream token, so only do it when a setting the server uses has changed.
     if (m_webServer && m_webServer->isRunning()
@@ -2381,6 +2394,50 @@ void DaemonApp::onWebServerConfigChanged()
     if (m_coreSession)
         m_coreSession->applyPortMapPreferences();
     restartWebServer();
+}
+
+void DaemonApp::applyArrAndGluetun()
+{
+    if (!m_arrBridge)
+        return;   // before the core loaded: startWebServer() comes back here
+    if (!m_arrWanted)
+        m_arrWanted = std::make_unique<ArrWanted>(m_arrBridge.get());
+    m_arrWanted->applyPreferences();
+    if (!m_gluetun) {
+        m_gluetun = std::make_unique<GluetunPortSync>();
+        connect(m_gluetun.get(), &GluetunPortSync::forwardedPortChanged, this, &DaemonApp::onGluetunPort);
+    }
+    m_gluetun->applyPreferences();
+}
+
+void DaemonApp::onGluetunPort(quint16 port)
+{
+    if (!m_apiBackend)
+        return;
+    // the same path as an Options save, so the sockets move with it
+    PrefChanges changes;
+    if (thePrefs.gluetunPortTarget() == QLatin1StringView("bt")) {
+        if (thePrefs.btListenPort() == port)
+            return;
+        changes.append({QStringLiteral("btListenPort"), qint64(port)});
+    } else {
+        if (thePrefs.port() != port)
+            changes.append({QStringLiteral("port"), qint64(port)});
+        if (thePrefs.udpPort() != 0 && thePrefs.udpPort() != port)   // UDP off stays off
+            changes.append({QStringLiteral("udpPort"), qint64(port)});
+        if (changes.isEmpty())
+            return;
+    }
+    const ApiBackend::PrefApplyReport report = m_apiBackend->applyPreferences(changes);
+    if (report.ports == PortApplyResult::RestartRequired)
+        logInfo(QStringLiteral("Gluetun: port %1 stored, used after the next restart").arg(port));
+    else if (report.ports == PortApplyResult::BindFailed)
+        logWarning(QStringLiteral("Gluetun: port %1 is in use, the old port stays").arg(port));
+    else
+        logInfo(QStringLiteral("Gluetun: %1 port set to %2")
+                    .arg(thePrefs.gluetunPortTarget() == QLatin1StringView("bt") ? QStringLiteral("BitTorrent")
+                                                                                : QStringLiteral("eD2K"))
+                    .arg(port));
 }
 
 void DaemonApp::restartWebServer()

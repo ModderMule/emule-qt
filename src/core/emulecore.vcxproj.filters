@@ -261,6 +261,12 @@
     <ClCompile Include="transfer\ImportParts.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="transfer\LocalCopyScan.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\LocalCopyWalk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="chat\IrcClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -367,6 +373,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="portmap\PortMapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="portmap\GluetunPortSync.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="portmap\UPnPBackend.cpp">
@@ -732,10 +741,25 @@
     <ClCompile Include="webserver\WebServerTorrents.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="webserver\WebServerUi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="webserver\WebServerEd3k.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="webserver\WebServerIndexer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\WebServerArr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\ArrCompat.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\ArrSearchBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\ArrWanted.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="webserver\StreamTokenStore.cpp">
@@ -1022,6 +1046,12 @@
     <ClInclude Include="transfer\ImportParts.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="transfer\LocalCopyScan.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="files\LocalCopyWalk.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="transfer\UploadQueueStore.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1068,6 +1098,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\IndexerWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\ArrCompat.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\FormParts.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\ApiOpBuilder.h">
@@ -1334,6 +1370,9 @@
     <ClInclude Include="prefs\IndexerConfig.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="prefs\ArrInstance.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="prefs\IndexerFeed.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1532,6 +1571,9 @@
     <ClInclude Include="utils\StringUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\DateTimeText.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\UsenetDisplay.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1623,6 +1665,15 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="webserver\WebServer.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="webserver\ArrSearchBridge.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="webserver\ArrWanted.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="portmap\GluetunPortSync.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="webserver\StreamTokenStore.h">

@@ -253,8 +253,13 @@ SOURCES += \
     webserver/WebServerApi.cpp \
     webserver/WebServerMcp.cpp \
     webserver/WebServerTorrents.cpp \
+    webserver/WebServerUi.cpp \
     webserver/WebServerEd3k.cpp \
     webserver/WebServerIndexer.cpp \
+    webserver/WebServerArr.cpp \
+    webserver/ArrCompat.cpp \
+    webserver/ArrSearchBridge.cpp \
+    webserver/ArrWanted.cpp \
     webserver/StreamTokenStore.cpp \
     webserver/WebSessionManager.cpp \
     webserver/WebTemplateEngine.cpp
@@ -393,6 +398,7 @@ HEADERS += \
     prefs/DownloadCategory.h \
     prefs/CategoryView.h \
     prefs/IndexerConfig.h \
+    prefs/ArrInstance.h \
     prefs/IndexerFeed.h \
     prefs/Preferences.h \
     prefs/SpeedRules.h \
@@ -462,6 +468,7 @@ HEADERS += \
     utils/SafeFile.h \
     utils/SettingsUtils.h \
     utils/StringUtils.h \
+    utils/DateTimeText.h \
     utils/UsenetDisplay.h \
     utils/ThreadUtils.h \
     utils/TimeUtils.h \
@@ -479,6 +486,10 @@ HEADERS += \
     webserver/HosterWebBackend.h \
     webserver/Ed3kWebBackend.h \
     webserver/IndexerWebBackend.h \
+    webserver/ArrCompat.h \
+    webserver/ArrSearchBridge.h \
+    webserver/ArrWanted.h \
+    webserver/FormParts.h \
     webserver/ApiOpBuilder.h \
     webserver/MetaGrabWebBackend.h \
     webserver/TorrentWebBackend.h \

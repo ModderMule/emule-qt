@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <limits>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -514,8 +515,7 @@ QString SearchResultsModel::seenText(const SearchResultRow& r)
 {
     if (!r.seenBefore)
         return {};
-    const QString since = QLocale().toString(
-        QDateTime::fromSecsSinceEpoch(r.firstSeen).date(), QLocale::ShortFormat);
+    const QString since = toDisplayString(QDateTime::fromSecsSinceEpoch(r.firstSeen).date());
     // More than one name for the same content is worth a look.
     return r.seenNames > 1 ? tr("%1 · %n name(s)", nullptr, r.seenNames).arg(since) : since;
 }

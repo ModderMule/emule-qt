@@ -148,6 +148,7 @@ void UiState::load(const QString& configDir)
         m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
         if (const auto lang = root["language"]; lang && lang.IsScalar())
             m_language = QString::fromStdString(lang.as<std::string>());
+        m_dateFormat = std::clamp(root["dateFormat"].as<int>(m_dateFormat), 0, 2);
         m_startCount = root["startCount"].as<int>(m_startCount);
         m_lowIdHintDisabled = root["lowIdHintDisabled"].as<bool>(m_lowIdHintDisabled);
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
@@ -305,6 +306,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;
     if (m_language)
         out << YAML::Key << "language" << YAML::Value << m_language->toStdString();
+    out << YAML::Key << "dateFormat" << YAML::Value << m_dateFormat;
     out << YAML::Key << "startCount" << YAML::Value << m_startCount;
     out << YAML::Key << "lowIdHintDisabled" << YAML::Value << m_lowIdHintDisabled;
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;

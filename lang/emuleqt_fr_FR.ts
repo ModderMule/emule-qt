@@ -1260,7 +1260,7 @@ Activez l&apos;interface web ou l&apos;API REST dans Options → Interface web.<
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+815"/>
+        <location filename="../src/gui/app/main.cpp" line="+818"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -1444,7 +1444,7 @@ Contient des commentaires</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+84"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+85"/>
         <source>Passive</source>
         <translation>Passif</translation>
     </message>
@@ -1548,7 +1548,7 @@ Contient des commentaires</translation>
         <translation>Annulé</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+359"/>
+        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+360"/>
         <source>Total Overhead (Packets): 0 Bytes (0)</source>
         <translation>Overhead total (paquets) : 0 octets (0)</translation>
     </message>
@@ -1577,7 +1577,7 @@ Contient des commentaires</translation>
         <translation type="vanished">%1 octets</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3981"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+4013"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -1745,7 +1745,7 @@ Le télécharger à nouveau ?</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+74"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+5059"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+5409"/>
         <source>Bytes</source>
         <translation>octets</translation>
     </message>
@@ -1864,7 +1864,7 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>UsenetDetailsDialog</name>
     <message numerus="yes">
-        <location filename="../src/gui/dialogs/UsenetDetailsDialog.cpp" line="+68"/>
+        <location filename="../src/gui/dialogs/UsenetDetailsDialog.cpp" line="+69"/>
         <source>%1 (and %n other(s))</source>
         <translation>
             <numerusform>%1 (et %n autre)</numerusform>
@@ -1951,7 +1951,7 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::AddFriendDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddFriendDialog.cpp" line="+30"/>
+        <location filename="../src/gui/dialogs/AddFriendDialog.cpp" line="+31"/>
         <source>Add...</source>
         <translation>Ajouter...</translation>
     </message>
@@ -2700,14 +2700,14 @@ Un ami avec la même adresse IP et le même port existe déjà.</translation>
         <translation type="vanished">Analyse...</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/ArchivePreviewPanel.cpp" line="+180"/>
-        <location line="+83"/>
+        <location filename="../src/gui/dialogs/ArchivePreviewPanel.cpp" line="+181"/>
+        <location line="+82"/>
         <source>Archive type: --</source>
         <translation>Type d&apos;archive : --</translation>
     </message>
     <message>
-        <location line="-82"/>
-        <location line="+86"/>
+        <location line="-81"/>
+        <location line="+85"/>
         <source>Ready</source>
         <translation>Prêt</translation>
     </message>
@@ -2730,7 +2730,7 @@ Un ami avec la même adresse IP et le même port existe déjà.</translation>
         <translation type="vanished">Créer une copie d&apos;aperçu</translation>
     </message>
     <message>
-        <location line="-161"/>
+        <location line="-160"/>
         <source>Scanning archive...</source>
         <translation>Analyse de l&apos;archive...</translation>
     </message>
@@ -2777,7 +2777,7 @@ Un ami avec la même adresse IP et le même port existe déjà.</translation>
         <translation>Table des matières introuvable.</translation>
     </message>
     <message>
-        <location line="+86"/>
+        <location line="+85"/>
         <source>(unknown/unsupported)</source>
         <translation>(inconnu/non pris en charge)</translation>
     </message>
@@ -2850,8 +2850,8 @@ M	les données compressées ne sont pas encore entièrement téléchargées
 </translation>
     </message>
     <message>
-        <location line="-210"/>
-        <location line="+169"/>
+        <location line="-209"/>
+        <location line="+168"/>
         <source>Comment</source>
         <translation>Commentaire</translation>
     </message>
@@ -6229,7 +6229,7 @@ Envoyé :	%9</translation>
 <context>
     <name>eMule::Ed3kDeclineDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kDeclineDialog.cpp" line="+31"/>
+        <location filename="../src/gui/dialogs/Ed3kDeclineDialog.cpp" line="+32"/>
         <location line="+156"/>
         <source>Declined records</source>
         <translation>Enregistrements refusés</translation>
@@ -7509,7 +7509,7 @@ IPv4 : %3 · IPv6 : %4 · Routeur : %5</translation>
 <context>
     <name>eMule::Ed3kNameOpener</name>
     <message>
-        <location filename="../src/gui/app/Ed3kNameOpener.cpp" line="+80"/>
+        <location filename="../src/gui/app/Ed3kNameOpener.cpp" line="+81"/>
         <source>yours</source>
         <translation>le vôtre</translation>
     </message>
@@ -7666,7 +7666,7 @@ Ses noms seront alors résolus après les listes que vous suivez déjà.</transl
         <translation type="vanished">Le nœud ed3k utilise le pseudo de la page Général : %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+511"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+512"/>
         <location line="+11"/>
         <location line="+580"/>
         <location line="+11"/>
@@ -10408,7 +10408,7 @@ Il ne s’ouvre que lorsque vous cliquez à nouveau dessus.</translation>
 <context>
     <name>eMule::Ed3kSellPage</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kSellPage.cpp" line="+53"/>
+        <location filename="../src/gui/dialogs/Ed3kSellPage.cpp" line="+54"/>
         <location line="+90"/>
         <source>Changes on this page take effect at once.</source>
         <translation>Les modifications sur cette page prennent effet immédiatement.</translation>
@@ -10852,7 +10852,7 @@ Les acheteurs voient qu&apos;il n&apos;est plus en vente. Les pass détenus rest
 <context>
     <name>eMule::Ed3kSetsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kSetsDialog.cpp" line="+107"/>
+        <location filename="../src/gui/dialogs/Ed3kSetsDialog.cpp" line="+108"/>
         <location line="+1322"/>
         <source>ed3k Sets</source>
         <translation>Sets ed3k</translation>
@@ -11814,7 +11814,7 @@ Continuer ?</translation>
 <context>
     <name>eMule::Ed3kStakeGroup</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kStakeGroup.cpp" line="+80"/>
+        <location filename="../src/gui/dialogs/Ed3kStakeGroup.cpp" line="+81"/>
         <source>Stake tokens (E3S)</source>
         <translation>Jetons de stake (E3S)</translation>
     </message>
@@ -12308,7 +12308,7 @@ Ses fichiers vont dans le dossier d&apos;arrivée, dans un dossier propre au set
 <context>
     <name>eMule::FileDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+240"/>
+        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+241"/>
         <source>File Details: %1</source>
         <translation>Détails du fichier : %1</translation>
     </message>
@@ -14567,7 +14567,7 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
 <context>
     <name>eMule::IndexerResultsModel</name>
     <message>
-        <location filename="../src/gui/controls/IndexerResultsModel.cpp" line="+26"/>
+        <location filename="../src/gui/controls/IndexerResultsModel.cpp" line="+27"/>
         <source>today</source>
         <translation>aujourd&apos;hui</translation>
     </message>
@@ -14597,7 +14597,7 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
         <translation>Publié : %1</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+4"/>
         <source>%1 files</source>
         <translation>%1 fichiers</translation>
     </message>
@@ -14655,6 +14655,173 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
         <location line="+1"/>
         <source>Confidence</source>
         <translation>Confiance</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::IntegrationsPage</name>
+    <message>
+        <location filename="../src/gui/dialogs/IntegrationsPage.cpp" line="+43"/>
+        <location line="+65"/>
+        <source>Sonarr / Radarr</source>
+        <translation>Sonarr / Radarr</translation>
+    </message>
+    <message>
+        <location line="-62"/>
+        <source>Name:</source>
+        <translation>Nom :</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Type:</source>
+        <translation>Type :</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Address:</source>
+        <translation>Adresse :</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Settings &gt; General &gt; API Key in Sonarr or Radarr</source>
+        <translation>Paramètres &gt; Général &gt; Clé API dans Sonarr ou Radarr</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+108"/>
+        <source>API key:</source>
+        <translation>Clé API :</translation>
+    </message>
+    <message>
+        <location line="-107"/>
+        <source>Enabled</source>
+        <translation>Activé</translation>
+    </message>
+    <message>
+        <location line="+51"/>
+        <source>Act as qBittorrent download client and Torznab indexer for eD2K</source>
+        <translation>Agir comme client de téléchargement qBittorrent et indexeur Torznab pour eD2K</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Sonarr and Radarr add eD2K downloads and search eD2K and Kad. Served on the Web Interface port.</source>
+        <translation>Sonarr et Radarr ajoutent des téléchargements eD2K et recherchent sur eD2K et Kad. Servi sur le port de l&apos;interface Web.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source> s</source>
+        <translation> s</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>How long a search from Sonarr or Radarr collects eD2K and Kad results</source>
+        <translation>Durée pendant laquelle une recherche de Sonarr ou Radarr collecte des résultats eD2K et Kad</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Search time:</source>
+        <translation>Durée de recherche :</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source> min</source>
+        <translation> min</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>off</source>
+        <translation>désactivé</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>eD2K has no RSS feed. The Wanted lists below are searched in the background and the hits are served as the feed Sonarr and Radarr check.</source>
+        <translation>eD2K n&apos;a pas de flux RSS. Les listes Wanted ci-dessous sont recherchées en arrière-plan et les résultats servis comme le flux que Sonarr et Radarr consultent.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Read Wanted lists every:</source>
+        <translation>Lire les listes Wanted toutes les :</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Name</source>
+        <translation>Nom</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Type</source>
+        <translation>Type</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Address</source>
+        <translation>Adresse</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Add...</source>
+        <translation>Ajouter...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Edit...</source>
+        <translation>Modifier...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove</source>
+        <translation>Supprimer</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Gluetun VPN</source>
+        <translation>VPN Gluetun</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Use the port Gluetun forwards</source>
+        <translation>Utiliser le port redirigé par Gluetun</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Behind a VPN, UPnP cannot open a port. The VPN provider&apos;s forwarded port is read from Gluetun every minute and set as the listen port.</source>
+        <translation>Derrière un VPN, UPnP ne peut pas ouvrir de port. Le port redirigé du fournisseur VPN est lu depuis Gluetun chaque minute et défini comme port d&apos;écoute.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Control server:</source>
+        <translation>Serveur de contrôle :</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>optional</source>
+        <translation>facultatif</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The API key of Gluetun&apos;s control server auth config</source>
+        <translation>La clé API de la configuration d&apos;authentification du serveur de contrôle de Gluetun</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>eD2K (TCP and UDP)</source>
+        <translation>eD2K (TCP et UDP)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent</source>
+        <translation>BitTorrent</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Port for:</source>
+        <translation>Port pour :</translation>
+    </message>
+    <message>
+        <location line="+127"/>
+        <source>Download client: qBittorrent, host of this computer, port %1, any user name, password = the REST API key (Web Interface page).
+Indexer: Torznab, URL http://&lt;host&gt;:%1/torznab, API key = the same key.</source>
+        <translation>Client de téléchargement : qBittorrent, hôte de cet ordinateur, port %1, n&apos;importe quel nom d&apos;utilisateur, mot de passe = la clé de l&apos;API REST (page Interface Web).
+Indexeur : Torznab, URL http://&lt;host&gt;:%1/torznab, clé API = la même clé.</translation>
     </message>
 </context>
 <context>
@@ -14760,7 +14927,7 @@ Le pseudo peut être modifié dans Options-&gt;IRC.</translation>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+471"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+472"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 s&apos;appelle maintenant %2</translation>
     </message>
@@ -15065,12 +15232,12 @@ Veuillez en choisir un autre :</translation>
         <location line="+5"/>
         <location line="+13"/>
         <location line="+6"/>
-        <location line="+480"/>
+        <location line="+479"/>
         <source>ed3k room</source>
         <translation>Salon ed3k</translation>
     </message>
     <message>
-        <location line="-1002"/>
+        <location line="-1001"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -15277,12 +15444,12 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
         <translation>Bannir (30 jours)</translation>
     </message>
     <message>
-        <location line="+236"/>
+        <location line="+235"/>
         <source>Lift ban</source>
         <translation>Lever le bannissement</translation>
     </message>
     <message>
-        <location line="-231"/>
+        <location line="-230"/>
         <source>Remove moderator</source>
         <translation>Retirer le modérateur</translation>
     </message>
@@ -15513,7 +15680,7 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
         <translation>Banni jusqu&apos;au</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+43"/>
         <source>* Your next post answers %1: %2</source>
         <translation>* Votre prochain message répond à %1 : %2</translation>
     </message>
@@ -16918,19 +17085,19 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+148"/>
-        <location line="+872"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+149"/>
+        <location line="+874"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-682"/>
+        <location line="-684"/>
         <location line="+31"/>
         <source>New Version Available</source>
         <translation>Nouvelle version disponible</translation>
     </message>
     <message>
-        <location line="+357"/>
+        <location line="+359"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K : Connecté (LowID)</translation>
     </message>
@@ -17075,14 +17242,14 @@ Activez-les dans Options → ed3k → Hoster, puis réessayez.</translation>
         <translation>Fonctionnalités</translation>
     </message>
     <message>
-        <location line="-1274"/>
+        <location line="-1276"/>
         <location line="+7"/>
-        <location line="+1270"/>
+        <location line="+1272"/>
         <source>Version Check</source>
         <translation>Vérification de version</translation>
     </message>
     <message>
-        <location line="-1382"/>
+        <location line="-1384"/>
         <source>Quit eMule Qt</source>
         <translation>Quitter eMule Qt</translation>
     </message>
@@ -17163,7 +17330,7 @@ Activez-en au moins un dans Options → Connexion pour vous connecter.</translat
         <translation>eMule version %1 prêt</translation>
     </message>
     <message>
-        <location line="+105"/>
+        <location line="+107"/>
         <source>Unlimited</source>
         <translation>Illimité</translation>
     </message>
@@ -18426,7 +18593,7 @@ Vous obtenez moins de sources et des téléchargements plus lents, et deux clien
 <context>
     <name>eMule::MetaAccountDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/MetaAccountDialog.cpp" line="+65"/>
+        <location filename="../src/gui/dialogs/MetaAccountDialog.cpp" line="+66"/>
         <source>User name:</source>
         <translation>Nom d&apos;utilisateur :</translation>
     </message>
@@ -18713,7 +18880,7 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::MetaResultDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+76"/>
+        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+77"/>
         <source>Details: %1</source>
         <translation>Détails : %1</translation>
     </message>
@@ -19003,7 +19170,7 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::MetadataPage</name>
     <message>
-        <location filename="../src/gui/dialogs/MetadataPage.cpp" line="+108"/>
+        <location filename="../src/gui/dialogs/MetadataPage.cpp" line="+146"/>
         <source>No metadata tags available.</source>
         <translation>Aucune balise de métadonnées disponible.</translation>
     </message>
@@ -19028,7 +19195,7 @@ Le télécharger à nouveau ?</translation>
         <translation>Inconnu</translation>
     </message>
     <message>
-        <location line="+37"/>
+        <location line="+38"/>
         <source>Copy</source>
         <translation>Copier</translation>
     </message>
@@ -19826,7 +19993,7 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2359"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2377"/>
         <source>Stop at minimum seeds:</source>
         <translation>Arrêter au minimum de seeds :</translation>
     </message>
@@ -19836,36 +20003,36 @@ Le télécharger à nouveau ?</translation>
         <translation>Arrêter de partager un torrent dès que le tracker signale ce nombre d’autres seeds.</translation>
     </message>
     <message>
-        <location line="-6207"/>
+        <location line="-6255"/>
         <source>Options</source>
         <translation>Options</translation>
     </message>
     <message>
         <location line="+78"/>
-        <location line="+2708"/>
+        <location line="+2738"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2707"/>
-        <location line="+2708"/>
+        <location line="-2737"/>
+        <location line="+2738"/>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
     <message>
-        <location line="-2707"/>
-        <location line="+6992"/>
+        <location line="-2737"/>
+        <location line="+7040"/>
         <source>Apply</source>
         <translation>Appliquer</translation>
     </message>
     <message>
-        <location line="-6991"/>
+        <location line="-7039"/>
         <source>Help</source>
         <translation>Aide</translation>
     </message>
     <message>
-        <location line="+312"/>
-        <location line="+2688"/>
+        <location line="+317"/>
+        <location line="+2713"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -19877,22 +20044,22 @@ Le télécharger à nouveau ?</translation>
         <translation>Filtre IP</translation>
     </message>
     <message>
-        <location line="-2803"/>
+        <location line="-2828"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Filtre IP rechargé : %1 entrées.</translation>
     </message>
     <message>
-        <location line="+97"/>
+        <location line="+103"/>
         <source>Options -&gt; %1 -&gt; %2</source>
         <translation>Options -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5861"/>
+        <location line="+5898"/>
         <source>Bandwidth</source>
         <translation>Bande passante</translation>
     </message>
     <message>
-        <location line="-5645"/>
+        <location line="-5680"/>
         <source>General options</source>
         <translation>Options générales</translation>
     </message>
@@ -19902,32 +20069,32 @@ Le télécharger à nouveau ?</translation>
         <translation>Options avancées</translation>
     </message>
     <message>
-        <location line="-65"/>
-        <location line="+66"/>
-        <location line="+3183"/>
-        <location line="+3449"/>
+        <location line="-63"/>
+        <location line="+64"/>
+        <location line="+3200"/>
+        <location line="+3467"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-6504"/>
+        <location line="-6535"/>
         <source>User Name</source>
         <translation>Nom d&apos;utilisateur</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6896"/>
+        <location line="+6929"/>
         <source>Language</source>
         <translation>Langue</translation>
     </message>
     <message>
-        <location line="-6893"/>
+        <location line="-6926"/>
         <source>System Default</source>
         <translation>Par défaut du système</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+1055"/>
+        <location line="+1068"/>
         <location line="+459"/>
         <location line="+570"/>
         <location line="+322"/>
@@ -19935,7 +20102,7 @@ Le télécharger à nouveau ?</translation>
         <translation>Divers</translation>
     </message>
     <message>
-        <location line="-2403"/>
+        <location line="-2416"/>
         <source>Bring to front on link click</source>
         <translation>Mettre au premier plan lors du clic sur un lien</translation>
     </message>
@@ -20030,25 +20197,25 @@ Le télécharger à nouveau ?</translation>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6781"/>
+        <location line="+6814"/>
         <source>Core</source>
         <translation>Noyau</translation>
     </message>
     <message>
-        <location line="-6794"/>
+        <location line="-6827"/>
         <source>Address:</source>
         <translation>Adresse :</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1761"/>
+        <location line="+1774"/>
         <location line="+808"/>
         <location line="+432"/>
         <source>Port:</source>
         <translation>Port :</translation>
     </message>
     <message>
-        <location line="-2998"/>
+        <location line="-3011"/>
         <source>authentication token</source>
         <translation>jeton d&apos;authentification</translation>
     </message>
@@ -20121,7 +20288,7 @@ Voulez-vous vraiment continuer ?</translation>
         <translation type="vanished">Colore les données déjà téléchargées des parties incomplètes (vert pendant leur demande, gris sinon) et marque chaque limite de partie sur la ligne de progression.</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+38"/>
         <source>Show active downloads in bold</source>
         <translation>Afficher les téléchargements actifs en gras</translation>
     </message>
@@ -20170,22 +20337,22 @@ Voulez-vous vraiment continuer ?</translation>
         <translation>Utiliser les icônes eMule originales</translation>
     </message>
     <message>
-        <location line="+8987"/>
+        <location line="+9020"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>Chaque version inclut une base de données. Un compte &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; gratuit et facultatif la maintient à jour entre les versions. Ce produit inclut des données GeoLite2 créées par MaxMind.</translation>
     </message>
     <message>
-        <location line="-8934"/>
+        <location line="-8967"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>Économiser le CPU &amp;&amp; la mémoire</translation>
     </message>
     <message>
-        <location line="-663"/>
+        <location line="-680"/>
         <source>I2P</source>
         <translation>I2P</translation>
     </message>
     <message>
-        <location line="+511"/>
+        <location line="+515"/>
         <source>Download progress bar</source>
         <translation>Barre de progression du téléchargement</translation>
     </message>
@@ -20220,7 +20387,7 @@ Voulez-vous vraiment continuer ?</translation>
         <translation>Une barre simple remplie jusqu&apos;au pourcentage terminé, sans détail des parties.</translation>
     </message>
     <message>
-        <location line="+40"/>
+        <location line="+53"/>
         <source>Show status filter row:</source>
         <translation>Afficher la barre de filtre d&apos;état :</translation>
     </message>
@@ -20236,7 +20403,7 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+4884"/>
+        <location line="+4902"/>
         <source>Torrents</source>
         <translation>Torrents</translation>
     </message>
@@ -20249,7 +20416,7 @@ Voulez-vous vraiment continuer ?</translation>
         <translation type="vanished">La colonne triée auparavant départage la colonne actuelle : cliquez sur Restant, puis sur Statut, pour trier par statut puis par temps restant dans chaque statut</translation>
     </message>
     <message>
-        <location line="-4787"/>
+        <location line="-4805"/>
         <source>Disable Known Clients list</source>
         <translation>Désactiver la liste des clients connus</translation>
     </message>
@@ -20303,7 +20470,7 @@ Voulez-vous vraiment continuer ?</translation>
         <location line="+2155"/>
         <location line="+133"/>
         <location line="+301"/>
-        <location line="+1084"/>
+        <location line="+1102"/>
         <location line="+162"/>
         <location line="+1437"/>
         <location line="+333"/>
@@ -20312,7 +20479,7 @@ Voulez-vous vraiment continuer ?</translation>
         <translation>Activé</translation>
     </message>
     <message>
-        <location line="-5634"/>
+        <location line="-5652"/>
         <source>Reset</source>
         <translation>Réinitialiser</translation>
     </message>
@@ -20329,13 +20496,13 @@ Voulez-vous vraiment continuer ?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4963"/>
+        <location line="+4981"/>
         <location line="+381"/>
         <source> KB/s</source>
         <translation> Ko/s</translation>
     </message>
     <message>
-        <location line="-5347"/>
+        <location line="-5365"/>
         <source>Upload</source>
         <translation>Envoi</translation>
     </message>
@@ -20366,18 +20533,18 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+28"/>
-        <location line="+4787"/>
+        <location line="+4805"/>
         <source>Client Port</source>
         <translation>Port client</translation>
     </message>
     <message>
-        <location line="-4784"/>
-        <location line="+8687"/>
+        <location line="-4802"/>
+        <location line="+8720"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-8681"/>
+        <location line="-8714"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -20387,24 +20554,24 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4792"/>
+        <location line="+4810"/>
         <source>Test Ports</source>
         <translation>Tester les ports</translation>
     </message>
     <message>
-        <location line="-4788"/>
-        <location line="+4796"/>
+        <location line="-4806"/>
+        <location line="+4814"/>
         <source>Open Router</source>
         <translation>Ouvrir le routeur</translation>
     </message>
     <message>
-        <location line="-4795"/>
-        <location line="+4796"/>
+        <location line="-4813"/>
+        <location line="+4814"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>Ouvre la page web du routeur de cet ordinateur, où les ports sont redirigés</translation>
     </message>
     <message>
-        <location line="-4792"/>
+        <location line="-4810"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>Utiliser UPnP pour configurer les ports</translation>
     </message>
@@ -20431,22 +20598,22 @@ Voulez-vous vraiment continuer ?</translation>
     <message>
         <location line="+4"/>
         <location line="+2015"/>
-        <location line="+6205"/>
+        <location line="+6236"/>
         <source>Any</source>
         <translation>Tous</translation>
     </message>
     <message>
-        <location line="-8218"/>
+        <location line="-8249"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Utiliser uniquement cette interface réseau, par exemple un tunnel VPN. Choisissez-en une dans la liste, ou saisissez une adresse IP ou un sous-réseau tel que 10.64.0.0/10 (l&apos;interface qui y possède une adresse). Les connexions passant par un proxy ne sont pas liées.</translation>
     </message>
     <message>
-        <location line="+8115"/>
+        <location line="+8146"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>Tant que l&apos;interface sélectionnée n&apos;est pas disponible, toutes les connexions P2P, Usenet et de mise à jour restent fermées.</translation>
     </message>
     <message>
-        <location line="-8101"/>
+        <location line="-8132"/>
         <source>Max. Sources/File</source>
         <translation>Max. sources/fichier</translation>
     </message>
@@ -20465,12 +20632,12 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4816"/>
+        <location line="+4834"/>
         <source>Connection Limits</source>
         <translation>Limites de connexion</translation>
     </message>
     <message>
-        <location line="-4814"/>
+        <location line="-4832"/>
         <source>Max. connections</source>
         <translation>Max. connexions</translation>
     </message>
@@ -20548,14 +20715,14 @@ Voulez-vous vraiment continuer ?</translation>
         <translation>Kad est désactivé : indiquez une URL, sinon la vérification ne fait rien.</translation>
     </message>
     <message>
-        <location line="-1028"/>
-        <location line="+1102"/>
+        <location line="-1047"/>
+        <location line="+1121"/>
         <location line="+1807"/>
         <source>General</source>
         <translation>Général</translation>
     </message>
     <message>
-        <location line="-2908"/>
+        <location line="-2927"/>
         <source>Display</source>
         <translation>Affichage</translation>
     </message>
@@ -20595,18 +20762,23 @@ Voulez-vous vraiment continuer ?</translation>
         <translation>Planificateur</translation>
     </message>
     <message>
-        <location line="+2"/>
-        <location line="+23"/>
+        <location line="+6"/>
+        <location line="+21"/>
         <source>Extended</source>
         <translation>Étendu</translation>
     </message>
     <message>
-        <location line="-18"/>
+        <location line="-24"/>
         <source>Indexers/RSS</source>
         <translation>Indexeurs/RSS</translation>
     </message>
     <message>
-        <location line="+287"/>
+        <location line="+2"/>
+        <source>Integrations</source>
+        <translation>Intégrations</translation>
+    </message>
+    <message>
+        <location line="+295"/>
         <source>When off, eMule Qt still checks once a week, but only tells you about an update that is required.</source>
         <translation>Si désactivé, eMule Qt vérifie quand même une fois par semaine, mais ne signale qu&apos;une mise à jour obligatoire.</translation>
     </message>
@@ -20641,7 +20813,27 @@ Voulez-vous vraiment continuer ?</translation>
         <translation>Enregistrer un script qui lance eMule Qt sur un autre ordinateur, connecté à ce noyau</translation>
     </message>
     <message>
-        <location line="+129"/>
+        <location line="+114"/>
+        <source>Date format</source>
+        <translation>Format de date</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>As set in the region settings of the operating system.</source>
+        <translation>Selon les paramètres régionaux du système d&apos;exploitation.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The usual format of the language chosen on the General page.</source>
+        <translation>Le format habituel de la langue choisie dans la page Général.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Year-month-day and 24-hour time, the same in every language.</source>
+        <translation>Année-mois-jour et heure sur 24 heures, identique dans toutes les langues.</translation>
+    </message>
+    <message>
+        <location line="+22"/>
         <source>Show session transfer totals in status bar</source>
         <translation>Afficher les totaux de transfert de la session dans la barre d&apos;état</translation>
     </message>
@@ -20745,13 +20937,13 @@ Fonctionne avec SOCKS4a, SOCKS5 et les proxys HTTP qui autorisent HTTPS (CONNECT
     <message>
         <location line="+7"/>
         <location line="+2161"/>
-        <location line="+1087"/>
+        <location line="+1105"/>
         <location line="+162"/>
         <source>Name:</source>
         <translation>Nom :</translation>
     </message>
     <message>
-        <location line="-3406"/>
+        <location line="-3424"/>
         <location line="+965"/>
         <location line="+871"/>
         <location line="+19"/>
@@ -21182,8 +21374,8 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
         <translation>Nom d&apos;utilisateur :</translation>
     </message>
     <message>
-        <location line="-2152"/>
-        <location line="+2265"/>
+        <location line="-2171"/>
+        <location line="+2284"/>
         <source>Server</source>
         <translation>Serveur</translation>
     </message>
@@ -21205,13 +21397,13 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
     <message>
         <location line="+4"/>
         <location line="+1019"/>
-        <location line="+1095"/>
+        <location line="+1113"/>
         <location line="+164"/>
         <source>Name</source>
         <translation>Nom</translation>
     </message>
     <message>
-        <location line="-2276"/>
+        <location line="-2294"/>
         <source>Users</source>
         <translation>Utilisateurs</translation>
     </message>
@@ -21626,10 +21818,10 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
         <translation>Conserve un registre local des fichiers apparus dans vos recherches et des noms qu’ils portaient, afin que les recherches suivantes indiquent ce que vous avez déjà vu.</translation>
     </message>
     <message>
-        <location line="-1846"/>
-        <location line="+23"/>
+        <location line="-1865"/>
+        <location line="+25"/>
         <location line="+7"/>
-        <location line="+2090"/>
+        <location line="+2107"/>
         <source>Connection</source>
         <translation>Connexion</translation>
     </message>
@@ -21740,12 +21932,12 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
     </message>
     <message>
         <location line="+15"/>
-        <location line="+3083"/>
+        <location line="+3101"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-3070"/>
+        <location line="-3088"/>
         <source>Select Color</source>
         <translation>Sélectionner une couleur</translation>
     </message>
@@ -22061,13 +22253,13 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
     <message>
         <location line="-826"/>
         <location line="+828"/>
-        <location line="+1072"/>
+        <location line="+1090"/>
         <location line="+185"/>
         <source> days</source>
         <translation> jours</translation>
     </message>
     <message>
-        <location line="-1256"/>
+        <location line="-1274"/>
         <source>Retention:</source>
         <translation>Rétention :</translation>
     </message>
@@ -22098,16 +22290,16 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
         <translation>Stricte</translation>
     </message>
     <message>
-        <location line="-3410"/>
+        <location line="-3427"/>
         <location line="+63"/>
-        <location line="+4552"/>
+        <location line="+4587"/>
         <location line="+2080"/>
-        <location line="+2868"/>
+        <location line="+2883"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8956"/>
+        <location line="-8989"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Afficher la progression des téléchargements sur l&apos;icône du Dock</translation>
     </message>
@@ -22268,7 +22460,7 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+2107"/>
+        <location line="+2125"/>
         <location line="+9"/>
         <location line="+6"/>
         <location line="+182"/>
@@ -22276,7 +22468,7 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
         <translation>Sans limite</translation>
     </message>
     <message>
-        <location line="-2296"/>
+        <location line="-2314"/>
         <source>Allowance size:</source>
         <translation>Taille du quota :</translation>
     </message>
@@ -22332,19 +22524,19 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2238"/>
+        <location line="+2256"/>
         <source>Share of the download limit:</source>
         <translation>Part de la limite de téléchargement :</translation>
     </message>
     <message>
-        <location line="-2235"/>
+        <location line="-2253"/>
         <location line="+42"/>
-        <location line="+2185"/>
+        <location line="+2203"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2225"/>
+        <location line="-2243"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>Quelle part de la limite de téléchargement globale Usenet peut prendre pendant qu&apos;eD2K télécharge aussi. Le moteur inactif prête toute sa part à l&apos;autre, ceci ne s&apos;applique donc que lorsque les deux sont actifs.</translation>
     </message>
@@ -22394,12 +22586,12 @@ La réponse n&apos;est jamais un verdict. Rien ici ne peut empêcher un article 
     <message>
         <location line="-1723"/>
         <location line="+1727"/>
-        <location line="+1392"/>
+        <location line="+1410"/>
         <source>never</source>
         <translation>jamais</translation>
     </message>
     <message>
-        <location line="-4384"/>
+        <location line="-4402"/>
         <source>Show free disk space in status bar</source>
         <translation>Afficher l&apos;espace disque libre dans la barre d&apos;état</translation>
     </message>
@@ -22595,12 +22787,12 @@ La fenêtre Détails permet de choisir les fichiers dans tous les cas.</translat
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6044"/>
+        <location line="+6077"/>
         <source>Off</source>
         <translation>Désactivé</translation>
     </message>
     <message>
-        <location line="-6041"/>
+        <location line="-6074"/>
         <source>A release posted only minutes ago may not have reached your provider yet, so its articles look missing. It waits in the queue until its newest post is this old, then downloads.</source>
         <translation>Une publication postée il y a quelques minutes n&apos;a peut-être pas encore atteint votre fournisseur, ses articles semblent donc manquants. Elle attend dans la file jusqu&apos;à ce que son envoi le plus récent ait cet âge, puis se télécharge.</translation>
     </message>
@@ -22660,18 +22852,18 @@ Il ne peut pas se trouver dans vos dossiers temporaire, d&apos;arrivée ou de co
     </message>
     <message>
         <location line="+5"/>
-        <location line="+1851"/>
+        <location line="+1869"/>
         <source>Browse…</source>
         <translation>Parcourir…</translation>
     </message>
     <message>
-        <location line="-1843"/>
-        <location line="+1938"/>
+        <location line="-1861"/>
+        <location line="+1956"/>
         <source>Desktop</source>
         <translation>Bureau</translation>
     </message>
     <message>
-        <location line="-1934"/>
+        <location line="-1952"/>
         <source>Open .nzb files with eMule Qt</source>
         <translation>Ouvrir les fichiers .nzb avec eMule Qt</translation>
     </message>
@@ -22964,12 +23156,11 @@ Saisissez ce qu&apos;indique l&apos;espace client de votre fournisseur, ou 0 pou
         <translation>Connexion…</translation>
     </message>
     <message>
-        <location line="+51"/>
         <source>Search indexers answer keyword searches and hand back an NZB. They are separate from your news servers: on Usenet the provider you download from and the service you search are different businesses.</source>
-        <translation>Les indexeurs de recherche répondent aux recherches par mots-clés et renvoient un NZB. Ils sont distincts de vos serveurs de news : sur Usenet, le fournisseur chez qui vous téléchargez et le service que vous interrogez sont deux métiers différents.</translation>
+        <translation type="vanished">Les indexeurs de recherche répondent aux recherches par mots-clés et renvoient un NZB. Ils sont distincts de vos serveurs de news : sur Usenet, le fournisseur chez qui vous téléchargez et le service que vous interrogez sont deux métiers différents.</translation>
     </message>
     <message>
-        <location line="+245"/>
+        <location line="+314"/>
         <source>Detect per release</source>
         <translation>Détecter par publication</translation>
     </message>
@@ -22989,9 +23180,24 @@ Saisissez ce qu&apos;indique l&apos;espace client de votre fournisseur, ou 0 pou
         <translation>Réseau :</translation>
     </message>
     <message>
-        <location line="+4998"/>
+        <location line="+5013"/>
         <source>No lookups behind a proxy: no flags for names</source>
         <translation>Aucune résolution derrière un proxy : pas de drapeau pour les noms</translation>
+    </message>
+    <message>
+        <location line="+286"/>
+        <source>Operating system locale (%1)</source>
+        <translation>Paramètres régionaux du système (%1)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Language setting (%1)</source>
+        <translation>Paramètre de langue (%1)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>ISO 8601 (%1)</source>
+        <translation>ISO 8601 (%1)</translation>
     </message>
     <message>
         <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
@@ -23000,7 +23206,7 @@ Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20
 Auto suit la capacité d&apos;envoi : 2 sous 1 Mbit/s, 4 sous 4 Mbit/s, 8 sous 20 Mbit/s, 16 sous 100 Mbit/s, sinon 32.</translation>
     </message>
     <message>
-        <location line="+59"/>
+        <location line="-231"/>
         <location line="+5"/>
         <location line="+18"/>
         <location line="+13"/>
@@ -23069,15 +23275,15 @@ Auto suit la capacité d&apos;envoi : 2 sous 1 Mbit/s, 4 sous 4 Mbit/s, 8 sous 2
         </translation>
     </message>
     <message>
-        <location line="-9755"/>
-        <location line="+4379"/>
+        <location line="-5410"/>
+        <location line="+19"/>
         <location line="+408"/>
         <location line="+547"/>
         <source>Indexers</source>
         <translation>Indexeurs</translation>
     </message>
     <message>
-        <location line="-4207"/>
+        <location line="-4225"/>
         <source>DNS through proxy:</source>
         <translation>DNS via le proxy :</translation>
     </message>
@@ -23099,7 +23305,7 @@ Fonctionne avec les proxys SOCKS4a, SOCKS5 et HTTP qui autorisent HTTPS (CONNECT
         <translation type="vanished">Aperçu d&apos;un téléchargement inachevé (eD2K, ed3k, sources web, BitTorrent, Usenet, fichiers vidéo et audio d&apos;hébergeurs) : quand le lecteur se déplace, les parties à cet endroit sont téléchargées en premier et le lecteur les attend. Désactivé : le fichier est lu tel qu&apos;il est sur le disque.</translation>
     </message>
     <message>
-        <location line="+3249"/>
+        <location line="+3267"/>
         <source>URL</source>
         <translation>URL</translation>
     </message>
@@ -23231,7 +23437,7 @@ Chaque page est un appel d&apos;API décompté du quota de votre compte : c&apos
         <translation>Flux</translation>
     </message>
     <message>
-        <location line="-5782"/>
+        <location line="-5830"/>
         <source>Search options</source>
         <translation>Rechercher dans les options</translation>
     </message>
@@ -23243,7 +23449,7 @@ Enter: next page, Esc: clear</source>
 Entrée : page suivante, Échap : effacer</translation>
     </message>
     <message>
-        <location line="+1108"/>
+        <location line="+1125"/>
         <source>Show icon in system tray</source>
         <translation>Afficher l&apos;icône dans la zone de notification</translation>
     </message>
@@ -23268,7 +23474,7 @@ Entrée : page suivante, Échap : effacer</translation>
         <translation>Ce bureau n&apos;a pas de zone de notification.</translation>
     </message>
     <message>
-        <location line="+709"/>
+        <location line="+722"/>
         <source>Disable dead servers after</source>
         <translation>Désactiver les serveurs morts après</translation>
     </message>
@@ -23352,7 +23558,17 @@ Entrée : page suivante, Échap : effacer</translation>
         <translation>Désactivé : seuls les liens ed2k, ed3k et magnet sont cliquables. Ouvrir un lien web révèle votre adresse IP à son propriétaire</translation>
     </message>
     <message>
-        <location line="+2161"/>
+        <location line="+1992"/>
+        <source>RSS feeds</source>
+        <translation>Flux RSS</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Search indexers answer keyword searches and hand back an NZB or a torrent. They are separate from your news servers: on Usenet the provider you download from and the service you search are different businesses.</source>
+        <translation>Les indexeurs de recherche répondent aux recherches par mots-clés et renvoient un NZB ou un torrent. Ils sont distincts de vos serveurs de news : sur Usenet, le fournisseur depuis lequel vous téléchargez et le service que vous interrogez sont des entreprises différentes.</translation>
+    </message>
+    <message>
+        <location line="+176"/>
         <source>Search</source>
         <translation>Recherche</translation>
     </message>
@@ -23900,12 +24116,12 @@ Auto suit la capacité d&apos;envoi : 4 sous 4 Mbit/s, 8 sous 20 Mbit/s, 16 sous
         <translation>BitTorrent: Limite d&apos;envoi</translation>
     </message>
     <message>
-        <location line="+526"/>
+        <location line="+528"/>
         <source>&quot;%1&quot; is no DNS over HTTPS URL (https://host/path). The default %2 is used instead.</source>
         <translation>« %1 » n&apos;est pas une URL DNS sur HTTPS (https://hôte/chemin). L&apos;URL par défaut %2 est utilisée à la place.</translation>
     </message>
     <message>
-        <location line="+1960"/>
+        <location line="+1971"/>
         <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
         <translation>Cette interface n&apos;a pas de route par défaut (VPN en tunnel partagé ?) : les serveurs et pairs hors de ses sous-réseaux sont injoignables. Faites passer tout le trafic par elle ou choisissez une autre interface.</translation>
     </message>
@@ -23925,7 +24141,7 @@ Auto suit la capacité d&apos;envoi : 4 sous 4 Mbit/s, 8 sous 20 Mbit/s, 16 sous
         <translation>Base de données : aucune — cliquez sur « Mettre à jour » pour la télécharger</translation>
     </message>
     <message>
-        <location line="+257"/>
+        <location line="+259"/>
         <source>TCP/UDP</source>
         <translation>TCP/UDP</translation>
     </message>
@@ -23988,7 +24204,7 @@ Auto suit la capacité d&apos;envoi : 4 sous 4 Mbit/s, 8 sous 20 Mbit/s, 16 sous
         <translation type="vanished">Utilisé pour TCP et UDP. Doit être différent des ports eD2K.</translation>
     </message>
     <message>
-        <location line="-3927"/>
+        <location line="-3942"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Port d&apos;écoute (TCP/UDP) :</translation>
     </message>
@@ -24053,9 +24269,9 @@ Auto suit la capacité d&apos;envoi : 4 sous 4 Mbit/s, 8 sous 20 Mbit/s, 16 sous
         <translation>Arrêter au ratio :</translation>
     </message>
     <message>
-        <location line="-3737"/>
+        <location line="-3755"/>
         <location line="+1764"/>
-        <location line="+1977"/>
+        <location line="+1995"/>
         <source> min</source>
         <translation> min</translation>
     </message>
@@ -24132,12 +24348,12 @@ Auto suit la capacité d&apos;envoi : 4 sous 4 Mbit/s, 8 sous 20 Mbit/s, 16 sous
         <translation>Les téléchargements sont toujours vérifiés et journalisés. Les fichiers partagés sont revérifiés à chaque démarrage.</translation>
     </message>
     <message>
-        <location line="+2159"/>
+        <location line="+2169"/>
         <source>Could not update the file associations: %1</source>
         <translation>Impossible de mettre à jour les associations de fichiers : %1</translation>
     </message>
     <message>
-        <location line="+1099"/>
+        <location line="+1102"/>
         <location line="+16"/>
         <location line="+6"/>
         <location line="+3"/>
@@ -24182,7 +24398,7 @@ Recalculer maintenant le hash de tous les fichiers partagés ?</translation>
         </translation>
     </message>
     <message>
-        <location line="+128"/>
+        <location line="+130"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation>UDP est désactivé dans le fichier de configuration (udpPort: 0)</translation>
     </message>
@@ -24216,8 +24432,8 @@ Cherchez la « passerelle par défaut » dans les paramètres réseau de cet ord
         <translation type="vanished">Ouvrir la page du routeur</translation>
     </message>
     <message>
-        <location line="-9528"/>
-        <location line="+9447"/>
+        <location line="-9580"/>
+        <location line="+9499"/>
         <location line="+63"/>
         <source>Directories</source>
         <translation>Répertoires</translation>
@@ -24288,12 +24504,12 @@ Le créer ?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3644"/>
+        <location line="-3659"/>
         <source>Disabled</source>
         <translation>Désactivé</translation>
     </message>
     <message>
-        <location line="+1351"/>
+        <location line="+1357"/>
         <source>Theme</source>
         <translation>Thème</translation>
     </message>
@@ -24313,7 +24529,7 @@ Le créer ?</translation>
         <translation>Le changement de taille de police prendra effet après le redémarrage de l&apos;application.</translation>
     </message>
     <message>
-        <location line="+1291"/>
+        <location line="+1295"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp chargé, DLP v%1</translation>
     </message>
@@ -24323,7 +24539,7 @@ Le créer ?</translation>
         <translation>Bibliothèque specialdlp introuvable, les vérifications sont inactives</translation>
     </message>
     <message>
-        <location line="+881"/>
+        <location line="+884"/>
         <source>Automatic</source>
         <translation>Automatique</translation>
     </message>
@@ -24337,7 +24553,7 @@ Le créer ?</translation>
         <translation type="vanished">Accepter automatiquement les liens eD2K uniquement pendant l&apos;exécution</translation>
     </message>
     <message>
-        <location line="-3518"/>
+        <location line="-3531"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>Utiliser le système de crédits (récompenser les envoyeurs)</translation>
     </message>
@@ -24361,12 +24577,12 @@ Le créer ?</translation>
         <translation>Filtrer les IPs LAN des serveurs et clients</translation>
     </message>
     <message>
-        <location line="-5270"/>
+        <location line="-5288"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>Afficher plus de contrôles (mode avancé)</translation>
     </message>
     <message>
-        <location line="-609"/>
+        <location line="-626"/>
         <location line="+59"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
@@ -24383,12 +24599,12 @@ Le créer ?</translation>
     </message>
     <message>
         <location line="-1"/>
-        <location line="+561"/>
+        <location line="+578"/>
         <source>Hoster</source>
         <translation>Hébergeur</translation>
     </message>
     <message>
-        <location line="-559"/>
+        <location line="-576"/>
         <source>Filters</source>
         <translation>Filtres</translation>
     </message>
@@ -24397,7 +24613,7 @@ Le créer ?</translation>
         <translation type="vanished">Vente</translation>
     </message>
     <message>
-        <location line="+232"/>
+        <location line="+236"/>
         <source>Open eD2K and ed3k links with eMule Qt</source>
         <translation>Ouvrir les liens eD2K et ed3k avec eMule Qt</translation>
     </message>
@@ -24462,7 +24678,7 @@ Le créer ?</translation>
         <translation>Noyaux approuvés :</translation>
     </message>
     <message>
-        <location line="+246"/>
+        <location line="+259"/>
         <source>Database source:</source>
         <translation>Source de la base de données :</translation>
     </message>
@@ -24534,7 +24750,7 @@ RAR et 7z nécessitent 7-Zip ou unrar installé ; ZIP non.</translation>
         <translation>Uniquement si le noyau tourne sur cet ordinateur. Sinon, un clic affiche la fenêtre Transferts.</translation>
     </message>
     <message>
-        <location line="+2678"/>
+        <location line="+2696"/>
         <source>Which download category this feed&apos;s matches go into. The category decides the folder they finish in, and it is resolved when a release completes — so repointing the category moves what is still running with it.
 
 Torrents from a torznab indexer go to the BitTorrent download folder instead.</source>
@@ -24720,8 +24936,8 @@ Les fichiers torrent exclus n&apos;y sont jamais partagés, même dans le dossie
         <translation>Écriture sécurisée des fichiers .met/.dat</translation>
     </message>
     <message>
-        <location line="-3928"/>
-        <location line="+3932"/>
+        <location line="-3946"/>
+        <location line="+3950"/>
         <location line="+15"/>
         <source>Never</source>
         <translation>Jamais</translation>
@@ -24941,7 +25157,7 @@ Les fichiers torrent exclus n&apos;y sont jamais partagés, même dans le dossie
         <translation>Tous</translation>
     </message>
     <message>
-        <location line="+324"/>
+        <location line="+326"/>
         <source>Proxy settings will only apply to new connections.
 Restart eMule for all connections to use the new proxy settings.
 
@@ -24952,8 +25168,8 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 Les connexions aux serveurs de news basculent immédiatement.</translation>
     </message>
     <message>
-        <location line="-7067"/>
-        <location line="+7669"/>
+        <location line="-7106"/>
+        <location line="+7714"/>
         <source>Web Interface</source>
         <translation>Interface web</translation>
     </message>
@@ -24963,7 +25179,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>« %1 » n&apos;est pas une adresse IP. L&apos;adresse d&apos;écoute n&apos;a pas été modifiée.</translation>
     </message>
     <message>
-        <location line="+587"/>
+        <location line="+589"/>
         <source>File types</source>
         <translation>Types de fichiers</translation>
     </message>
@@ -24972,7 +25188,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation type="vanished">Impossible de mettre à jour l&apos;association des fichiers .nzb : %1</translation>
     </message>
     <message>
-        <location line="+815"/>
+        <location line="+818"/>
         <source>Port forwarding: %1</source>
         <translation>Redirection de ports : %1</translation>
     </message>
@@ -25026,20 +25242,20 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Rétablir les valeurs par défaut</translation>
     </message>
     <message>
-        <location line="-8946"/>
+        <location line="-8990"/>
         <location line="+30"/>
-        <location line="+745"/>
+        <location line="+758"/>
         <location line="+2165"/>
-        <location line="+1087"/>
+        <location line="+1105"/>
         <location line="+164"/>
         <location line="+1788"/>
         <location line="+406"/>
-        <location line="+2559"/>
+        <location line="+2572"/>
         <source>Remove</source>
         <translation>Supprimer</translation>
     </message>
     <message>
-        <location line="-7691"/>
+        <location line="-7722"/>
         <source>Remove %1</source>
         <translation>Retirer %1</translation>
     </message>
@@ -25059,7 +25275,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Mettre à jour depuis une URL : (format filter.dat ou PeerGuardian, .gz/.zip acceptés)</translation>
     </message>
     <message>
-        <location line="+3018"/>
+        <location line="+3036"/>
         <source>Private tracker torrents (ALT) and I2P torrents are not shared.</source>
         <translation>Les torrents de trackers privés (ALT) et les torrents I2P ne sont pas partagés.</translation>
     </message>
@@ -25134,14 +25350,14 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Bail demandé :</translation>
     </message>
     <message>
-        <location line="-2734"/>
-        <location line="+981"/>
+        <location line="-2752"/>
+        <location line="+999"/>
         <location line="+1757"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-5681"/>
+        <location line="-5699"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Les téléchargements qui reçoivent des données et les sources qui les envoient sont affichés en gras. Une source listée sous un autre fichier (A4AF) est aussi en gras pendant qu&apos;elle transfère. Le serveur connecté et l&apos;onglet de catégorie sélectionné sont également en gras.</translation>
     </message>
@@ -25201,7 +25417,7 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation type="vanished">Partager tous les torrents, y compris ceux de trackers privés (ALT)</translation>
     </message>
     <message>
-        <location line="+2083"/>
+        <location line="+2101"/>
         <source>Queue</source>
         <translation>File d&apos;attente</translation>
     </message>
@@ -25409,12 +25625,12 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation>Nouveau planning</translation>
     </message>
     <message>
-        <location line="-4870"/>
+        <location line="-4888"/>
         <location line="+1735"/>
-        <location line="+1087"/>
+        <location line="+1105"/>
         <location line="+164"/>
         <location line="+2129"/>
-        <location line="+2619"/>
+        <location line="+2632"/>
         <source>Add</source>
         <translation>Ajouter</translation>
     </message>
@@ -25427,7 +25643,7 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation type="vanished">Entrer une valeur :</translation>
     </message>
     <message>
-        <location line="-2562"/>
+        <location line="-2575"/>
         <source>Edit Value</source>
         <translation>Modifier la valeur</translation>
     </message>
@@ -25437,8 +25653,8 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation>La page de paramètres %1 n&apos;est pas encore implémentée.</translation>
     </message>
     <message>
-        <location line="-6856"/>
-        <location line="+7070"/>
+        <location line="-6893"/>
+        <location line="+7109"/>
         <location line="+7"/>
         <source>Proxy</source>
         <translation>Proxy</translation>
@@ -25460,7 +25676,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Les paramètres de connexion au noyau prendront effet après le redémarrage de l&apos;application.</translation>
     </message>
     <message>
-        <location line="+49"/>
+        <location line="+53"/>
         <source>Icons</source>
         <translation>Icônes</translation>
     </message>
@@ -26595,7 +26811,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
 <context>
     <name>eMule::SearchResultsModel</name>
     <message>
-        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+43"/>
+        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+44"/>
         <source>Fake</source>
         <translation>Faux</translation>
     </message>
@@ -26665,7 +26881,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Flux</translation>
     </message>
     <message numerus="yes">
-        <location line="+110"/>
+        <location line="+109"/>
         <source>%1 · %n name(s)</source>
         <translation>
             <numerusform>%1 · %n nom</numerusform>
@@ -27268,7 +27484,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
 <context>
     <name>eMule::SharedFilesModel</name>
     <message>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+50"/>
+        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+51"/>
         <source>Yes</source>
         <translation>Oui</translation>
     </message>
@@ -28149,7 +28365,7 @@ Ils seront alors publiés avec l&apos;adresse de ce nœud : tout le monde peut v
 <context>
     <name>eMule::SkinBrowserDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/SkinBrowserDialog.cpp" line="+43"/>
+        <location filename="../src/gui/dialogs/SkinBrowserDialog.cpp" line="+44"/>
         <source>Browse Skins</source>
         <translation>Parcourir les skins</translation>
     </message>
@@ -31376,7 +31592,7 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
 <context>
     <name>eMule::StatsGraph</name>
     <message>
-        <location filename="../src/gui/controls/StatsGraph.cpp" line="+42"/>
+        <location filename="../src/gui/controls/StatsGraph.cpp" line="+43"/>
         <source>Stopped</source>
         <translation>Arrêté</translation>
     </message>
@@ -31802,7 +32018,7 @@ Laissez tout décoché pour un torrent privé ; indiquez l&apos;URL du tracker p
         <translation type="vanished">Fichier</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+52"/>
+        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+53"/>
         <source>N/A</source>
         <translation>N/D</translation>
     </message>
@@ -32280,7 +32496,7 @@ Laissez tout décoché pour un torrent privé ; indiquez l&apos;URL du tracker p
 <context>
     <name>eMule::TorrentListModel</name>
     <message>
-        <location filename="../src/gui/controls/TorrentListModel.cpp" line="+71"/>
+        <location filename="../src/gui/controls/TorrentListModel.cpp" line="+72"/>
         <source>Queued</source>
         <translation>En file d&apos;attente</translation>
     </message>
@@ -34094,7 +34310,7 @@ Les sources voient alors l&apos;adresse de ce nœud ; les places en file d&apos;
         <translation>%1 sur %2</translation>
     </message>
     <message numerus="yes">
-        <location line="+99"/>
+        <location line="+98"/>
         <source>%n article(s) were never listed in the NZB</source>
         <translation>
             <numerusform>%n article n&apos;a jamais figuré dans le NZB</numerusform>
@@ -34874,7 +35090,7 @@ Un mot de passe est défini pour cette release.</translation>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+15"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+17"/>
         <source>(still scanning)</source>
         <translation>(analyse en cours)</translation>
     </message>
@@ -34884,12 +35100,12 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Acceptées</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+3"/>
         <source>Add</source>
         <translation>Ajouter</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+5"/>
         <source>Add NZB from URL…</source>
         <translation>Ajouter un NZB depuis une URL…</translation>
     </message>
@@ -34914,24 +35130,25 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Ajout de %1 NZB…</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Address</source>
         <translation>Adresse</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-4256"/>
-        <location line="+4138"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-4350"/>
+        <location line="+4226"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Session expirée — reconnectez-vous</translation>
     </message>
     <message>
-        <location line="-4183"/>
+        <location line="-4271"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+70"/>
         <source>Guests cannot add downloads</source>
         <translation>Les invités ne peuvent pas ajouter de téléchargements</translation>
     </message>
     <message>
-        <location line="+772"/>
+        <location line="+824"/>
         <source>Looking for comments on Kad</source>
         <translation>Recherche de commentaires sur Kad</translation>
     </message>
@@ -34963,7 +35180,7 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+41"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-20"/>
         <source>Download</source>
         <translation>Téléchargement</translation>
     </message>
@@ -35013,7 +35230,7 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Télécharger ce fichier</translation>
     </message>
     <message>
-        <location line="+144"/>
+        <location line="+100"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>Accès refusé — aucun mot de passe configuré. Définissez-en un dans Options → Interface Web.</translation>
     </message>
@@ -35031,8 +35248,9 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Échec de la connexion</translation>
     </message>
     <message numerus="yes">
-        <location line="+255"/>
-        <location line="+1102"/>
+        <location line="+290"/>
+        <location line="+1147"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="+572"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>%n téléchargement ajouté</numerusform>
@@ -35044,17 +35262,20 @@ Un mot de passe est défini pour cette release.</translation>
         <translation type="vanished">Non connecté — la recherche n’a pas pu être envoyée.</translation>
     </message>
     <message>
-        <location line="-1057"/>
+        <location line="-1102"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>Pas encore envoyée — la recherche est en attente (%1) et démarre d’elle-même.</translation>
     </message>
     <message>
         <location line="+27"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-164"/>
+        <location line="+563"/>
         <source>Nothing was saved: a value is missing or out of range.</source>
         <translation>Rien n’a été enregistré : une valeur est manquante ou hors limites.</translation>
     </message>
     <message>
         <location line="+17"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-547"/>
         <source>Not saved: %1</source>
         <translation>Non enregistré : %1</translation>
     </message>
@@ -35081,13 +35302,14 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Enregistré.</translation>
     </message>
     <message>
-        <location line="+13"/>
-        <location line="+2374"/>
+        <location line="+15"/>
+        <location line="+2423"/>
         <source>Web Control Panel</source>
         <translation>Panneau de contrôle Web</translation>
     </message>
     <message>
-        <location line="-2366"/>
+        <location line="-2415"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-104"/>
         <source>Not connected</source>
         <translation>Non connecté</translation>
     </message>
@@ -35097,7 +35319,8 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Bloqué : interface réseau indisponible</translation>
     </message>
     <message>
-        <location line="+303"/>
+        <location line="+329"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="+445"/>
         <source>Connected</source>
         <translation>Connecté</translation>
     </message>
@@ -35122,6 +35345,7 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+166"/>
         <source>Time</source>
         <translation>Temps</translation>
     </message>
@@ -35172,6 +35396,7 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+33"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-171"/>
         <source>Running</source>
         <translation>En cours</translation>
     </message>
@@ -35183,43 +35408,51 @@ Un mot de passe est défini pour cette release.</translation>
     <message>
         <location line="+44"/>
         <location line="+45"/>
-        <location line="+426"/>
-        <location line="+1135"/>
+        <location line="+443"/>
+        <location line="+1141"/>
         <source>Queued</source>
         <translation>En file d&apos;attente</translation>
     </message>
     <message>
-        <location line="-1602"/>
+        <location line="-1625"/>
         <location line="+43"/>
-        <location line="+425"/>
-        <location line="+1133"/>
+        <location line="+442"/>
+        <location line="+1139"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-482"/>
+        <location line="+135"/>
         <source>Downloading</source>
         <translation>En téléchargement</translation>
     </message>
     <message>
-        <location line="-1607"/>
+        <location line="-1630"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+424"/>
+        <location line="+441"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-134"/>
+        <location line="+135"/>
         <source>Paused</source>
         <translation>En pause</translation>
     </message>
     <message>
-        <location line="-423"/>
-        <location line="+424"/>
-        <location line="+967"/>
+        <location line="-440"/>
+        <location line="+441"/>
+        <location line="+973"/>
         <location line="+163"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-133"/>
+        <location line="+135"/>
         <source>Complete</source>
         <translation>Terminé</translation>
     </message>
     <message>
-        <location line="-1550"/>
-        <location line="+421"/>
+        <location line="-1573"/>
+        <location line="+438"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-134"/>
         <source>Failed</source>
         <translation>Échoué</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-2"/>
         <source>Verifying</source>
         <translation>Vérification</translation>
     </message>
@@ -35234,26 +35467,31 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Décompression</translation>
     </message>
     <message>
-        <location line="-476"/>
+        <location line="-493"/>
         <location line="+42"/>
-        <location line="+435"/>
+        <location line="+452"/>
         <source>Checking</source>
         <translation>Contrôle</translation>
     </message>
     <message>
-        <location line="-2667"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+122"/>
+        <location line="-2703"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+3"/>
         <source>Torrent</source>
         <translation>Torrent</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+20"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+27"/>
         <source>Web</source>
         <translation>Web</translation>
     </message>
     <message>
-        <location line="+1920"/>
+        <location line="+971"/>
+        <source>Guests cannot change anything.</source>
+        <translation>Les invités ne peuvent rien modifier.</translation>
+    </message>
+    <message>
+        <location line="+968"/>
         <source>Incoming (eD2K)</source>
         <translation>Entrant (eD2K)</translation>
     </message>
@@ -35279,11 +35517,13 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+2"/>
+        <location line="+115"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="+137"/>
         <source>Error</source>
         <translation>Erreur</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-114"/>
         <source>Moving</source>
         <translation>Déplacement</translation>
     </message>
@@ -35314,6 +35554,7 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+3"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="+2"/>
         <source>Waiting</source>
         <translation>En attente</translation>
     </message>
@@ -35338,7 +35579,7 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Aucun résolveur</translation>
     </message>
     <message numerus="yes">
-        <location line="+74"/>
+        <location line="+89"/>
         <source>%n torrent(s)</source>
         <translation>
             <numerusform>%n torrent</numerusform>
@@ -35347,11 +35588,13 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="+353"/>
         <source>Down: %1, up: %2</source>
         <translation>Réception : %1, envoi : %2</translation>
     </message>
     <message numerus="yes">
-        <location line="+43"/>
+        <location line="+45"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="+42"/>
         <source>%n download(s)</source>
         <translation>
             <numerusform>%n téléchargement</numerusform>
@@ -35360,11 +35603,19 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+28"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-190"/>
+        <location line="+40"/>
         <source>%1: %2</source>
         <translation>%1 : %2</translation>
     </message>
     <message>
         <location line="+0"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-31"/>
+        <location line="+8"/>
+        <location line="+12"/>
+        <location line="+18"/>
+        <location line="+21"/>
+        <location line="+12"/>
         <source>not added</source>
         <translation>non ajouté</translation>
     </message>
@@ -35383,6 +35634,7 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+40"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="+152"/>
         <source>%1 of %2 download(s) did not take it.</source>
         <translation>%1 téléchargement(s) sur %2 ne l’ont pas pris en compte.</translation>
     </message>
@@ -35498,14 +35750,18 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Très haute</translation>
     </message>
     <message>
-        <location line="-706"/>
-        <location line="+707"/>
+        <location line="-723"/>
+        <location line="+724"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-564"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-172"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
     <message>
-        <location line="-711"/>
-        <location line="+712"/>
+        <location line="-728"/>
+        <location line="+729"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+18"/>
         <source>Low</source>
         <translation>Basse</translation>
     </message>
@@ -35515,8 +35771,10 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Très basse</translation>
     </message>
     <message>
-        <location line="-711"/>
-        <location line="+712"/>
+        <location line="-728"/>
+        <location line="+729"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="+4"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+23"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
@@ -35572,8 +35830,9 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Aucune sélection</translation>
     </message>
     <message>
-        <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-182"/>
+        <location line="-1736"/>
+        <location line="+1798"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-114"/>
         <source>All</source>
         <translation>Tous</translation>
     </message>
@@ -35638,12 +35897,12 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>%1 sur %2</translation>
     </message>
     <message>
-        <location line="+60"/>
+        <location line="+61"/>
         <source>App language (%1)</source>
         <translation>Langue de l&apos;application (%1)</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+3"/>
         <source>Any</source>
         <translation>Tous</translation>
     </message>
@@ -35673,12 +35932,12 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Articles :</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Audio (.mp3 .ogg ...)</source>
         <translation>Audio (.mp3 .ogg ...)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Availability</source>
         <translation>Disponibilité</translation>
     </message>
@@ -35692,12 +35951,12 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation type="vanished">Image CD (.iso .bin ...)</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Cancel this download?</source>
         <translation>Annuler ce téléchargement ?</translation>
     </message>
@@ -35717,7 +35976,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Catégorie : %1</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Check Availability</source>
         <translation>Vérifier la disponibilité</translation>
     </message>
@@ -35727,7 +35986,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Choisissez d&apos;abord des fichiers .nzb ou collez des liens.</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Clear Completed</source>
         <translation>Effacer les terminés</translation>
     </message>
@@ -35767,7 +36026,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Connecter</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Copy ED2K Link</source>
         <translation>Copier le lien ED2K</translation>
     </message>
@@ -35787,7 +36046,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Date :</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Debug</source>
         <translation>Débogage</translation>
     </message>
@@ -35822,13 +36081,13 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Vitesse de téléchargement</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1826"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1850"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+3"/>
         <source>Downloads</source>
         <translation>Téléchargements</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+5"/>
         <source>File</source>
         <translation>Fichier</translation>
     </message>
@@ -35843,17 +36102,17 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Fichiers</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Files:</source>
         <translation>Fichiers :</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Free Disk Space</source>
         <translation>Espace disque libre</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>General</source>
         <translation>Général</translation>
     </message>
@@ -35868,7 +36127,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Graphiques</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Hash</source>
         <translation>Hash</translation>
     </message>
@@ -35888,7 +36147,8 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
     </message>
     <message>
         <location filename="../src/core/webserver/WebServer.cpp" line="+4"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+4"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="+757"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+7"/>
         <source>KB/s</source>
         <translation>Ko/s</translation>
     </message>
@@ -35918,7 +36178,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Langue</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Log</source>
         <translation>Journal</translation>
     </message>
@@ -35933,7 +36193,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Déconnexion</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Max Download (KB/s)</source>
         <translation>Téléchargement max. (Ko/s)</translation>
     </message>
@@ -35953,7 +36213,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Vitesse d&apos;envoi max.</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+3"/>
         <source>Method</source>
         <translation>Méthode</translation>
     </message>
@@ -35963,7 +36223,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Manquants</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+3"/>
         <source>My Info</source>
         <translation>Mes infos</translation>
     </message>
@@ -35978,66 +36238,503 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Fichiers NZB :</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1350"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1369"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Nom</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-76"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-105"/>
         <source>Also ask</source>
         <translation>Demander aussi</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-759"/>
+        <source>Very High</source>
+        <translation>Très haute</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Very Low</source>
+        <translation>Très basse</translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <source>Upload Limit</source>
+        <translation>Limite d&apos;envoi</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Download Limit</source>
+        <translation>Limite de téléchargement</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Source Limit</source>
+        <translation>Limite de sources</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Con/5sec Limit</source>
+        <translation>Limite conn./5 s</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Max Connections</source>
+        <translation>Connexions max.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Stop Category</source>
+        <translation>Arrêter la catégorie</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Resume Category</source>
+        <translation>Reprendre la catégorie</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Usenet: Pause</source>
+        <translation>Usenet: Pause</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Usenet: Resume</source>
+        <translation>Usenet: Reprendre</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Usenet: Download Limit</source>
+        <translation>Usenet: Limite de téléchargement</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Usenet: Pause Category</source>
+        <translation>Usenet: Mettre la catégorie en pause</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Usenet: Resume Category</source>
+        <translation>Usenet: Reprendre la catégorie</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent: Pause</source>
+        <translation>BitTorrent: Pause</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent: Resume</source>
+        <translation>BitTorrent: Reprendre</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent: Download Limit</source>
+        <translation>BitTorrent: Limite de téléchargement</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent: Upload Limit</source>
+        <translation>BitTorrent: Limite d&apos;envoi</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Monday</source>
+        <translation>Lundi</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Tuesday</source>
+        <translation>Mardi</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Wednesday</source>
+        <translation>Mercredi</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Thursday</source>
+        <translation>Jeudi</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Friday</source>
+        <translation>Vendredi</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Saturday</source>
+        <translation>Samedi</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Sunday</source>
+        <translation>Dimanche</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Mon-Fri</source>
+        <translation>Lun-Ven</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Mon-Sat</source>
+        <translation>Lun-Sam</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Sat-Sun</source>
+        <translation>Sam-Dim</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Daily</source>
+        <translation>Quotidien</translation>
+    </message>
+    <message>
+        <location line="+42"/>
+        <source>Stopped</source>
+        <translation>Arrêté</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Hashing</source>
+        <translation>Calcul du hash</translation>
+    </message>
+    <message>
+        <location line="+173"/>
+        <location line="+11"/>
+        <source>Speed limits changed.</source>
+        <translation>Limites de vitesse modifiées.</translation>
+    </message>
+    <message>
+        <location line="+44"/>
+        <location line="+39"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+13"/>
         <source>BitTorrent is off.</source>
         <translation>BitTorrent est désactivé.</translation>
     </message>
     <message>
+        <location line="-9"/>
+        <source>not a link eMule knows</source>
+        <translation>lien inconnu d&apos;eMule</translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <source>not a collection</source>
+        <translation>pas une collection</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>not a file eMule can add</source>
+        <translation>fichier qu&apos;eMule ne peut pas ajouter</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+11"/>
+        <source>%n NZB link(s) being fetched</source>
+        <translation>
+            <numerusform>%n lien NZB en cours de récupération</numerusform>
+            <numerusform>%n liens NZB en cours de récupération</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+2"/>
+        <source>%n container(s) opened on the Hoster page</source>
+        <translation>
+            <numerusform>%n conteneur ouvert sur la page Hébergeur</numerusform>
+            <numerusform>%n conteneurs ouverts sur la page Hébergeur</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>Not running</source>
+        <translation>Arrêté</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Router (reachable)</source>
+        <translation>Routeur (joignable)</translation>
+    </message>
+    <message>
         <location line="+1"/>
+        <source>Leaf (through a relay)</source>
+        <translation>Feuille (via un relais)</translation>
+    </message>
+    <message>
+        <location line="+165"/>
+        <source>Offline</source>
+        <translation>Hors ligne</translation>
+    </message>
+    <message>
+        <location line="+19"/>
+        <source>Me</source>
+        <translation>Moi</translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>Pick a friend to chat with.</source>
+        <translation>Choisissez un ami avec qui discuter.</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Not sent: %1</source>
+        <translation>Non envoyé : %1</translation>
+    </message>
+    <message>
+        <location line="+26"/>
+        <source>Failed to add friend: give a user hash, or an address and port.</source>
+        <translation>Ami non ajouté : indiquez un hash utilisateur, ou une adresse et un port.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Friend added.</source>
+        <translation>Ami ajouté.</translation>
+    </message>
+    <message>
+        <location line="+46"/>
+        <source>from %1</source>
+        <translation>à partir de %1</translation>
+    </message>
+    <message>
+        <location line="+93"/>
+        <source>Schedule added.</source>
+        <translation>Planification ajoutée.</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
         <source>CD-Image (.iso .bin ...)</source>
         <translation>Image CD (.iso .bin ...)</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+14"/>
         <source>Collection</source>
         <translation>Collection</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+18"/>
         <source>Down</source>
         <translation>Réception</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1220"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+15"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1239"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+26"/>
         <source>Hoster</source>
         <translation>Hébergeur</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-92"/>
+        <source>%1 of %2 shown</source>
+        <translation>%1 sur %2 affichés</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1 unread</source>
+        <translation>%1 non lu(s)</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Action</source>
+        <translation>Action</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Actions</source>
+        <translation>Actions</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Add %1 pasted link(s)?</source>
+        <translation>Ajouter %1 lien(s) collé(s) ?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add Friend</source>
+        <translation>Ajouter un ami</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add Links</source>
+        <translation>Ajouter des liens</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add Links…</source>
+        <translation>Ajouter des liens…</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Adding %1 item(s)…</source>
+        <translation>Ajout de %1 élément(s)…</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Alternative speed (turtle)</source>
+        <translation>Vitesse alternative (tortue)</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Asked the browser to open magnet links here.</source>
+        <translation>Le navigateur a été invité à ouvrir les liens magnet ici.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Auto</source>
+        <translation>Auto</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Browser notifications need HTTPS, or the page opened as localhost. Pop-ups on this page still show.</source>
+        <translation>Les notifications du navigateur exigent HTTPS ou la page ouverte en localhost. Les messages sur cette page s&apos;affichent toujours.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Cancel the ticked downloads?</source>
+        <translation>Annuler les téléchargements cochés ?</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Category…</source>
+        <translation>Catégorie…</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Clear</source>
+        <translation>Effacer</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Contacts</source>
+        <translation>Contacts</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Days</source>
+        <translation>Jours</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Download completed</source>
+        <translation>Téléchargement terminé</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Download failed</source>
+        <translation>Échec du téléchargement</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Drop to add: .torrent, .nzb, .emulecollection, link containers, or links</source>
+        <translation>Déposez pour ajouter : .torrent, .nzb, .emulecollection, conteneurs de liens ou liens</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Empty end: no end time</source>
+        <translation>Fin vide : pas d&apos;heure de fin</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Enable scheduler</source>
+        <translation>Activer le planificateur</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Enabled</source>
+        <translation>Activé</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Files (.torrent, .nzb, .emulecollection, DLC, RSDF, CCF):</source>
+        <translation>Fichiers (.torrent, .nzb, .emulecollection, DLC, RSDF, CCF) :</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Filter</source>
+        <translation>Filtre</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Friends</source>
+        <translation>Amis</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-480"/>
+        <location line="+34"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+10"/>
         <source>Hoster downloads are off.</source>
         <translation>Les téléchargements d’hébergeurs sont désactivés.</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Hoster links, one per line:</source>
         <translation>Liens d’hébergeurs, un par ligne&#xa0;:</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>IP address</source>
+        <translation>Adresse IP</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Install as app</source>
+        <translation>Installer comme application</translation>
+    </message>
+    <message>
         <location line="+7"/>
+        <source>Last Seen</source>
+        <translation>Vu pour la dernière fois</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Limits</source>
+        <translation>Limites</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Link containers (DLC, RSDF, CCF):</source>
         <translation>Conteneurs de liens (DLC, RSDF, CCF) :</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Magnet links, one per line:</source>
         <translation>Liens magnet, un par ligne&#xa0;:</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+5"/>
+        <source>Message</source>
+        <translation>Message</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Messages</source>
+        <translation>Messages</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>More</source>
+        <translation>Plus</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>More actions per schedule: Preferences › Scheduler in the eMule window.</source>
+        <translation>Plusieurs actions par planification : Préférences › Planificateur dans la fenêtre d&apos;eMule.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Network</source>
         <translation>Réseau</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="+436"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>New Schedule</source>
+        <translation>Nouveau planning</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>New message</source>
+        <translation>Nouveau message</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -36056,6 +36753,11 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Node ID</source>
+        <translation>ID du nœud</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Nothing has completed yet for &quot;%1&quot;.</source>
         <translation>Rien n&apos;est encore terminé pour « %1 ».</translation>
     </message>
@@ -36063,6 +36765,31 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <location line="+1"/>
         <source>Nothing here can be previewed yet.</source>
         <translation>Rien ne peut encore être prévisualisé ici.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Nothing to add: drop .torrent, .nzb, .emulecollection or link container files, or ed2k, ed3k, magnet or web links.</source>
+        <translation>Rien à ajouter : déposez des fichiers .torrent, .nzb, .emulecollection ou conteneurs de liens, ou des liens ed2k, ed3k, magnet ou web.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Notifications off.</source>
+        <translation>Notifications désactivées.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Notifications on: finished and failed downloads and new messages.</source>
+        <translation>Notifications activées : téléchargements terminés et échoués, et nouveaux messages.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Notify me of finished downloads</source>
+        <translation>M&apos;avertir des téléchargements terminés</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>On</source>
+        <translation>Actif</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -36078,6 +36805,11 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <location line="+1"/>
         <source>Open in the browser, or copy the link into a media player</source>
         <translation>Ouvrir dans le navigateur ou copier le lien dans un lecteur multimédia</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open magnet links here</source>
+        <translation>Ouvrir les liens magnet ici</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -36206,6 +36938,11 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Priority…</source>
+        <translation>Priorité…</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Program (.exe ...)</source>
         <translation>Programme (.exe ...)</translation>
     </message>
@@ -36245,12 +36982,16 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Reconnexions</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>Refresh</source>
-        <translation>Actualiser</translation>
+        <location line="+76"/>
+        <source>Use the browser menu: Install app, or Share and Add to Home Screen. Browsers offer it on HTTPS or localhost.</source>
+        <translation>Utilisez le menu du navigateur : Installer l&apos;application, ou Partager puis Sur l&apos;écran d&apos;accueil. Les navigateurs le proposent en HTTPS ou localhost.</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <source>Refresh</source>
+        <translation type="vanished">Actualiser</translation>
+    </message>
+    <message>
+        <location line="-75"/>
         <source>Remaining</source>
         <translation>Restant</translation>
     </message>
@@ -36263,6 +37004,11 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <location line="+1"/>
         <source>Remove %1 download(s) and delete the files already fetched?</source>
         <translation>Retirer %1 téléchargement(s) et supprimer les fichiers déjà récupérés ?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove Friend</source>
+        <translation>Retirer l&apos;ami</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -36301,6 +37047,16 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Remove this friend?</source>
+        <translation>Retirer cet ami ?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove this schedule?</source>
+        <translation>Supprimer cette planification ?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Requests</source>
         <translation>Requêtes</translation>
     </message>
@@ -36321,6 +37077,11 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Scheduler</source>
+        <translation>Planificateur</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Search</source>
         <translation>Recherche</translation>
     </message>
@@ -36328,6 +37089,11 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <location line="+1"/>
         <source>Seeds</source>
         <translation>Seeds</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Send</source>
+        <translation>Envoyer</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -36385,7 +37151,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Fichiers partagés</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1220"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1239"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Size</source>
         <translation>Taille</translation>
@@ -36403,6 +37169,11 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
     <message>
         <location line="+1"/>
         <source>Speed Limits</source>
+        <translation>Limites de vitesse</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Speed limits</source>
         <translation>Limites de vitesse</translation>
     </message>
     <message>
@@ -36437,8 +37208,38 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>The browser refused notifications.</source>
+        <translation>Le navigateur a refusé les notifications.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>The servers&apos; catalogues of these networks are asked too.</source>
         <translation>Les catalogues des serveurs pour ces réseaux sont aussi interrogés.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Theme</source>
+        <translation>Thème</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Theme: Auto</source>
+        <translation>Thème : Auto</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Theme: Classic</source>
+        <translation>Thème : Classique</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Theme: Dark</source>
+        <translation>Thème : Sombre</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Theme: Light</source>
+        <translation>Thème : Clair</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -36452,8 +37253,28 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>This browser cannot open magnet links here (it needs HTTPS or localhost).</source>
+        <translation>Ce navigateur ne peut pas ouvrir les liens magnet ici (HTTPS ou localhost requis).</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>This download is no longer in the queue.</source>
         <translation>Ce téléchargement n&apos;est plus dans la file.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Tick one or more rows first.</source>
+        <translation>Cochez d&apos;abord une ou plusieurs lignes.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Tip: drop files or links anywhere on any page, or paste links onto a page, to add them too.</source>
+        <translation>Astuce : déposez des fichiers ou des liens n&apos;importe où sur une page, ou collez des liens sur une page, pour les ajouter aussi.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Title</source>
+        <translation>Titre</translation>
     </message>
     <message>
         <location line="+2"/>
@@ -36461,7 +37282,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Fichiers torrent :</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1216"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1235"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Torrents</source>
         <translation>Torrents</translation>
@@ -36488,8 +37309,18 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Turn notifications off</source>
+        <translation>Désactiver les notifications</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Type</source>
         <translation>Type</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Type a message…</source>
+        <translation>Tapez un message…</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -36498,7 +37329,17 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Unlimited</source>
+        <translation>Illimité</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Up</source>
+        <translation>Envoi</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Upload</source>
         <translation>Envoi</translation>
     </message>
     <message>
@@ -36518,14 +37359,15 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Durée de fonctionnement</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-2056"/>
-        <location line="+1927"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-2075"/>
+        <location line="+1946"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+981"/>
+        <location line="+998"/>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-448"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet engine unavailable</source>
         <translation>Moteur Usenet indisponible</translation>
@@ -36547,8 +37389,18 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>User hash</source>
+        <translation>Hash utilisateur</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Users</source>
         <translation>Utilisateurs</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Value</source>
+        <translation>Valeur</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -36559,6 +37411,32 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <location line="+2"/>
         <source>You have already downloaded %1 of these. Download them again?</source>
         <translation>Vous avez déjà téléchargé %1 d&apos;entre eux. Les télécharger à nouveau ?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>ed2k, ed3k, magnet and web links, one per line:</source>
+        <translation>Liens ed2k, ed3k, magnet et web, un par ligne :</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>ed3k</source>
+        <translation>ed3k</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>ed3k Network</source>
+        <translation>Réseau ed3k</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServerUi.cpp" line="-59"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>ed3k is off.</source>
+        <translation>ed3k est désactivé.</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>ed3k links, one per line:</source>
+        <translation>Liens ed3k, un par ligne :</translation>
     </message>
     <message>
         <location line="+1"/>

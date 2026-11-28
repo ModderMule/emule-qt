@@ -24,6 +24,7 @@
 #include <QSplitter>
 #include <QUrl>
 #include <QVBoxLayout>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -176,7 +177,7 @@ void SkinBrowserDialog::onSelectionChanged()
         html += QStringLiteral("<br>") + tr("by %1").arg(r->author.toHtmlEscaped());
     QStringList facts;
     if (r->date.isValid())
-        facts << QLocale().toString(r->date.toLocalTime().date(), QLocale::ShortFormat);
+        facts << toDisplayString(r->date.toLocalTime().date());
     facts << formatByteSize(r->file.size);
     if (const QString state = stateText(*r); !state.isEmpty())
         facts << state;

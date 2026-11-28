@@ -46,6 +46,8 @@ class QUrlQuery;
 namespace eMule {
 
 class ApiBackend;
+class ArrSearchBridge;
+class PartFile;
 class ApiEventHub;
 class DownloadQueue;
 class FriendList;
@@ -73,6 +75,8 @@ struct WebServerConfig {
     bool restApiEnabled = false;  ///< Serve the JSON REST API (/api/v1/*). Independent of webUiEnabled.
     bool mcpEnabled = false;      ///< Serve the MCP endpoint (/mcp). Independent of restApiEnabled.
     bool mcpReadOnly = false;     ///< MCP: only tools that change nothing.
+    bool arrApiEnabled = false;   ///< Sonarr/Radarr: qBittorrent API (/api/v2) + Torznab (/torznab/api).
+    int arrSearchWaitSeconds = 30;
     bool gzipEnabled = true;
     QStringList corsAllowedOrigins;  ///< Origins that may call /api/v1/* from a browser. Empty = no CORS headers; "*" = any.
     QString templatePath;
@@ -249,9 +253,17 @@ public:
     void setEd3kBackend(Ed3kWebBackend* backend) { m_ed3kBackend = backend; }
     /// The newznab/torznab searches behind /api/v1/indexer. Not owned; may be null.
     void setIndexerBackend(IndexerWebBackend* backend) { m_indexerBackend = backend; }
+    /// eD2K searches behind /torznab/api. Not owned; null: Torznab searches answer empty.
+    void setArrBridge(ArrSearchBridge* bridge) { m_arrBridge = bridge; }
 
     /// Source of GET /api/v1/events. Optional and not owned; outlives this server.
     void setEventHub(ApiEventHub* hub) { m_eventHub = hub; }
+
+    /// One chat line for the web UI's Messages page. The daemon calls it for every
+    /// message received, and for every one the GUI or the page sent. Ring of kChatLogMax.
+    void noteChatMessage(const QString& userHash, const QString& name, const QString& text, bool incoming);
+    /// Lines kept for the Messages page.
+    static constexpr qsizetype kChatLogMax = 500;
 
     /// Every REST operation: the table behind routing, OpenAPI and the MCP tools.
     [[nodiscard]] const api::Registry& api() const { return m_api; }
@@ -330,6 +342,22 @@ private:
     void registerEventRoute();
     void registerDocsRoutes();
     void registerMcpRoute();
+
+    // Sonarr/Radarr (WebServerArr.cpp): qBittorrent Web API v2 and Torznab
+    void registerArrRoutes();
+    [[nodiscard]] QHttpServerResponse handleQBit(const QString& group, const QString& name,
+                                                 const QHttpServerRequest& req);
+    [[nodiscard]] QFuture<QHttpServerResponse> handleTorznab(const QHttpServerRequest& req);
+    [[nodiscard]] bool qbitAuthorized(const QHttpServerRequest& req);
+    [[nodiscard]] QHttpServerResponse qbitLogin(const QHttpServerRequest& req, const QUrlQuery& form);
+    [[nodiscard]] QHttpServerResponse qbitTorrents(const QString& name, const QUrlQuery& args,
+                                                   const QHttpServerRequest& req);
+    [[nodiscard]] QHttpServerResponse qbitAdd(const QUrlQuery& args, const QHttpServerRequest& req);
+    /// The category index named @p title; created when missing and @p create. -1: none.
+    [[nodiscard]] int qbitCategoryIndex(const QString& title, bool create);
+    [[nodiscard]] QJsonObject qbitTorrentJson(const PartFile& file) const;
+    [[nodiscard]] QList<PartFile*> qbitFiles(const QString& hashes) const;
+
     [[nodiscard]] QFuture<QHttpServerResponse> runOperation(const api::Operation& op,
                                                             const QStringList& pathValues,
                                                             const QHttpServerRequest& req);
@@ -685,6 +713,30 @@ private:
     [[nodiscard]] QString buildTorrentFiles(const QString& id, const QString& streamToken);
     [[nodiscard]] QString buildHosterPage(bool isAdmin);
 
+    // WebServerUi.cpp: ed3k, Messages, Scheduler, Add Link pages, speed menu, status poll
+    /// The ed3k page: node status and the plain ed3k downloads.
+    [[nodiscard]] QString buildEd3kPage(bool isAdmin);
+    /// Friends and the chat log; `peer=` opens that conversation.
+    [[nodiscard]] QString buildMessagesPage(bool isAdmin, const QUrlQuery& query);
+    [[nodiscard]] QString buildSchedulerPage(bool isAdmin);
+    /// What a magnet (protocol handler) or a pasted link would add; a GET only shows.
+    [[nodiscard]] QString buildAddLinkPage(bool isAdmin, const QUrlQuery& query);
+    void webEd3kAction(const QUrlQuery& form);
+    void webMessagesAction(const QUrlQuery& form);
+    void webSchedulerAction(const QUrlQuery& form);
+    /// The header's speed menu: new download/upload limits (KB/s, 0 = unlimited).
+    void webSpeedAction(const QUrlQuery& form);
+    /// Links and files from drag and drop, paste or the Add Link page, each to its network.
+    void webAddAction(const QUrlQuery& form, const QList<WebUpload>& uploads);
+    /// GET /ui/status: speeds, limits and the finished/failed downloads of every network.
+    QHttpServerResponse handleUiStatus(const QHttpServerRequest& request);
+    /// GET /manifest.webmanifest: install the web UI as an app; magnet links open Add Link.
+    [[nodiscard]] static QHttpServerResponse webManifest();
+    /// Header vars of the speed menu and the notices of the pages in WebServerUi.cpp.
+    void addUiHeaderVars(QHash<QString, QString>& vars);
+    /// The status name a transfer row's filter offers (translated).
+    [[nodiscard]] static QString downloadStatusText(const QString& statusKey);
+
     /// The Usenet page: toolbar, category tabs, the queue and the page script.
     [[nodiscard]] QString buildUsenetPage(bool isAdmin, const QString& sessionId,
                                           const QUrlQuery& query);
@@ -696,12 +748,16 @@ private:
     [[nodiscard]] QString buildUsenetDetails(const QString& sessionId, const QString& id);
 
     /// The login page, with @p failedHtml (already markup) above the form.
-    [[nodiscard]] QHttpServerResponse loginPage(const QString& failedHtml);
+    /// @p next: the page after the login (`w=` and its arguments), carried in the form.
+    [[nodiscard]] QHttpServerResponse loginPage(const QString& failedHtml, const QString& next = {});
 
     /// The language a web-UI request renders in: the session's own choice, else
     /// @p requested (an incoming page's `lang=`), else the app language. Empty
     /// without a router, which renders English.
     [[nodiscard]] QString webLanguage(const QString& sessionId, const QString& requested = {}) const;
+    /// Date + time per Display › Date format; "Language" = the page's language (#250)
+    [[nodiscard]] QString webDateTime(const QDateTime& dt, const QString& sessionId,
+                                      const QString& requested = {}) const;
 
     /// The header's language menu: "App language", English and every installed
     /// translation, with the session's choice selected.
@@ -753,6 +809,20 @@ private:
     bool    m_webHosterFailed = false;
     QString m_webPrefsNotice;       ///< shown once on the options page
     bool    m_webPrefsFailed = false;
+    QString m_webUiNotice;          ///< shown once by the next page: add, chat, scheduler, speed
+    bool    m_webUiFailed = false;
+    /// A live poll's stream token (`st=`): reused while valid, so a playing preview keeps its link.
+    QString m_reuseStreamToken;
+
+    struct WebChatLine {
+        QString userHash;   ///< 32 hex, empty when the sender is unknown
+        QString name;
+        QString text;
+        QDateTime when;
+        bool incoming = true;
+    };
+    std::vector<WebChatLine> m_chatLog;   ///< oldest first, at most kChatLogMax
+    quint64 m_chatIncoming = 0;           ///< messages received so far: the unread badge
 
     // Log provider callback (injected by DaemonApp)
     std::function<QString()> m_logProvider;
@@ -776,6 +846,9 @@ private:
     MetaGrabWebBackend* m_metaGrabBackend = nullptr;
     Ed3kWebBackend* m_ed3kBackend = nullptr;
     IndexerWebBackend* m_indexerBackend = nullptr;
+    ArrSearchBridge* m_arrBridge = nullptr;
+    /// qBittorrent API logins: SID -> last use (ms); gone with the server
+    QHash<QByteArray, qint64> m_qbitSessions;
 
     // REST operation table, and its daemon-side half (not owned)
     api::Registry m_api;

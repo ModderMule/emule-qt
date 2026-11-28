@@ -143,6 +143,7 @@ SOURCES += \
     controls/StatsGraph.cpp \
     controls/TransferToolbar.cpp \
     dialogs/AddFriendDialog.cpp \
+    dialogs/IntegrationsPage.cpp \
     dialogs/CategoryDialog.cpp \
     dialogs/ArchivePreviewPanel.cpp \
     dialogs/ClientDetailDialog.cpp \
@@ -294,6 +295,7 @@ HEADERS += \
     controls/StatsGraph.h \
     controls/TransferToolbar.h \
     dialogs/AddFriendDialog.h \
+    dialogs/IntegrationsPage.h \
     dialogs/CategoryDialog.h \
     dialogs/ArchivePreviewPanel.h \
     dialogs/ClientDetailDialog.h \
@@ -335,6 +337,7 @@ HEADERS += \
     utils/ClientIcons.h \
     utils/BadgeIcons.h \
     utils/CountryFlags.h \
+    utils/DateTimeFormat.h \
     utils/InputHistory.h \
     utils/MassRenameAction.h \
     utils/MoveDownloadsAction.h \

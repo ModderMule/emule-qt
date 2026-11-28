@@ -22,6 +22,7 @@
 #include <QPushButton>
 #include <QUrl>
 #include <QVBoxLayout>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -165,7 +166,7 @@ void MetaAccountDialog::applyMeta(const QCborMap& meta)
     } else if (loggedIn) {
         const qint64 expires = meta.value(QStringLiteral("expiresAt")).toInteger();
         const QString until = expires > 0
-            ? QLocale().toString(QDateTime::fromSecsSinceEpoch(expires), QLocale::ShortFormat)
+            ? toDisplayString(QDateTime::fromSecsSinceEpoch(expires))
             : tr("no expiry");
         info = tr("Logged in to <b>%1</b> as <b>%2</b>.<br>Access until: %3")
                    .arg(server.toHtmlEscaped(), username.toHtmlEscaped(), until);

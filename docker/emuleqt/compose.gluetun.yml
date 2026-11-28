@@ -1,0 +1,66 @@
+# eMuleQt behind Gluetun (VPN with port forwarding) — see docs/docker.md
+#
+#   docker compose -f docker/emuleqt/compose.gluetun.yml up -d
+#
+# All of eMuleQt's traffic leaves through the VPN. The provider's forwarded port
+# is read from Gluetun's control server every minute and set as the eD2K port
+# (TCP and UDP), so peers can reach you (HighID) without a router port forward.
+# Port forwarding needs a provider that offers it (ProtonVPN, PIA, PrivateVPN,
+# Perfect Privacy, ...); see the Gluetun wiki for the VPN_* variables.
+#
+# The control server answers only with an auth role. Put this in
+# ./gluetun/auth/config.toml and use the same key below:
+#
+#   [[roles]]
+#   name = "emuleqt"
+#   routes = ["GET /v1/portforward", "GET /v1/openvpn/portforwarded",
+#             "GET /v1/vpn/status", "GET /v1/openvpn/status", "GET /v1/publicip/ip"]
+#   auth = "apikey"
+#   apikey = "set-a-long-random-key"
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      VPN_SERVICE_PROVIDER: "protonvpn"
+      VPN_TYPE: "wireguard"
+      WIREGUARD_PRIVATE_KEY: "change-me"
+      VPN_PORT_FORWARDING: "on"
+      # P2P servers only, where the provider tells them apart
+      PORT_FORWARD_ONLY: "on"
+    volumes:
+      - ./gluetun:/gluetun
+    ports:
+      # eMuleQt shares Gluetun's network: its LAN ports are published here.
+      # No P2P port: peers come in through the VPN's forwarded port.
+      - "4711:4711/tcp"   # web UI, REST API, Sonarr/Radarr bridge
+      - "4712:4712/tcp"   # GUI IPC
+      # - "5800:5800/tcp" # GUI via noVNC (EMULEQT_GUI=1)
+
+  emuleqt:
+    image: ghcr.io/moddermule/emuleqt:latest
+    container_name: emuleqt
+    restart: unless-stopped
+    stop_grace_period: 60s
+    network_mode: "service:gluetun"
+    depends_on:
+      - gluetun
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      EMULEQT_WEB_PASSWORD: "change-me"
+      EMULEQT_GLUETUN: "1"
+      EMULEQT_GLUETUN_URL: "http://127.0.0.1:8000"
+      EMULEQT_GLUETUN_API_KEY: "set-a-long-random-key"
+      EMULEQT_GLUETUN_PORT_FOR: "ed2k"   # or "bt" for BitTorrent
+      # Sonarr/Radarr: qBittorrent client + Torznab indexer on :4711
+      # EMULEQT_ARR: "1"
+      # EMULEQT_API_KEY: "set-a-long-random-key"
+    volumes:
+      - ./config:/config
+      - ./data:/data

@@ -55,6 +55,7 @@ SOURCE_DIRS=(
     "$PROJECT_DIR/src/core/search/SearchExprParser.cpp"
     "$PROJECT_DIR/src/core/webserver/WebServer.h"
     "$PROJECT_DIR/src/core/webserver/WebServer.cpp"
+    "$PROJECT_DIR/src/core/webserver/WebServerUi.cpp"
     "$PROJECT_DIR/src/core/webserver/WebTemplateStrings.h"
 )
 

@@ -35,6 +35,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -56,7 +57,7 @@ QString dateText(qint64 epoch)
 {
     if (epoch <= 0)
         return na();
-    return QLocale().toString(QDateTime::fromSecsSinceEpoch(epoch), QLocale::LongFormat);
+    return toDisplayString(QDateTime::fromSecsSinceEpoch(epoch), QLocale::LongFormat);
 }
 
 QString percent(double share)

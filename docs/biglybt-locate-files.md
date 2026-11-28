@@ -81,3 +81,9 @@ hashed whole (BLAKE3 root, no tolerance, no piece mode), a match registered as a
 the download then copies it block by block and verifies as for peers' blocks. No name/path
 phase: a root is all or nothing.
 
+
+eD2K downloads (#251): `LocalCopyScan` (core) runs first on the same walk (`walkLocalCopies`);
+a candidate is hashed whole (eD2K MD4: part hashes, +empty hash on a part boundary), a file
+hash match is imported via `startPartImport` (Import Parts, each part checked against its MD4).
+A download still without a hash set takes the copy's, proved by the file hash. One IPC reply
+(749) sums both scans; ed3k off → eD2K alone.

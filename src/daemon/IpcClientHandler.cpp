@@ -27,6 +27,7 @@
 
 #include "ipc/CborSerializers.h"
 #include "transfer/ImportParts.h"
+#include "transfer/LocalCopyScan.h"
 #include "nntp/NntpSocket.h"
 #include "UsenetSession.h"
 #include "IndexerCapsStore.h"
@@ -2072,51 +2073,23 @@ void IpcClientHandler::handleRemoveFriend(const IpcMessage& msg)
 
 void IpcClientHandler::handleSendChatMessage(const IpcMessage& msg)
 {
-    if (!theApp.clientList) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("ClientList unavailable")));
-        return;
-    }
-
     const QString hashStr = msg.fieldString(0);
     const QString message = msg.fieldString(1);
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hashStr, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+    const ops::Status st = ops::sendChatMessage(hashStr, message);
+    if (!st.ok()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), st.code, st.message));
         return;
     }
-
-    // Find the client by user hash
-    auto* client = theApp.clientList->findByUserHash(hashBuf, 0, 0);
-    if (client && client->socket() && client->socket()->isConnected()) {
-        client->sendChatMessage(message);
-        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
-        return;
+    // the web UI's Messages page shows both sides of the conversation
+    if (auto* da = DaemonApp::instance(); da && da->webServer()) {
+        QString name;
+        uint8 hashBuf[16]{};
+        if (theApp.clientList && hexToHash(hashStr, hashBuf))
+            if (const auto* client = theApp.clientList->findByUserHash(hashBuf, 0, 0))
+                name = client->userName();
+        da->webServer()->noteChatMessage(hashStr.toUpper(), name, message, /*incoming*/ false);
     }
-
-    // Offline: if it is a friend we know an address or a Kad ID for, park the text and
-    // dial. Progress reaches the GUI as PushChatState. Everything about that decision
-    // lives in Friend, where it is testable.
-    if (theApp.friendList) {
-        if (Friend* f = theApp.friendList->searchFriend(hashBuf); f && f->sendOrQueueChatMessage(message)) {
-            sendMessage(IpcMessage::makeResult(msg.seqId(), true));
-            return;
-        }
-    }
-
-    // A known client that is not connected: park the text and dial, as MFC's
-    // CChatSelector::SendText does (srchybrid/ChatSelector.cpp:314-322).
-    if (client) {
-        client->setPendingChatMessage(message);
-        if (client->tryToConnect(true)) {
-            sendMessage(IpcMessage::makeResult(msg.seqId(), true));
-            return;
-        }
-        (void)client->takePendingChatMessage();
-    }
-
-    sendMessage(IpcMessage::makeError(msg.seqId(), 404,
-        QStringLiteral("Client not found or not connected")));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
 // ---------------------------------------------------------------------------
@@ -2133,47 +2106,6 @@ PartFile* partFileFor(const QString& hashHex)
         return nullptr;
     PartFile* file = theApp.downloadQueue->fileByID(hash);
     return file && file->status() != PartFileStatus::Complete ? file : nullptr;
-}
-
-/// Imports running in the background: download hash → source path and next part.
-struct PartImport {
-    QString path;
-    uint32 nextPart = 0;
-    int imported = 0;
-};
-QHash<QString, PartImport>& partImports()
-{
-    static QHash<QString, PartImport> imports;
-    return imports;
-}
-
-/// One part per turn of the event loop: a part is 9.28 MB to read, hash and write.
-void stepPartImport(const QString& hashHex)
-{
-    auto it = partImports().find(hashHex);
-    if (it == partImports().end())
-        return;   // stopped
-
-    PartFile* file = partFileFor(hashHex);
-    const bool done = !file || it->nextPart >= file->partCount();
-    if (done) {
-        if (file) {
-            file->setFileOp(PartFileOp::None);
-            if (it->imported > 0) {
-                file->flushBuffer();
-                file->updateCompletedInfos();
-                file->savePartFile();
-            }
-            logInfo(QStringLiteral("Imported %1 part(s) into %2").arg(it->imported).arg(file->fileName()));
-        }
-        partImports().erase(it);
-        return;
-    }
-
-    if (importPart(file, it->path, it->nextPart))
-        ++it->imported;
-    ++it->nextPart;
-    QTimer::singleShot(0, qApp, [hashHex] { stepPartImport(hashHex); });
 }
 
 } // namespace
@@ -2283,16 +2215,12 @@ void IpcClientHandler::handleImportDownloadParts(const IpcMessage& msg)
 
     // An empty path stops a running import; the parts already taken stay
     if (path.isEmpty()) {
-        if (partImports().remove(hashHex) > 0) {
-            file->setFileOp(PartFileOp::None);
-            file->updateCompletedInfos();
-            file->savePartFile();
-        }
+        (void)stopPartImport(file);
         sendMessage(IpcMessage::makeResult(msg.seqId(), true));
         return;
     }
 
-    if (partImports().contains(hashHex)) {
+    if (partImportRunning(file)) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 409, QStringLiteral("An import is already running")));
         return;
     }
@@ -2308,10 +2236,7 @@ void IpcClientHandler::handleImportDownloadParts(const IpcMessage& msg)
         return;
     }
 
-    file->flushBuffer();
-    file->setFileOp(PartFileOp::ImportParts);
-    partImports().insert(hashHex, PartImport{path, 0, 0});
-    QTimer::singleShot(0, qApp, [hashHex] { stepPartImport(hashHex); });
+    (void)startPartImport(file, path);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -3841,43 +3766,14 @@ void IpcClientHandler::handleRenameSharedFile(const IpcMessage& msg)
 
 void IpcClientHandler::handleDeleteSharedFile(const IpcMessage& msg)
 {
-    const QString hash = msg.fieldString(0);
-
-    if (!theApp.sharedFileList) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared files unavailable")));
+    QString path;
+    const ops::Status st = ops::deleteSharedFile(msg.fieldString(0), &path);
+    if (!st.ok()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), st.code, st.message));
         return;
     }
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-    auto* file = theApp.sharedFileList->getFileByID(hashBuf);
-    if (!file) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Shared file not found")));
-        return;
-    }
-    const QString path = file->filePath();
-    if (theApp.uploadQueue)
-        theApp.uploadQueue->releaseUploadFile(path);
-    // MFC MPG_DELETE (srchybrid/SharedFilesCtrl.cpp:938-950): delete first, unshare only
-    // if that worked; a file unshared but still on disk comes back with the next rescan
-    if (!QFile::remove(path) && QFileInfo::exists(path)) {
-        logWarning(QStringLiteral("Could not delete shared file: %1").arg(path));
-        sendMessage(IpcMessage::makeError(msg.seqId(), 500,
-            QStringLiteral("Could not delete \"%1\"").arg(path)));
-        return;
-    }
-    theApp.sharedFileList->removeFile(file);
     // a torrent's file: skipped there, else a recheck or restart downloads it again
     BtBridge::fileDeleted(path);
-    // Its finished download leaves the transfer list too (MFC ClearCompleted)
-    if (theApp.downloadQueue) {
-        PartFile* pf = theApp.downloadQueue->fileByID(hashBuf);
-        if (pf && pf == file && pf->status() == PartFileStatus::Complete)
-            theApp.downloadQueue->removeFile(pf);
-    }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -5400,6 +5296,23 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setWebServerGuestEnabled(val.toBool());
     else if (key == QStringLiteral("webServerGuestPassword"))
         thePrefs.setWebServerGuestPassword(val.toString());
+    // Sonarr/Radarr bridge, Gluetun
+    else if (key == QStringLiteral("arrApiEnabled"))
+        thePrefs.setArrApiEnabled(val.toBool());
+    else if (key == QStringLiteral("arrInstances"))
+        thePrefs.setArrInstances(arrInstancesFromCbor(val.toArray()));
+    else if (key == QStringLiteral("arrWantedPollMinutes"))
+        thePrefs.setArrWantedPollMinutes(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("arrSearchWaitSeconds"))
+        thePrefs.setArrSearchWaitSeconds(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("gluetunEnabled"))
+        thePrefs.setGluetunEnabled(val.toBool());
+    else if (key == QStringLiteral("gluetunUrl"))
+        thePrefs.setGluetunUrl(val.toString());
+    else if (key == QStringLiteral("gluetunApiKey"))
+        thePrefs.setGluetunApiKey(val.toString());
+    else if (key == QStringLiteral("gluetunPortTarget"))
+        thePrefs.setGluetunPortTarget(val.toString());
 
     // GUI-only settings (synced for YAML persistence)
     // General page
@@ -5443,6 +5356,8 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setShowDwlPercentage(val.toBool());
     else if (key == QStringLiteral("downloadBarMode"))
         thePrefs.setDownloadBarMode(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("dateFormat"))
+        thePrefs.setDateFormat(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("showActiveDownloadsBold"))
         thePrefs.setShowActiveDownloadsBold(val.toBool());
     else if (key == QStringLiteral("showRatesInTitle"))
@@ -7590,15 +7505,45 @@ void IpcClientHandler::handleTakeArchiveFromDisk(const IpcMessage& msg)
 
 void IpcClientHandler::handleLocateLocalCopies(const IpcMessage& msg)
 {
+    // #251: the eD2K downloads first (core), then ed3k's (any network's joins); one reply
+    static LocalCopyScan* scan = new LocalCopyScan(qApp);
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
     QStringList folders;
     for (const QCborValue& v : msg.field(0).toArray())
-        folders << v.toString();
-    ArchiveContentsBridge::locateLocalCopies(folders, [self, seqId](bool ok, const QCborValue& result) {
-        if (self)
-            self->sendMessage(IpcMessage::makeResult(seqId, ok, result));
+        folders << QDir::fromNativeSeparators(v.toString());
+    if (folders.isEmpty()) {
+        sendMessage(IpcMessage::makeError(seqId, 400, tr("No folder given.")));
+        return;
+    }
+    if (scan->running()) {
+        sendMessage(IpcMessage::makeError(seqId, 409, tr("A folder scan is running already.")));
+        return;
+    }
+    auto conn = std::make_shared<QMetaObject::Connection>();
+    *conn = connect(scan, &LocalCopyScan::finished, scan, [self, seqId, folders, conn](const LocalScanResult& ed2k) {
+        QObject::disconnect(*conn);
+        ArchiveContentsBridge::locateLocalCopies(folders, [self, seqId, ed2k](bool ok, const QCborValue& result) {
+            if (!self)
+                return;
+            // ed3k off, not built in or busy: the eD2K part alone
+            const QCborMap e = ok ? result.toMap() : QCborMap{};
+            if (!ok)
+                logInfo(QStringLiteral("Locate Files: ed3k not scanned: %1").arg(result.toString()));
+            const auto num = [&e](const char* key) { return e.value(QLatin1StringView(key)).toInteger(); };
+            QCborArray paths = QCborArray::fromStringList(ed2k.paths);
+            for (const QCborValue& p : e.value(QStringLiteral("paths")).toArray())
+                paths.append(p);
+            // both walk the same folders: files are counted once
+            self->sendMessage(IpcMessage::makeResult(seqId, true, QCborMap{
+                {QStringLiteral("files"), std::max<qint64>(ed2k.files, num("files"))},
+                {QStringLiteral("candidates"), qint64(ed2k.candidates) + num("candidates")},
+                {QStringLiteral("hashed"), qint64(ed2k.hashed) + num("hashed")},
+                {QStringLiteral("matched"), qint64(ed2k.matched) + num("matched")},
+                {QStringLiteral("paths"), paths}}));
+        });
     });
+    (void)scan->start(folders);   // false: finished() came already (nothing to look for)
 }
 
 void IpcClientHandler::handleSetUsenetFilesSkipped(const IpcMessage& msg)

@@ -11,6 +11,7 @@
 #include <QColor>
 #include <QDateTime>
 #include <QLocale>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -140,9 +141,7 @@ QVariant IndexerResultsModel::data(const QModelIndex& index, int role) const
         parts.append(row->title);
         if (row->published > 0) {
             parts.append(tr("Posted: %1")
-                             .arg(QLocale().toString(
-                                 QDateTime::fromSecsSinceEpoch(row->published),
-                                 QLocale::ShortFormat)));
+                             .arg(toDisplayString(QDateTime::fromSecsSinceEpoch(row->published))));
         }
         if (row->files > 0)
             parts.append(tr("%1 files").arg(row->files));

@@ -8,6 +8,8 @@
 
 #include "IpcMessage.h"
 #include "PushCoalescer.h"
+#include "DaemonApp.h"
+#include "webserver/WebServer.h"
 
 #include "app/AppContext.h"
 #include "app/CoreInfo.h"
@@ -746,6 +748,10 @@ void CoreNotifierBridge::onChatMessageReceived(const QString& fromUser,
     msg.append(fromUser);
     msg.append(message);
     m_ipcServer->broadcast(msg);
+    // and the web UI's Messages page
+    if (auto* da = DaemonApp::instance(); da && da->webServer())
+        da->webServer()->noteChatMessage(client ? md4str(client->userHash()).toUpper() : QString(),
+                                         fromUser, message, /*incoming*/ true);
 }
 
 void CoreNotifierBridge::onCaptchaRequestReceived(const QString& fromUser,

@@ -5,8 +5,10 @@
 ///
 /// Typing filters the sidebar to the pages holding a match and highlights the matching
 /// labels, check boxes, buttons, group titles, tab titles and settings-tree rows on the
-/// page shown. Every word typed must occur in one control's text or tooltip. The pages
-/// are walked live on each search, so a label that changed text is found by its new one.
+/// page shown. Every word typed must occur in one control's text or tooltip. Tooltip
+/// hits count only when no visible text matches anywhere: a common word ("enabled")
+/// would else light up controls whose tooltip prose merely mentions it (#284).
+/// The pages are walked live on each search, so a label that changed text is found by its new one.
 
 #include <QHash>
 #include <QList>
@@ -58,6 +60,7 @@ private:
         QTreeWidgetItem*  item = nullptr;   ///< row of widget (a QTreeWidget)
         int               tab = -1;         ///< tab of widget (a QTabWidget)
         bool              titleOnly = false;  ///< widget is a QGroupBox: its title strip
+        bool              viaTooltip = false; ///< only the tooltip matched, not the text
     };
 
     class Overlay;

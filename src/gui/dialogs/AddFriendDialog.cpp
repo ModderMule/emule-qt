@@ -21,6 +21,7 @@
 #include <QPushButton>
 #include <QUrlQuery>
 #include <QVBoxLayout>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -245,7 +246,7 @@ void AddFriendDialog::showFriend(const QString& name, const QString& hash, const
     if (!kadId.isEmpty())
         m_kadIdLabel->setText(kadId);
     m_lastSeenLabel->setText(lastSeen > 0
-        ? QLocale().toString(QDateTime::fromSecsSinceEpoch(lastSeen), QLocale::ShortFormat)
+        ? toDisplayString(QDateTime::fromSecsSinceEpoch(lastSeen))
         : tr("Never"));
     m_ed3kGroup->hide();
     m_addButton->hide();

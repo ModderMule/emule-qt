@@ -264,20 +264,30 @@ void tst_Ed3kBridge::coordinatorLimitsAndCountsTheNode()
 
 void tst_Ed3kBridge::coordinatorSizesEd3kSlotsFromTheShare()
 {
-    // 25 KB/s a slot, at least 2, no cap (Protocol.md §12.5); no limit: the node chooses
+    // 25 KB/s a slot, at least 2 (Protocol.md §12.5); no limit: the node chooses
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(0), 0u);
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(10), 2u);
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(250), 10u);
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(1000), 40u);
-    // Options' slot speed as for eD2K, kept inside §12.5's 9..55 KB/s
+    // Options' slot speed as for eD2K, kept inside §12.5's 9 KB/s..5 MB/s
     const uint32 rateBefore = thePrefs.uploadSlotTargetRate();
     thePrefs.setUploadSlotTargetRate(50);
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(1000), 20u);
     thePrefs.setUploadSlotTargetRate(12);   // the pref's floor
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(120), 10u);
     thePrefs.setUploadSlotTargetRate(200);
-    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(550), 10u);
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(1000), 5u);   // was 55 at most
     thePrefs.setUploadSlotTargetRate(rateBefore);
+    // capped: eD2K's 150 less its holders, a third of the connections, at least 2
+    const uint16 connsBefore = thePrefs.maxConnections();
+    thePrefs.setMaxConnections(800);
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(50000), 150u);
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(50000, 40), 110u);
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(50000, 150), 2u);
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(1000, 140), 10u);
+    thePrefs.setMaxConnections(90);
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(50000), 30u);
+    thePrefs.setMaxConnections(connsBefore);
     // re-applied on a move of 10 % (at least 1) or on/off, not on the share's tick jitter
     QVERIFY(!BandwidthCoordinator::ed3kSlotsMoved(1968, 1968));
     QVERIFY(!BandwidthCoordinator::ed3kSlotsMoved(1968, 1942));

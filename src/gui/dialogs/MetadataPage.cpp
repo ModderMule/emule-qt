@@ -63,6 +63,20 @@ QString tagNameFromId(int nameId)
         {0x53, QStringLiteral("Category")},
         {0x54, QStringLiteral("All-Time Transferred Hi")},
         {0x55, QStringLiteral("Max Sources")},
+        // eMule Qt meta search tags (FT_META_*)
+        {0x60, QStringLiteral("Meta Kind")},
+        {0x61, QStringLiteral("Meta Version")},
+        {0x62, QStringLiteral("Meta File Index")},
+        {0x63, QStringLiteral("Meta File Path")},
+        {0x64, QStringLiteral("Meta Total Size")},
+        {0x65, QStringLiteral("Meta ID")},
+        {0x67, QStringLiteral("Meta Seeders")},
+        {0x68, QStringLiteral("Meta Peers")},
+        {0x69, QStringLiteral("Meta Age (Days)")},
+        {0x6A, QStringLiteral("Meta Indexer")},
+        {0x6B, QStringLiteral("Meta Flags")},
+        {0x6C, QStringLiteral("Meta Magnet")},
+        {0x6D, QStringLiteral("Meta Network")},
         {0xD0, QStringLiteral("Media Artist")},
         {0xD1, QStringLiteral("Media Album")},
         {0xD2, QStringLiteral("Media Title")},
@@ -74,6 +88,30 @@ QString tagNameFromId(int nameId)
     };
     auto it = names.find(nameId);
     return it != names.end() ? *it : QStringLiteral("0x%1").arg(nameId, 2, 16, QLatin1Char('0'));
+}
+
+/// Spell out enum-like int values: FT_META_KIND, FT_META_NETWORK.
+QString tagIntValue(int nameId, qint64 value)
+{
+    const QString num = QString::number(value);
+    const char* label = nullptr;
+    if (nameId == 0x60) {
+        switch (value) {
+        case 1: label = "BitTorrent v1/hybrid"; break;
+        case 2: label = "BitTorrent v2"; break;
+        case 3: label = "NZB"; break;
+        case 5: label = "Web"; break;
+        case 6: label = "Container"; break;
+        default: break;
+        }
+    } else if (nameId == 0x6D) {
+        switch (value) {
+        case 3: label = "Kad"; break;
+        case 5: label = "Web"; break;
+        default: break;
+        }
+    }
+    return label ? QStringLiteral("%1 (%2)").arg(num, QLatin1StringView(label)) : num;
 }
 
 /// Map a TAGTYPE value to a display string.
@@ -147,7 +185,8 @@ QWidget* createMetadataPage(const QCborMap& details, const QString& stateKey)
         if (t.contains(QLatin1StringView("strValue")))
             item->setText(2, t.value(QLatin1StringView("strValue")).toString());
         else if (t.contains(QLatin1StringView("intValue")))
-            item->setText(2, QString::number(t.value(QLatin1StringView("intValue")).toInteger()));
+            item->setText(2, tagIntValue(static_cast<int>(nameId),
+                                         t.value(QLatin1StringView("intValue")).toInteger()));
         else if (t.contains(QLatin1StringView("floatValue")))
             item->setText(2, QString::number(t.value(QLatin1StringView("floatValue")).toDouble(), 'g', 6));
         else if (t.contains(QLatin1StringView("hashValue")))

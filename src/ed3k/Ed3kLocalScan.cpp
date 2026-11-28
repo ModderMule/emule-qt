@@ -2,14 +2,12 @@
 
 #include "Ed3kJoinBase.h"
 #include "Ed3kSession.h"
+#include "files/LocalCopyWalk.h"
 #include "utils/Log.h"
 #include "utils/ArgStr.h"
 
 #include <QDateTime>
-#include <QDir>
-#include <QDirIterator>
 #include <QFileInfo>
-#include <QHash>
 #include <QPointer>
 #include <QThreadPool>
 
@@ -18,18 +16,6 @@
 #include <set>
 
 namespace eMule::ed3k {
-
-namespace {
-
-/// Unfinished downloads of any network, their state files: never a copy of a whole file.
-bool skippedName(const QString& name)
-{
-    static const QStringList kSuffixes{QStringLiteral(".part"), QStringLiteral(".met"), QStringLiteral(".tmp"),
-                                       QStringLiteral(".!qb"), QStringLiteral(".crdownload")};
-    return std::ranges::any_of(kSuffixes, [&](const QString& s) { return name.endsWith(s, Qt::CaseInsensitive); });
-}
-
-} // namespace
 
 Ed3kLocalScan::Ed3kLocalScan(Ed3kSession& session, QObject* parent)
     : QObject(parent)
@@ -101,38 +87,10 @@ Ed3kLocalScan::Result Ed3kLocalScan::scan(const QStringList& folders, const Want
     for (const auto& [root, size] : wanted)
         if (size > 0)
             bySize[size].insert(root);
-    // walk: only sizes count here, nothing is read (BiglyBT's buildFileMap)
-    struct Candidate {
-        QString path;
-        std::uint64_t size = 0;
-        QString dir;
-    };
-    std::vector<Candidate> candidates;
-    std::set<QString> seen;   // one folder given twice, or inside another
-    for (const QString& folder : folders) {
-        QDirIterator it(folder, QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
-        while (it.hasNext()) {
-            if (cancel.load()) {
-                r.cancelled = true;
-                return r;
-            }
-            const QFileInfo fi = it.nextFileInfo();
-            if (fi.isSymLink() || skippedName(fi.fileName()))
-                continue;
-            const QString path = fi.canonicalFilePath();
-            if (path.isEmpty() || !seen.insert(path).second)
-                continue;
-            ++r.files;
-            if (bySize.contains(std::uint64_t(fi.size())))
-                candidates.push_back({path, std::uint64_t(fi.size()), fi.absolutePath()});
-        }
-    }
-    r.candidates = int(candidates.size());
-    // the folder with most candidates first: one release folder wins over scattered copies
-    QHash<QString, int> perDir;
-    for (const auto& c : candidates)
-        ++perDir[c.dir];
-    std::ranges::stable_sort(candidates, [&](const Candidate& a, const Candidate& b) { return perDir.value(a.dir) > perDir.value(b.dir); });
+    // walk: only sizes count here, nothing is read
+    const auto candidates = walkLocalCopies(folders, [&](uint64 size) { return bySize.contains(size); }, cancel, r);
+    if (r.cancelled)
+        return r;
 
     for (const auto& c : candidates) {
         if (cancel.load()) {

@@ -8,6 +8,7 @@
 /// Rows are GetEd3kDownloads maps, so the GUI and the API read one vocabulary.
 
 #include <QCborArray>
+#include <QCborMap>
 #include <QString>
 
 namespace eMule {
@@ -20,6 +21,8 @@ public:
     [[nodiscard]] virtual bool available() const = 0;
     /// The GetEd3kDownloads rows.
     [[nodiscard]] virtual QCborArray downloads() const = 0;
+    /// GetEd3kStatus (running, nodeId, contacts, router, users, rates, endpoints…); empty: unknown.
+    [[nodiscard]] virtual QCborMap status() const { return {}; }
 
     struct AddResult {
         QString root;    ///< 64 hex; empty on failure

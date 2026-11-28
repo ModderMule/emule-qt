@@ -29,6 +29,7 @@
 #include <QTabWidget>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -51,7 +52,7 @@ QTreeWidget* makeTree(QWidget* parent, const QStringList& headers, const QString
 
 QString dateText(qint64 secs)
 {
-    return secs > 0 ? QLocale().toString(QDateTime::fromSecsSinceEpoch(secs), QLocale::ShortFormat)
+    return secs > 0 ? toDisplayString(QDateTime::fromSecsSinceEpoch(secs))
                     : QString();
 }
 

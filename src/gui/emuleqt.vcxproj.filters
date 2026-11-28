@@ -28,6 +28,9 @@
     <ClCompile Include="dialogs\AddFriendDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\IntegrationsPage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\CategoryDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -594,6 +597,9 @@
     <QtMoc Include="dialogs\AddFriendDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="dialogs\IntegrationsPage.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\CategoryDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -685,6 +691,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\CompleteSourcesText.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\DateTimeFormat.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\SharedDirState.h">

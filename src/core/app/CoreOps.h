@@ -65,6 +65,11 @@ void adoptTempDir(const QString& dir);
 /// or connecting stay where they are. @p swapped receives how many moved.
 Status swapA4AFToDownload(const QString& hashHex, int* swapped = nullptr);
 
+/// Deletes a shared (or finished downloaded) file from disk, then unshares it; its
+/// completed download leaves the list. @p deletedPath: the path, for the caller's own
+/// cleanup (a torrent's file).
+Status deleteSharedFile(const QString& hashHex, QString* deletedPath = nullptr);
+
 /// Removes completed entries from the list (the files stay). Empty @p only = all.
 /// @return how many were removed, or -1 without a queue.
 int clearCompletedDownloads(const QSet<QString>& only);
@@ -140,6 +145,13 @@ Status setSharedFilePriority(const QString& hashHex, uint8 priority, bool isAuto
 /// 404 only if every one is. @p applied receives how many were set.
 Status setFileComments(const QStringList& hashHexes, const QString& comment, qint64 rating,
                        bool keepEmpty, int* applied = nullptr);
+
+// --- Chat --------------------------------------------------------------------
+
+/// A chat message to the client with user hash @p hashHex (32 hex): sent when connected,
+/// else parked and dialled for a friend or a known client (MFC CChatSelector::SendText).
+/// 404 when nobody of that hash is known or reachable.
+Status sendChatMessage(const QString& hashHex, const QString& message);
 
 } // namespace ops
 } // namespace eMule

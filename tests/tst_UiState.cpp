@@ -3,6 +3,7 @@
 ///        import from the platform QSettings store older builds wrote (issue #25).
 
 #include "app/UiState.h"
+#include "utils/DateTimeFormat.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -24,6 +25,7 @@ private slots:
     void roundTrip_searchAndTransferKeys();
     void fallbacks_whenNeverSaved();
     void language_roundTripAndFallback();
+    void dateFormat_roundTripAndModes();
     void legacyStore_importedThenRemoved();
     void legacyStore_yamlValueWins();
     void headerState_newColumnsStayMovable();
@@ -98,6 +100,34 @@ void tst_UiState::language_roundTripAndFallback()
     UiState r;
     r.load(cfg.path());
     QCOMPARE(r.language(prefsLang), QString());
+}
+
+// #250: Display › Date format, GUI-only like the language
+void tst_UiState::dateFormat_roundTripAndModes()
+{
+    QTemporaryDir cfg;
+    {
+        UiState s;
+        s.load(cfg.path());
+        QCOMPARE(s.dateFormat(), 0);   // OS locale by default
+        s.setDateFormat(2);
+        s.save();
+    }
+    UiState r;
+    r.load(cfg.path());
+    QCOMPARE(r.dateFormat(), 2);
+    QCOMPARE(dateFormatModeFromInt(7), DateFormatMode::System);
+
+    const QDateTime dt(QDate(2026, 1, 11), QTime(9, 5, 7));
+    setDateFormat(DateFormatMode::Iso, QString());
+    QCOMPARE(toDisplayString(dt), QStringLiteral("2026-01-11 09:05:07"));
+    QCOMPARE(toDisplayString(dt.date()), QStringLiteral("2026-01-11"));
+    setDateFormat(DateFormatMode::Language, QStringLiteral("de_DE"));
+    QCOMPARE(toDisplayString(dt), QLocale(QStringLiteral("de_DE")).toString(dt, QLocale::ShortFormat));
+    QCOMPARE(dateFormatSample(DateFormatMode::Language, QStringLiteral("en_GB"), dt),
+             QLocale(QStringLiteral("en_GB")).toString(dt, QLocale::ShortFormat));
+    setDateFormat(DateFormatMode::System, QString());
+    QCOMPARE(toDisplayString(dt), QLocale().toString(dt, QLocale::ShortFormat));
 }
 
 // #107: every resizable dialog reopens at the size it was left at

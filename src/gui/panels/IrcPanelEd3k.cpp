@@ -55,6 +55,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -1223,8 +1224,7 @@ void IrcPanel::showEd3kBans(Ed3kRoomTab* tab)
         item->setText(0, QStringLiteral("%1#%2").arg(last ? last->nick : QStringLiteral("?"),
                                                     b.value(QStringLiteral("id")).toString().left(4)));
         item->setToolTip(0, key);
-        item->setText(1, QLocale().toString(QDateTime::fromSecsSinceEpoch(b.value(QStringLiteral("until")).toInteger()),
-                                            QLocale::ShortFormat));
+        item->setText(1, toDisplayString(QDateTime::fromSecsSinceEpoch(b.value(QStringLiteral("until")).toInteger())));
         item->setData(0, Qt::UserRole, key);
     }
     list->resizeColumnToContents(0);

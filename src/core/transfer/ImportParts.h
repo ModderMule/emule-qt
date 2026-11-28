@@ -36,4 +36,12 @@ int importParts(PartFile* partFile, const QString& sourceFilePath,
 /// runs PartFile::updateCompletedInfos() when it is done.
 bool importPart(PartFile* partFile, const QString& sourceFilePath, uint32 part);
 
+/// Background import (Import Parts, Locate Files): one part per turn of the event loop,
+/// fileOp ImportParts while it runs, saved when it ends. Core thread only.
+/// false: one runs already, or the source is no file of the download's size.
+bool startPartImport(PartFile* partFile, const QString& sourceFilePath);
+/// Stops a background import; the parts taken stay. false: none ran.
+bool stopPartImport(PartFile* partFile);
+[[nodiscard]] bool partImportRunning(const PartFile* partFile);
+
 } // namespace eMule

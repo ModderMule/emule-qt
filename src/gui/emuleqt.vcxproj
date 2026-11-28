@@ -202,6 +202,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="dialogs\AddFriendDialog.cpp" />
+    <ClCompile Include="dialogs\IntegrationsPage.cpp" />
     <ClCompile Include="dialogs\CategoryDialog.cpp" />
     <ClCompile Include="dialogs\AddSourceDialog.cpp" />
     <ClCompile Include="dialogs\ArchivePreviewPanel.cpp" />
@@ -449,6 +450,7 @@
     <ClInclude Include="utils\Ed3kKeyText.h" />
     <ClInclude Include="utils\ClientStateText.h" />
     <ClInclude Include="utils\CompleteSourcesText.h" />
+    <ClInclude Include="utils\DateTimeFormat.h" />
     <ClInclude Include="utils\FileTypeText.h" />
     <ClInclude Include="utils\TooltipDelayStyle.h" />
     <ClInclude Include="utils\SharedDirState.h" />
@@ -500,6 +502,7 @@
     <QtMoc Include="app\ToolbarButtonSizer.h" />
     <ClInclude Include="app\ToolbarSkin.h" />
     <QtMoc Include="dialogs\AddFriendDialog.h" />
+    <QtMoc Include="dialogs\IntegrationsPage.h" />
     <QtMoc Include="dialogs\RememberedSizeDialog.h" />
     <QtMoc Include="dialogs\CategoryDialog.h" />
     <QtMoc Include="dialogs\AddSourceDialog.h" />

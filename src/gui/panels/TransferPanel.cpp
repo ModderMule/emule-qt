@@ -637,7 +637,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         moveAct->setEnabled(anyUnfinished && std::ranges::any_of(selectedDls, [](const DownloadRow* d) {
             return d->status != QLatin1String("completing") && d->fileOp == 0;
         }));
-        // #224: a folder with files of the ed3k downloads (any network's): copied from there
+        // #224/#251: a folder with files of the downloads (eD2K and ed3k joins): copied from there
         m_downloadMenu->addAction(menuIcon("Folders.ico"), LocateFilesAction::menuText(), this, [this]() {
             QPointer<TransferPanel> self(this);
             LocateFilesAction::run(this, m_ipc, QString(), [self] {

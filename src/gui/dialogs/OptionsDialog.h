@@ -20,6 +20,7 @@
 #include <vector>
 
 class QLabel;
+class QTabWidget;
 class QLineEdit;
 class QCheckBox;
 class QComboBox;
@@ -45,6 +46,7 @@ class OptionsSearch;
 class FolderTreeModel;
 class Ed3kOptionsPages;
 class BtI2pPage;
+class IntegrationsPage;
 class IpcClient;
 class StatisticsPanel;
 
@@ -102,7 +104,8 @@ public:
         PageEd3kAutoCredits, // "Credits" in the sidebar: autostart highspeed download
         PageEd3kSelling,    // selling paid subscriptions (Ed3kSellPage), not in the sidebar for now (hasPage)
         PageBtI2p,          // BitTorrent over I2P (BtI2pPage); empty slot without EMULE_HAVE_BITTORRENT
-        PageEd3kExtended,   // ed3k settings tree (Ed3kOptionsPages::extendedPage); last: stored indices stay put
+        PageEd3kExtended,   // ed3k settings tree (Ed3kOptionsPages::extendedPage)
+        PageIntegrations,   // Sonarr/Radarr bridge, Gluetun (IntegrationsPage); last: stored indices stay put
         PageCount
     };
 
@@ -160,6 +163,7 @@ private:
 
     QWidget* createGeneralPage();
     QWidget* createDisplayPage();
+    void refreshDateFormatSamples();   // combo texts show the current time per mode
     QWidget* createConnectionPage();
     QWidget* createProxyPage();
     QWidget* createServerPage();
@@ -173,6 +177,7 @@ private:
     QWidget* createSchedulerPage();
     QWidget* createWebInterfacePage();
     QWidget* createUsenetPage();
+    QWidget* createIndexersRssPage();   ///< Indexers + RSS feeds tabs
     QWidget* createIndexersPage();
     QWidget* createFeedsPage();
     QWidget* createExtendedPage();
@@ -335,6 +340,8 @@ private:
     bool m_linkingLimits = false;        // one limit slider is moving the other
     bool m_daemonSettingsLoaded = false;  // true after IPC GetPreferences callback
     Ed3kOptionsPages* m_ed3kPages = nullptr;   ///< the ed3k group's pages
+    QTabWidget* m_indexerTabs = nullptr;   ///< Indexers/RSS: 0 indexers, 1 feeds
+    IntegrationsPage* m_integrationsPage = nullptr;   ///< Advanced > Integrations
 
     // General page controls
     QLineEdit* m_nickEdit = nullptr;
@@ -373,6 +380,7 @@ private:
     QCheckBox* m_transferDoubleClickCheck = nullptr;
     QCheckBox* m_showDwlPercentageCheck = nullptr;
     QComboBox* m_downloadBarModeCombo = nullptr;
+    QComboBox* m_dateFormatCombo = nullptr;   // index = DateFormatMode
     QCheckBox* m_showActiveDownloadsBoldCheck = nullptr;
     QCheckBox* m_showRatesInTitleCheck = nullptr;
     QCheckBox* m_showStatusBarFreeSpaceCheck = nullptr;

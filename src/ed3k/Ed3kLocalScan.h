@@ -8,6 +8,7 @@
 /// The root is the proof (BiglyBT: piece hashes); the copy is verified again as it arrives.
 
 #include "Ed3kFfi.h"
+#include "files/LocalCopyWalk.h"
 
 #include <QObject>
 #include <QString>
@@ -30,14 +31,7 @@ class Ed3kLocalScan : public QObject {
     Q_OBJECT
 
 public:
-    struct Result {
-        int files = 0;        ///< files walked
-        int candidates = 0;   ///< of a wanted size
-        int hashed = 0;
-        int matched = 0;      ///< roots found
-        QStringList paths;    ///< the files found
-        bool cancelled = false;
-    };
+    using Result = LocalScanResult;
     using Wanted = std::vector<std::pair<ffi::Root, std::uint64_t>>;
 
     explicit Ed3kLocalScan(Ed3kSession& session, QObject* parent = nullptr);

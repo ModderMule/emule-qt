@@ -36,8 +36,10 @@
 #include "stats/Statistics.h"
 #include "stats/StatsHistory.h"
 #include "transfer/DownloadQueue.h"
+#include "transfer/Scheduler.h"
 #include "transfer/UploadQueue.h"
 #include "files/KnownFile.h"
+#include "files/PartFile.h"
 #include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
 
@@ -726,8 +728,10 @@ private slots:
     void previewCarriesTheArchiveEntryFromTheQuery();
     void previewRejectsABadArchiveEntry();
     void previewWithoutATotalMustNotAnswerTheOpeningRequestWith200();
-    void previewCapsTheResponseBody();
-    void previewStopsAtWhatHasDownloaded();
+    void previewStreamsTheWholeRange();
+    void previewWithoutARangeIsTheWholeFile();
+    void previewStreamWaitsAtTheWriteHead();
+    void previewStreamEndsShortWhenTheItemGoes();
     void previewWaitsForBytesThatHaveNotArrivedYet();
     void usenetPreviewFetchesWithSeekingOff();
     void hosterPreviewFetchesWithSeekingOff();
@@ -791,6 +795,7 @@ private slots:
     void loginBackoff_timeline();
     void webOptionsForm_savesOrChangesNothing();
     void rest_emptyApiKeyLetsNobodyIn();
+    void arr_qbitLoginAndTorznab();
     void rest_patchPreferencesIsAllOrNothing();
     void rest_patchPortsReportsListenPorts();
     void rest_patchReportsRatioCappedDownload();
@@ -806,6 +811,20 @@ private slots:
 #ifdef EMULE_HAVE_BITTORRENT
     void webTorrentsPage_listsAndActs();
 #endif
+    // Web UI: live parts, filters, bulk actions, add anywhere, new pages, header poll
+    void webUi_pagesMarkTheirLivePartsAndFilters();
+    void webUi_livePollKeepsItsStreamToken();
+    void webUi_statusNeedsASessionAndListsFinishedDownloads();
+    void webUi_manifestOpensMagnetLinksOnAddLink();
+    void webUi_addLinkSurvivesTheLogin();
+    void webUi_addRoutesEachLinkToItsNetwork();
+    void webUi_guestsCannotAdd();
+    void webUi_transferActsOnEveryTickedFile();
+    void webUi_speedMenuSetsTheLimits();
+    void webUi_messagesShowTheConversationEscaped();
+    void webUi_friendsAddAndRemove();
+    void webUi_schedulerAddsTogglesAndRemoves();
+    void webUi_ed3kPageListsAndActs();
     // Operation table: new routes, validation, OpenAPI, events, MCP
     void api_healthNeedsNoKeyAndRepliesCarryTheContractVersion();
     void api_unknownRouteIsAJsonError();
@@ -1745,6 +1764,69 @@ std::unique_ptr<WebServer> tst_WebServer::startServer(
     return server;
 }
 
+void tst_WebServer::arr_qbitLoginAndTorznab()
+{
+    // off: neither surface is routed
+    auto off = startServer(false, false);
+    QCOMPARE(sendRaw(off->port(), "GET", QStringLiteral("/api/v2/app/webapiVersion")).statusCode, 404);
+    off->stop();
+
+    auto server = startServer(false, false, {}, [](WebServer&, WebServerConfig& config) {
+        config.arrApiEnabled = true;
+        config.arrSearchWaitSeconds = 5;
+    });
+    const uint16 port = server->port();
+    const QByteArray form = "application/x-www-form-urlencoded";
+
+    // no session: 403, as qBittorrent answers
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v2/app/webapiVersion")).statusCode, 403);
+    const auto wrong = sendRaw(port, "POST", QStringLiteral("/api/v2/auth/login"), "username=x&password=nope", form);
+    QCOMPARE(wrong.rawBody, QByteArray("Fails."));
+
+    const auto login = sendRaw(port, "POST", QStringLiteral("/api/v2/auth/login"),
+                               "username=sonarr&password=" + QUrl::toPercentEncoding(m_apiKey), form);
+    QCOMPARE(login.rawBody, QByteArray("Ok."));
+    QString cookie;
+    for (auto it = login.headers.cbegin(); it != login.headers.cend(); ++it) {
+        if (it.key().compare(QLatin1StringView("set-cookie"), Qt::CaseInsensitive) == 0)
+            cookie = it.value().section(u';', 0, 0);
+    }
+    QVERIFY2(cookie.startsWith(QLatin1StringView("SID=")), qPrintable(cookie));
+    const QList<std::pair<QByteArray, QByteArray>> session{{"Cookie", cookie.toUtf8()}};
+
+    const auto version = sendRaw(port, "GET", QStringLiteral("/api/v2/app/webapiVersion"), {}, {}, session);
+    QCOMPARE(version.statusCode, 200);
+    QVERIFY(version.rawBody.startsWith("2."));
+    const auto info = sendRaw(port, "GET", QStringLiteral("/api/v2/torrents/info?category=tv-sonarr"), {}, {}, session);
+    QCOMPARE(info.statusCode, 200);
+    QVERIFY(QJsonDocument::fromJson(info.rawBody).isArray());
+    const auto prefs = sendRaw(port, "GET", QStringLiteral("/api/v2/app/preferences"), {}, {}, session);
+    QCOMPARE(QJsonDocument::fromJson(prefs.rawBody).object().value(QLatin1StringView("max_ratio_enabled")).toBool(true),
+             false);
+    // a real torrent is no eD2K file
+    const auto add = sendRaw(port, "POST", QStringLiteral("/api/v2/torrents/add"),
+                             "urls=" + QUrl::toPercentEncoding(QStringLiteral("magnet:?xt=urn:btih:%1&xl=5")
+                                                                   .arg(QString(40, u'a'))), form, session);
+    QCOMPARE(add.rawBody, QByteArray("Fails."));
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v2/torrents/properties?hash=%1").arg(QString(40, u'0')),
+                     {}, {}, session).statusCode, 404);
+    // the API key works without a login
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v2/app/version"), {}, {},
+                     {{"X-Api-Key", m_apiKey.toUtf8()}}).statusCode, 200);
+
+    // Torznab: the key in the query
+    const auto refused = sendRaw(port, "GET", QStringLiteral("/torznab/api?t=caps&apikey=wrong"));
+    QVERIFY(refused.rawBody.contains("code=\"100\""));
+    const auto caps = sendRaw(port, "GET", QStringLiteral("/torznab/api?t=caps&apikey=%1").arg(m_apiKey));
+    QVERIFY(caps.rawBody.contains("<tv-search"));
+    // no query: the feed; empty here, so one placeholder row (Sonarr's test needs a row)
+    const auto feed = sendRaw(port, "GET", QStringLiteral("/torznab/api?t=tvsearch&cat=5030&apikey=%1").arg(m_apiKey));
+    QCOMPARE(feed.statusCode, 200);
+    QCOMPARE(feed.rawBody.count("<item>"), 1);
+    QVERIFY(feed.rawBody.contains("value=\"5030\""));
+    server->stop();
+}
+
 void tst_WebServer::rest_emptyApiKeyLetsNobodyIn()
 {
     auto server = startServer(false, true, {}, [](WebServer&, WebServerConfig& config) {
@@ -2035,6 +2117,16 @@ namespace {
 
 /// A file of @p size bytes whose content encodes its own offset, so a wrong
 /// seek shows up as wrong *bytes* and not merely as a wrong length.
+/// @p body holds writePattern's bytes from file offset @p from
+bool isPattern(const QByteArray& body, qint64 from)
+{
+    for (qsizetype i = 0; i < body.size(); ++i) {
+        if (quint8(body.at(i)) != quint8((from + i) & 0xFF))
+            return false;
+    }
+    return true;
+}
+
 QString writePattern(QTemporaryDir& dir, const QString& name, qint64 size)
 {
     const QString path = dir.filePath(name);
@@ -2187,13 +2279,12 @@ void tst_WebServer::previewWithoutATotalMustNotAnswerTheOpeningRequestWith200()
     m_webServer->setUsenetStreamResolver({});
 }
 
-void tst_WebServer::previewCapsTheResponseBody()
+void tst_WebServer::previewStreamsTheWholeRange()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
 
-    constexpr qint64 kSize = 6 * 1024 * 1024;   // comfortably over the 4 MiB cap
-    constexpr qint64 kCap  = 4 * 1024 * 1024;
+    constexpr qint64 kSize = 6 * 1024 * 1024;   // over the old 4 MiB cap
     const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
     QVERIFY(!path.isEmpty());
 
@@ -2211,50 +2302,83 @@ void tst_WebServer::previewCapsTheResponseBody()
     const QString token = m_webServer->streamToken();
     const QString url = QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token);
 
-    // `bytes=0-` is what a player opens with: "send me the whole file". Before
-    // the cap that allocated the entire file in the daemon's address space,
-    // which on a real release is tens of gigabytes.
+    // `bytes=0-` is what a player opens with: the whole file, streamed off disk
+    // rather than assembled in memory
     const auto resp = sendRanged(url, QByteArrayLiteral("bytes=0-"));
     QCOMPARE(resp.statusCode, 206);
-    QCOMPARE(qint64(resp.rawBody.size()), kCap);
-
-    // The total in Content-Range is the whole file, not the slice — a player
-    // takes its duration and its seek bar from that number.
+    QCOMPARE(qint64(resp.rawBody.size()), kSize);
+    QVERIFY(isPattern(resp.rawBody, 0));
     QCOMPARE(resp.headers.value(QStringLiteral("content-range")),
-             QStringLiteral("bytes 0-%1/%2").arg(kCap - 1).arg(kSize));
+             QStringLiteral("bytes 0-%1/%2").arg(kSize - 1).arg(kSize));
     QCOMPARE(resp.headers.value(QStringLiteral("accept-ranges")), QStringLiteral("bytes"));
 
-    // The next window starts exactly where the last stopped, with the right
-    // bytes in it. An off-by-one here desyncs the stream and nothing says so.
+    // a closed range is exactly that range, the right bytes in it
     const auto next = sendRanged(url, QByteArrayLiteral("bytes=4194304-4194403"));
     QCOMPARE(next.statusCode, 206);
     QCOMPARE(next.rawBody.size(), qsizetype(100));
-    QCOMPARE(quint8(next.rawBody.at(0)), quint8(kCap & 0xFF));
+    QVERIFY(isPattern(next.rawBody, 4194304));
 
     m_webServer->setUsenetStreamResolver({});
 }
 
-void tst_WebServer::previewStopsAtWhatHasDownloaded()
+void tst_WebServer::previewWithoutARangeIsTheWholeFile()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    // GStreamer (Clapper, Totem) opens with no Range and takes Content-Length for
+    // the file's size; a capped 206 played the first 4 MiB and stopped (#279)
+    constexpr qint64 kSize = 5 * 1024 * 1024 + 123;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+    m_webServer->setBtStreamResolver([path](const QString&, int, qint64, bool) {
+        UsenetStreamSource src;
+        src.found = true;
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.pieces = {{path, 0, 0, kSize}};
+        return src;
+    });
+    QVERIFY(!m_preferences->downloadSeeking());
+
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/torrents/bt:v1:%1/-1/preview?token=%2")
+            .arg(QString(40, QLatin1Char('e')), m_webServer->streamToken()),
+        {});
+    m_webServer->setBtStreamResolver({});
+
+    QCOMPARE(resp.statusCode, 200);
+    QCOMPARE(resp.headers.value(QStringLiteral("content-length")), QString::number(kSize));
+    QVERIFY(!resp.headers.contains(QStringLiteral("content-range")));
+    QCOMPARE(qint64(resp.rawBody.size()), kSize);
+    QVERIFY(isPattern(resp.rawBody, 0));
+}
+void tst_WebServer::previewStreamWaitsAtTheWriteHead()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
 
     // The file is already its final length on disk — ArticleWriter::reserve()
-    // preallocates it — so its size says nothing about how much has arrived.
+    // preallocates it — so its size says nothing about how much has arrived. The
+    // stream hands out what has, waits at the write head and goes on as more lands.
     constexpr qint64 kSize = 1024 * 1024;
     constexpr qint64 kHave = 300 * 1024;
     const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
     QVERIFY(!path.isEmpty());
 
-    bool fetched = false;
-    m_webServer->setUsenetStreamResolver([path, &fetched](const UsenetStreamRequest& ask) {
-        fetched = ask.fetch;
+    QElapsedTimer since;
+    since.start();
+    QList<qint64> offsets;
+    bool fetchedAlways = true;
+    m_webServer->setUsenetStreamResolver([&](const UsenetStreamRequest& ask) {
+        fetchedAlways = fetchedAlways && ask.fetch;
+        offsets << ask.wantOffset;
         UsenetStreamSource src;
         src.found = true;
         src.pieces = {{path, 0, 0, kSize}};
         src.fileName = QStringLiteral("movie.mkv");
         src.totalSize = kSize;
-        src.availableEnd = kHave;
+        src.availableEnd = since.elapsed() > 600 ? kSize : kHave;
         return src;
     });
     m_preferences->setDownloadSeeking(true);
@@ -2264,19 +2388,63 @@ void tst_WebServer::previewStopsAtWhatHasDownloaded()
         QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token),
         QByteArrayLiteral("bytes=0-"));
     m_preferences->setDownloadSeeking(false);
-    QVERIFY(fetched);
+    m_webServer->setUsenetStreamResolver({});
 
     QCOMPARE(resp.statusCode, 206);
-    // Exactly the downloaded prefix. Going further hands the player the
-    // preallocated tail, which is zeros — and that does not look like an error,
-    // it looks like a corrupt file.
-    QCOMPARE(qint64(resp.rawBody.size()), kHave);
     QCOMPARE(resp.headers.value(QStringLiteral("content-range")),
-             QStringLiteral("bytes 0-%1/%2").arg(kHave - 1).arg(kSize));
-
-    m_webServer->setUsenetStreamResolver({});
+             QStringLiteral("bytes 0-%1/%2").arg(kSize - 1).arg(kSize));
+    QCOMPARE(qint64(resp.rawBody.size()), kSize);
+    QVERIFY(isPattern(resp.rawBody, 0));
+    // asked again from the write head, which renews the boost / stream focus there
+    QVERIFY(fetchedAlways);
+    QCOMPARE(offsets.first(), qint64(0));
+    QVERIFY(offsets.contains(kHave));
 }
 
+void tst_WebServer::previewStreamEndsShortWhenTheItemGoes()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    // Removed while a player streams it: what was there, then the connection goes,
+    // not a player waiting on bytes that never come — and never the zeros past it
+    constexpr qint64 kSize = 1024 * 1024;
+    constexpr qint64 kHave = 300 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    QElapsedTimer since;
+    since.start();
+    m_webServer->setUsenetStreamResolver([&](const UsenetStreamRequest&) {
+        UsenetStreamSource src;
+        if (since.elapsed() > 600)
+            return src;
+        src.found = true;
+        src.pieces = {{path, 0, 0, kSize}};
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.availableEnd = kHave;
+        return src;
+    });
+
+    QNetworkRequest req(QUrl(baseUrl() + QStringLiteral("/api/v1/usenet/item/0/preview?token=%1")
+                                             .arg(m_webServer->streamToken())));
+    QNetworkReply* reply = m_nam.get(req);
+    QEventLoop loop;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QTimer::singleShot(10000, &loop, &QEventLoop::quit);
+    loop.exec();
+    m_webServer->setUsenetStreamResolver({});
+
+    QVERIFY2(reply->isFinished(), "the connection should close with the item");
+    QVERIFY2(since.elapsed() < 5000, "ended with the item, not at a timeout");
+    QCOMPARE(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(), 200);
+    QVERIFY(reply->error() != QNetworkReply::NoError);
+    const QByteArray body = reply->readAll();
+    QCOMPARE(qint64(body.size()), kHave);
+    QVERIFY(isPattern(body, 0));
+    reply->deleteLater();
+}
 void tst_WebServer::previewWaitsForBytesThatHaveNotArrivedYet()
 {
     QTemporaryDir dir;
@@ -2299,7 +2467,7 @@ void tst_WebServer::previewWaitsForBytesThatHaveNotArrivedYet()
         src.pieces = {{path, 0, 0, kSize}};
         src.fileName = QStringLiteral("movie.mkv");
         src.totalSize = kSize;
-        src.availableEnd = since.elapsed() > 400 ? kLate : 0;
+        src.availableEnd = since.elapsed() > 800 ? kSize : since.elapsed() > 400 ? kLate : 0;
         return src;
     });
     m_preferences->setDownloadSeeking(true);
@@ -2311,9 +2479,10 @@ void tst_WebServer::previewWaitsForBytesThatHaveNotArrivedYet()
     m_preferences->setDownloadSeeking(false);
 
     // Answered, not refused. A zero-byte 206 reads as end-of-stream and every
-    // player stops there.
+    // player stops there. The rest follows on the same answer as it lands.
     QCOMPARE(resp.statusCode, 206);
-    QCOMPARE(qint64(resp.rawBody.size()), kLate);
+    QCOMPARE(qint64(resp.rawBody.size()), kSize);
+    QVERIFY(isPattern(resp.rawBody, 0));
 
     m_webServer->setUsenetStreamResolver({});
 }
@@ -2338,7 +2507,7 @@ void tst_WebServer::usenetPreviewFetchesWithSeekingOff()
         src.pieces = {{path, 0, 0, kSize}};
         src.fileName = QStringLiteral("movie.mkv");
         src.totalSize = kSize;
-        src.availableEnd = since.elapsed() > 400 ? kLate : 0;
+        src.availableEnd = since.elapsed() > 800 ? kSize : since.elapsed() > 400 ? kLate : 0;
         return src;
     });
     QVERIFY(!m_preferences->downloadSeeking());
@@ -2348,7 +2517,7 @@ void tst_WebServer::usenetPreviewFetchesWithSeekingOff()
     m_webServer->setUsenetStreamResolver({});
 
     QCOMPARE(resp.statusCode, 206);
-    QCOMPARE(qint64(resp.rawBody.size()), kLate);
+    QCOMPARE(qint64(resp.rawBody.size()), kSize);
     QVERIFY(fetches.size() > 1);
     QVERIFY(std::ranges::all_of(fetches, [](bool f) { return f; }));
 }
@@ -2395,7 +2564,7 @@ void tst_WebServer::hosterPreviewFetchesWithSeekingOff()
         QCOMPARE(qint64(resp.rawBody.size()), kSize - kSeek);
         QVERIFY(asks.size() > 1);
         QVERIFY(std::ranges::all_of(asks, [](const auto& a) {
-            return std::get<0>(a) == QStringLiteral("7") && std::get<1>(a) == kSeek && std::get<2>(a);
+            return std::get<0>(a) == QStringLiteral("7") && std::get<1>(a) >= kSeek && std::get<2>(a);
         }));
     }
 
@@ -2487,7 +2656,8 @@ void tst_WebServer::ed3kPreviewSeekWaitsForTheBytesWhenSeekingIsOn()
     QCOMPARE(resp.statusCode, 206);
     QCOMPARE(qint64(resp.rawBody.size()), kSize - kSeek);
     QVERIFY(offsets.size() > 1);
-    QVERIFY(std::ranges::all_of(offsets, [](qint64 o) { return o == kSeek; }));
+    QCOMPARE(offsets.first(), kSeek);
+    QVERIFY(std::ranges::all_of(offsets, [](qint64 o) { return o >= kSeek; }));
 }
 
 void tst_WebServer::ed3kPreviewIgnoresTheStreamResolverWhenSeekingIsOff()
@@ -2550,7 +2720,8 @@ void tst_WebServer::torrentPreviewWaitsAndFetchesWhenSeekingIsOn()
     QCOMPARE(askedId, QStringLiteral("bt:v1:") + QString(40, QLatin1Char('c')));
     QCOMPARE(askedFile, 2);
     QVERIFY(offsets.size() > 1);
-    QVERIFY(std::ranges::all_of(offsets, [](qint64 o) { return o == kSeek; }));
+    QCOMPARE(offsets.first(), kSeek);
+    QVERIFY(std::ranges::all_of(offsets, [](qint64 o) { return o >= kSeek; }));
     QVERIFY(fetchedAlways);
 }
 
@@ -4580,6 +4751,414 @@ void tst_WebServer::webEd2kActionRefusesAMetaHash()
     BackgroundFileWriter::instance().flush();
     QCOMPARE(QDir(temp.path()).entryList({QStringLiteral("*.part.met")}, QDir::Files).size(), 1);
 
+    server->stop();
+}
+
+// ---------------------------------------------------------------------------
+// Web UI: live updates, filters, bulk actions, add anywhere, new pages
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const QByteArray kForm = QByteArrayLiteral("application/x-www-form-urlencoded");
+
+} // namespace
+
+void tst_WebServer::webUi_pagesMarkTheirLivePartsAndFilters()
+{
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!ses.isEmpty());
+
+    const QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer").arg(ses));
+    QVERIFY(page.contains(QStringLiteral("data-live=\"downloads\"")));
+    QVERIFY(page.contains(QStringLiteral("data-live=\"uploads\"")));
+    QVERIFY(page.contains(QStringLiteral("data-filter=\"downloads\"")));
+    QVERIFY(page.contains(QStringLiteral("class=\"checkall\"")));
+    // header: theme, speed menu with the limits, manifest, viewport for phones
+    QVERIFY(page.contains(QStringLiteral("id=\"theme-select\"")));
+    QVERIFY(page.contains(QStringLiteral("id=\"speedmenu\"")));
+    QVERIFY(page.contains(QStringLiteral("rel=\"manifest\"")));
+    QVERIFY(page.contains(QStringLiteral("name=\"viewport\"")));
+    QVERIFY(page.contains(QStringLiteral("@media (max-width: 760px)")));
+    QVERIFY(page.contains(QStringLiteral("html[data-theme=\"dark\"]")));
+    QVERIFY(page.contains(QStringLiteral("?w=messages")));
+    QVERIFY(page.contains(QStringLiteral("?w=scheduler")));
+    // no ed3k backend: no ed3k tab
+    QVERIFY(page.contains(QStringLiteral("nav-tab \" hidden><a href=\"?w=ed3k\"")));
+    // every template variable was filled
+    static const QRegularExpression leftover(QStringLiteral("\\[(Limit|Cap|AltSpeed|UiNotice|ChatIn|Ed3kTabHidden|AdminHidden|TransferCategoryOptions|DownloadStatus\\w*)\\]"));
+    QVERIFY2(!leftover.match(page).hasMatch(), qPrintable(leftover.match(page).captured(0)));
+
+    for (const char* w : {"shared", "server", "stats", "graphs", "log"})
+        QVERIFY2(rawGetBody(port, QStringLiteral("/?ses=%1&w=%2").arg(ses, QLatin1String(w))).contains(QStringLiteral("data-live=")), w);
+    server->stop();
+}
+
+void tst_WebServer::webUi_livePollKeepsItsStreamToken()
+{
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    static const QRegularExpression tokenRx(QStringLiteral("STREAM_TOKEN='([0-9a-f]+)'"));
+    const QString first = tokenRx.match(rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer").arg(ses))).captured(1);
+    QVERIFY(!first.isEmpty());
+    // the poll hands it back and gets it again, so a playing preview keeps working
+    QCOMPARE(tokenRx.match(rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer&st=%2").arg(ses, first))).captured(1), first);
+    // an unknown one is not taken over
+    const QString other = tokenRx.match(rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer&st=%2").arg(ses, QString(32, u'0')))).captured(1);
+    QVERIFY(!other.isEmpty());
+    QVERIFY(other != QString(32, u'0'));
+    // nor one of another session
+    const QString ses2 = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(tokenRx.match(rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer&st=%2").arg(ses2, first))).captured(1) != first);
+    server->stop();
+}
+
+void tst_WebServer::webUi_statusNeedsASessionAndListsFinishedDownloads()
+{
+    FakeHosterBackend hoster;
+    auto server = startServer(true, false, eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"),
+                              [&hoster](WebServer& s, WebServerConfig& config) {
+        s.setHosterBackend(&hoster);
+        config.adminPasswordHash = sha256Hex(QStringLiteral("admin-pw"));
+    });
+    const uint16 port = server->port();
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/ui/status")).statusCode, 401);
+
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    const Response r = sendRaw(port, "GET", QStringLiteral("/ui/status?ses=%1").arg(ses));
+    QCOMPARE(r.statusCode, 200);
+    const QJsonObject o = QJsonDocument::fromJson(r.rawBody).object();
+    QVERIFY(o.contains(QStringLiteral("down")));
+    QVERIFY(o.contains(QStringLiteral("limitDown")));
+    QCOMPARE(o.value(QStringLiteral("chatIn")).toInt(), 0);
+    // the hoster's failed item 8, named by its URL
+    const QJsonArray failed = o.value(QStringLiteral("failed")).toArray();
+    QCOMPARE(failed.size(), 1);
+    QCOMPARE(failed.at(0).toArray().at(0).toString(), QStringLiteral("h:8"));
+    QCOMPARE(failed.at(0).toArray().at(1).toString(), QStringLiteral("https://files.test/x"));
+    QVERIFY(o.value(QStringLiteral("done")).toArray().isEmpty());
+    server->stop();
+}
+
+void tst_WebServer::webUi_manifestOpensMagnetLinksOnAddLink()
+{
+    auto server = startUsenetUi(nullptr);
+    // no session: browsers fetch it without credentials
+    const Response r = sendRaw(server->port(), "GET", QStringLiteral("/manifest.webmanifest"));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(r.headers.value(QStringLiteral("content-type")).startsWith(QStringLiteral("application/manifest+json")));
+    const QJsonObject m = QJsonDocument::fromJson(r.rawBody).object();
+    QCOMPARE(m.value(QStringLiteral("display")).toString(), QStringLiteral("standalone"));
+    const QJsonObject handler = m.value(QStringLiteral("protocol_handlers")).toArray().at(0).toObject();
+    QCOMPARE(handler.value(QStringLiteral("protocol")).toString(), QStringLiteral("magnet"));
+    QCOMPARE(handler.value(QStringLiteral("url")).toString(), QStringLiteral("/?w=addlink&link=%s"));
+    // its icons ship with the bundle
+    for (const QJsonValue& icon : m.value(QStringLiteral("icons")).toArray())
+        QVERIFY(QFile::exists(eMule::testing::projectDataDir() + QStringLiteral("/config/webserver/")
+                              + icon.toObject().value(QStringLiteral("src")).toString()));
+    server->stop();
+}
+
+void tst_WebServer::webUi_addLinkSurvivesTheLogin()
+{
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString magnet = QStringLiteral("magnet:?xt=urn:btih:") + QString(40, u'c') + QStringLiteral("&dn=a<b>");
+    const QString encoded = QString::fromLatin1(QUrl::toPercentEncoding(magnet));
+
+    // no session: the login form carries the link on
+    const QString login = rawGetBody(port, QStringLiteral("/?w=addlink&link=") + encoded);
+    QVERIFY(login.contains(QStringLiteral("name=\"login\"")));
+    const QString next = QStringLiteral("addlink&link=") + encoded;
+    QVERIFY2(login.contains(QStringLiteral("name=\"next\" value=\"addlink&amp;link=") + encoded + u'"'), qPrintable(login));
+
+    Response r = sendRaw(port, "POST", QStringLiteral("/"),
+                         "p=admin-pw&next=" + QUrl::toPercentEncoding(next), kForm);
+    QCOMPARE(r.headers.value(QStringLiteral("location")), QStringLiteral("/?w=") + next);
+    // anything else goes to Transfer as before
+    r = sendRaw(port, "POST", QStringLiteral("/"), "p=admin-pw&next=" + QUrl::toPercentEncoding(QStringLiteral("//evil.test")), kForm);
+    QCOMPARE(r.headers.value(QStringLiteral("location")), QStringLiteral("/?w=transfer"));
+    r = sendRaw(port, "POST", QStringLiteral("/"), "p=admin-pw&next=" + QUrl::toPercentEncoding(QStringLiteral("addlink&link=a\r\nX: y")), kForm);
+    QCOMPARE(r.headers.value(QStringLiteral("location")), QStringLiteral("/?w=transfer"));
+
+    // logged in: the page shows the link, escaped, and adds nothing by itself
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    const QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=addlink&link=%2").arg(ses, encoded));
+    QVERIFY(page.contains(QStringLiteral("dn=a&lt;b&gt;</textarea>")));
+    server->stop();
+}
+
+void tst_WebServer::webUi_addRoutesEachLinkToItsNetwork()
+{
+    FakeHosterBackend hoster;
+    FakeEd3kBackend ed3k;
+#ifdef EMULE_HAVE_BITTORRENT
+    FakeTorrentBackend bt;
+    bt.nextAdd.outcome = TorrentWebAddOutcome::Added;
+#endif
+    auto server = startServer(true, false, eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"),
+                              [&](WebServer& s, WebServerConfig& config) {
+        s.setHosterBackend(&hoster);
+        s.setEd3kBackend(&ed3k);
+#ifdef EMULE_HAVE_BITTORRENT
+        s.setTorrentBackend(&bt);
+#endif
+        config.adminPasswordHash = sha256Hex(QStringLiteral("admin-pw"));
+    });
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+
+    const QString magnet = QStringLiteral("magnet:?xt=urn:btih:") + QString(40, u'd');
+    const QByteArray links = (QStringLiteral("https://files.test/a\n  ed3k://|file|x|1|") + QString(64, u'b')
+                              + QStringLiteral("|/\n") + magnet + QStringLiteral("\nnot a link")).toUtf8();
+    const QByteArray boundary = "----dr0p";
+    const Response r = sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+                               multipartBody(boundary, {{"w", "add"}, {"ret", "hoster"}, {"links", links}},
+                                             {{"files", "list.dlc", "ok"}, {"files", "x.torrent", "d4:infoe"},
+                                              {"files", "readme.txt", "hello"}}),
+                               "multipart/form-data; boundary=" + boundary);
+    // back to the page it came from
+    QCOMPARE(r.headers.value(QStringLiteral("location")), QStringLiteral("/?w=hoster"));
+    QVERIFY(hoster.calls.contains(QStringLiteral("add:https://files.test/a:")));
+    QVERIFY(hoster.calls.contains(QStringLiteral("container:list.dlc:ok")));
+    QVERIFY(ed3k.calls.contains(QStringLiteral("link:ed3k://|file|x|1|") + QString(64, u'b') + QStringLiteral("|/")));
+#ifdef EMULE_HAVE_BITTORRENT
+    QCOMPARE(bt.lastMagnet, magnet);
+    QCOMPARE(bt.lastFile, QByteArray("d4:infoe"));
+#endif
+    // the next page says what happened, once
+    const QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer").arg(ses));
+    QVERIFY2(page.contains(QStringLiteral("id=\"ui-notice\"")), qPrintable(page.left(4000)));
+    QVERIFY(page.contains(QStringLiteral("not a link eMule knows")));
+    QVERIFY(page.contains(QStringLiteral("readme.txt: not a file eMule can add")));
+    QVERIFY(!rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer").arg(ses)).contains(QStringLiteral("id=\"ui-notice\"")));
+
+    // a ret that is not a page is ignored
+    const Response bad = sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+                                 "w=add&ret=" + QUrl::toPercentEncoding(QStringLiteral("x\r\nLocation: //evil")), kForm);
+    QCOMPARE(bad.headers.value(QStringLiteral("location")), QStringLiteral("/?w=transfer"));
+    server->stop();
+}
+
+void tst_WebServer::webUi_guestsCannotAdd()
+{
+    FakeHosterBackend hoster;
+    auto server = startServer(true, false, eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"),
+                              [&hoster](WebServer& s, WebServerConfig& config) {
+        s.setHosterBackend(&hoster);
+        config.adminPasswordHash = sha256Hex(QStringLiteral("admin-pw"));
+        config.guestEnabled = true;
+        config.guestPasswordHash = sha256Hex(QStringLiteral("guest-pw"));
+    });
+    const uint16 port = server->port();
+    const QString guest = webLogin(port, QStringLiteral("guest-pw"));
+    QVERIFY(!guest.isEmpty());
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(guest), "w=add&links=https%3A%2F%2Ffiles.test%2Fb", kForm);
+    QVERIFY(hoster.calls.isEmpty());
+    QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer").arg(guest)).contains(QStringLiteral("Guests cannot change anything.")));
+    const quint32 before = m_preferences->configuredMaxDownload();
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(guest), "w=speed&maxdown=7", kForm);
+    QCOMPARE(m_preferences->configuredMaxDownload(), before);
+    server->stop();
+}
+
+void tst_WebServer::webUi_transferActsOnEveryTickedFile()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QStringList savedTemp = thePrefs.tempDirs();
+    const auto restore = qScopeGuard([&] {
+        m_downloadQueue->deleteAll();
+        thePrefs.setTempDirs(savedTemp);
+    });
+    thePrefs.setTempDirs({temp.path()});
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    const uint8 a[16] = {0x61, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    const uint8 b[16] = {0x62, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    // two links in one post, as a drop sends them
+    const QString links = QStringLiteral("ed2k://|file|a.bin|1000|%1|/\ned2k://|file|b.bin|1000|%2|/").arg(md4str(a), md4str(b));
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), "w=add&links=" + QUrl::toPercentEncoding(links), kForm);
+    QCOMPARE(m_downloadQueue->fileCount(), 2);
+
+    const QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer").arg(ses));
+    QVERIFY(page.contains(QStringLiteral("name=\"file\" value=\"%1\"").arg(md4str(a))));
+    QVERIFY(page.contains(QStringLiteral("data-status-text=")));
+
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            QStringLiteral("w=transfer&op=priohigh&file=%1&file=%2").arg(md4str(a), md4str(b)).toLatin1(), kForm);
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            QStringLiteral("w=transfer&op=pause&file=%1&file=%2").arg(md4str(a), md4str(b)).toLatin1(), kForm);
+    for (const auto* hash : {a, b}) {
+        const PartFile* f = m_downloadQueue->fileByID(hash);
+        QVERIFY(f);
+        QCOMPARE(f->status(), PartFileStatus::Paused);
+        QCOMPARE(f->downPriority(), kPrHigh);
+    }
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            QStringLiteral("w=transfer&op=cancel&file=%1&file=%2").arg(md4str(a), md4str(b)).toLatin1(), kForm);
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+    server->stop();
+}
+
+void tst_WebServer::webUi_speedMenuSetsTheLimits()
+{
+    const quint32 down = m_preferences->configuredMaxDownload(), up = m_preferences->configuredMaxUpload();
+    const auto restore = qScopeGuard([&] {
+        m_preferences->setMaxDownload(down);
+        m_preferences->setMaxUpload(up);
+    });
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    Response r = sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), "w=speed&maxdown=321&maxup=45&ret=stats", kForm);
+    QCOMPARE(r.headers.value(QStringLiteral("location")), QStringLiteral("/?w=stats"));
+    QCOMPARE(m_preferences->configuredMaxDownload(), 321u);
+    QCOMPARE(m_preferences->configuredMaxUpload(), 45u);
+    QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=stats").arg(ses)).contains(QStringLiteral("data-down=\"321\"")));
+    // all or nothing
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), "w=speed&maxdown=12&maxup=x", kForm);
+    QCOMPARE(m_preferences->configuredMaxDownload(), 321u);
+    QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=stats").arg(ses)).contains(QStringLiteral("out of range")));
+    server->stop();
+}
+
+void tst_WebServer::webUi_messagesShowTheConversationEscaped()
+{
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    const QString peer = QString(32, u'A');
+    server->noteChatMessage(peer, QStringLiteral("<b>Bob</b>"), QStringLiteral("hi <script>x</script>"), true);
+    server->noteChatMessage(QString(32, u'c'), QStringLiteral("Carol"), QStringLiteral("other talk"), true);
+
+    QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=messages&peer=%2").arg(ses, peer));
+    QVERIFY(page.contains(QStringLiteral("hi &lt;script&gt;x&lt;/script&gt;")));
+    QVERIFY(page.contains(QStringLiteral("&lt;b&gt;Bob&lt;/b&gt;")));
+    QVERIFY(!page.contains(QStringLiteral("other talk")));
+    QVERIFY(page.contains(QStringLiteral("?w=messages&amp;peer=CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")));
+    QVERIFY(page.contains(QStringLiteral("data-live=\"chat\"")));
+    // the badge counts what came in
+    const Response st = sendRaw(port, "GET", QStringLiteral("/ui/status?ses=%1").arg(ses));
+    QCOMPARE(QJsonDocument::fromJson(st.rawBody).object().value(QStringLiteral("chatIn")).toInt(), 2);
+
+    // nobody of that hash is connected in a test core: the page says so
+    const Response r = sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+                               QString(QStringLiteral("w=messages&op=send&text=hello&peer=") + peer + QStringLiteral("&ret=messages%26peer%3D") + peer).toLatin1(), kForm);
+    QCOMPARE(r.headers.value(QStringLiteral("location")), QStringLiteral("/?w=messages&peer=") + peer);
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=messages&peer=%2").arg(ses, peer));
+    QVERIFY(page.contains(QStringLiteral("Not sent:")));
+
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), (QStringLiteral("w=messages&op=clearchat&peer=") + peer).toLatin1(), kForm);
+    QVERIFY(!rawGetBody(port, QStringLiteral("/?ses=%1&w=messages&peer=%2").arg(ses, peer)).contains(QStringLiteral("hi &lt;script")));
+    server->stop();
+}
+
+void tst_WebServer::webUi_friendsAddAndRemove()
+{
+    QTemporaryDir friendsDir;
+    QVERIFY(friendsDir.isValid());
+    const QString savedConfigDir = m_preferences->configDir();
+    m_preferences->setConfigDir(friendsDir.path());
+    const auto restore = qScopeGuard([&] { m_preferences->setConfigDir(savedConfigDir); });
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    const QString hash = QStringLiteral("0123456789ABCDEF0123456789ABCDEF");
+    const int before = m_friendList->count();
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            (QStringLiteral("w=messages&op=addfriend&name=Al%3Ci%3E&hash=") + hash).toLatin1(), kForm);
+    QCOMPARE(m_friendList->count(), before + 1);
+    QVERIFY(QFile::exists(friendsDir.filePath(QStringLiteral("emfriends.met"))));
+    QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=messages").arg(ses)).contains(QStringLiteral("Al&lt;i&gt;")));
+    // neither hash nor address: refused
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), "w=messages&op=addfriend&name=x", kForm);
+    QCOMPARE(m_friendList->count(), before + 1);
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), (QStringLiteral("w=messages&op=removefriend&peer=") + hash).toLatin1(), kForm);
+    QCOMPARE(m_friendList->count(), before);
+    server->stop();
+}
+
+void tst_WebServer::webUi_schedulerAddsTogglesAndRemoves()
+{
+    QTemporaryDir configDir;
+    QVERIFY(configDir.isValid());
+    const QString savedConfigDir = m_preferences->configDir();
+    m_preferences->setConfigDir(configDir.path());
+    Scheduler scheduler;
+    theApp.scheduler = &scheduler;
+    const auto restore = qScopeGuard([&] {
+        theApp.scheduler = nullptr;
+        m_preferences->setConfigDir(savedConfigDir);
+    });
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            "w=scheduler&op=add&title=Night&day=8&start=23%3A00&end=06%3A30&action=2&value=50", kForm);
+    QCOMPARE(scheduler.count(), 1);
+    const ScheduleEntry* e = scheduler.schedule(0);
+    QCOMPARE(e->title, QStringLiteral("Night"));
+    QCOMPARE(e->day, ScheduleDay::MonToFri);
+    QCOMPARE(e->actions[0], ScheduleAction::SetDownload);
+    QCOMPARE(e->values[0], QStringLiteral("50"));
+    QVERIFY(e->enabled);
+    QCOMPARE(QDateTime::fromSecsSinceEpoch(e->startTime).time(), QTime(23, 0));
+    QCOMPARE(QDateTime::fromSecsSinceEpoch(e->endTime).time(), QTime(6, 30));
+
+    const QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=scheduler").arg(ses));
+    QVERIFY(page.contains(QStringLiteral("Night")));
+    QVERIFY(page.contains(QStringLiteral("Mon-Fri")));
+    QVERIFY(page.contains(QStringLiteral("23:00 – 06:30")));
+    QVERIFY(page.contains(QStringLiteral("Download Limit: 50")));
+
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), "w=scheduler&op=toggle&i=0", kForm);
+    QVERIFY(!scheduler.schedule(0)->enabled);
+    // unknown action, bad time: nothing added
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), "w=scheduler&op=add&day=0&start=10%3A00&action=99", kForm);
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), "w=scheduler&op=add&day=0&start=25%3A00&action=1&value=5", kForm);
+    QCOMPARE(scheduler.count(), 1);
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), "w=scheduler&op=remove&i=0", kForm);
+    QCOMPARE(scheduler.count(), 0);
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), "w=scheduler&op=remove&i=5", kForm);
+    server->stop();
+}
+
+void tst_WebServer::webUi_ed3kPageListsAndActs()
+{
+    FakeEd3kBackend ed3k;
+    auto server = startServer(true, false, eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"),
+                              [&ed3k](WebServer& s, WebServerConfig& config) {
+        s.setEd3kBackend(&ed3k);
+        config.adminPasswordHash = sha256Hex(QStringLiteral("admin-pw"));
+    });
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=ed3k").arg(ses));
+    QVERIFY(page.contains(QStringLiteral("nav-tab active\" ><a href=\"?w=ed3k\"")));
+    QVERIFY(page.contains(QStringLiteral("film.mkv")));
+    QVERIFY(page.contains(QStringLiteral("data-status=\"paused\"")));
+    QVERIFY(page.contains(QStringLiteral("width:25.0%")));
+    QVERIFY(!page.contains(QStringLiteral("[Ed3k")));
+
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            QString(QStringLiteral("w=ed3k&op=resume&ids=") + FakeEd3kBackend::root() + QStringLiteral("&ids=nothex")).toLatin1(), kForm);
+    QCOMPARE(ed3k.calls, QStringList{QStringLiteral("control:%1:1:0").arg(FakeEd3kBackend::root())});
+    ed3k.calls.clear();
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            (QStringLiteral("w=ed3k&op=priohigh&ids=") + FakeEd3kBackend::root()).toLatin1(), kForm);
+    QCOMPARE(ed3k.calls, QStringList{QStringLiteral("control:%1:3:2").arg(FakeEd3kBackend::root())});
+
+    ed3k.on = false;
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=ed3k").arg(ses));
+    QVERIFY(page.contains(QStringLiteral("ed3k is off.")));
     server->stop();
 }
 

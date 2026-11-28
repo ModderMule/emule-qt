@@ -7,6 +7,7 @@
 #include "net/ListenConflict.h"
 #include "webserver/ApiBackend.h"
 #include "webserver/ApiEventHub.h"
+#include "webserver/FormParts.h"
 #include "webserver/WebSessionManager.h"
 #include "webserver/WebTemplateEngine.h"
 
@@ -27,6 +28,7 @@
 #include "search/SearchList.h"
 #include "search/SearchStarter.h"
 #include "app/AppContext.h"
+#include "app/CoreOps.h"
 #include "transfer/Scheduler.h"
 #include "search/SearchParams.h"
 #include "server/Server.h"
@@ -38,6 +40,7 @@
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
 #include "kademlia/Kademlia.h"
+#include "utils/DateTimeText.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/PathUtils.h"
@@ -689,6 +692,7 @@ bool WebServer::start(const WebServerConfig& config)
             m_config.webUiEnabled   = false;
             m_config.restApiEnabled = false;
             m_config.mcpEnabled     = false;
+            m_config.arrApiEnabled  = false;
             m_config.guestEnabled   = false;
             m_config.listenAddress  = QStringLiteral("127.0.0.1");
         }
@@ -842,8 +846,13 @@ bool WebServer::start(const WebServerConfig& config)
                     .arg(base, m_config.mcpReadOnly ? QStringLiteral(" (read-only tools)")
                                                     : QString()));
     }
+    if (m_config.arrApiEnabled) {
+        logInfo(QStringLiteral("WebServer: Sonarr/Radarr bridge at %1 (qBittorrent) and %1/torznab "
+                               "(Torznab)").arg(base));
+    }
     if (!addr.isLoopback()
-        && (m_config.webUiEnabled || m_config.restApiEnabled || m_config.mcpEnabled))
+        && (m_config.webUiEnabled || m_config.restApiEnabled || m_config.mcpEnabled
+            || m_config.arrApiEnabled))
         logInfo(QStringLiteral("WebServer: reachable from other hosts; set a listen address "
                                "of 127.0.0.1 to keep it local"));
 
@@ -862,8 +871,10 @@ WebServerConfig WebServerConfig::fromPreferences(const Preferences& prefs)
     config.restApiEnabled = prefs.webServerRestApiEnabled();
     config.mcpEnabled     = prefs.webServerMcpEnabled();
     config.mcpReadOnly    = prefs.webServerMcpReadOnly();
+    config.arrApiEnabled  = prefs.arrApiEnabled();
+    config.arrSearchWaitSeconds = prefs.arrSearchWaitSeconds();
 
-    if (config.webUiEnabled || config.restApiEnabled || config.mcpEnabled) {
+    if (config.webUiEnabled || config.restApiEnabled || config.mcpEnabled || config.arrApiEnabled) {
         // Either surface needs the shared server + auth settings: REST authenticates
         // with apiKey, the web UI with a session login.
         config.listenAddress       = prefs.webServerListenAddress();
@@ -909,6 +920,7 @@ void WebServer::stop()
 
     m_server.reset();   // Destroys QHttpServer + owned QTcpServer
     m_tcpServer = nullptr;
+    m_qbitSessions.clear();
     m_sessionManager.reset();
     m_templateEngine.reset();
     m_streamTokens.clear();
@@ -989,6 +1001,10 @@ void WebServer::registerRoutes()
             return QHttpServerResponse(QHttpServerResponse::StatusCode::NoContent);
         });
 
+    // --- Sonarr/Radarr: qBittorrent API + Torznab (own switch) ---
+    if (m_config.arrApiEnabled)
+        registerArrRoutes();
+
     // --- Template web interface routes (only if the web UI is enabled) ---
     // Independent of the REST API: the UI is fully server-rendered and does not
     // call /api/v1/*. Gated so "web server disabled" actually serves no UI.
@@ -1004,6 +1020,12 @@ void WebServer::registerRoutes()
             [this](const QHttpServerRequest& req) {
                 return handlePage(req);
             });
+
+        // App manifest and the header's status poll; before /<arg>, which would take them for assets
+        m_server->route(QStringLiteral("/manifest.webmanifest"), QHttpServerRequest::Method::Get,
+            [] { return webManifest(); });
+        m_server->route(QStringLiteral("/ui/status"), QHttpServerRequest::Method::Get,
+            [this](const QHttpServerRequest& req) { return handleUiStatus(req); });
 
         // Favicon
         m_server->route(QStringLiteral("/favicon.ico"), QHttpServerRequest::Method::Get,
@@ -2527,7 +2549,7 @@ QByteArray WebServer::renderIncomingListing(const IncomingLookup& found, const Q
         const QString& name = entry.name;
         const QString rel = relPath.isEmpty() ? name
                                               : relPath + QLatin1Char('/') + name;
-        const QString modified = entry.modified.toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+        const QString modified = htmlText(webDateTime(entry.modified, {}, lang));
 
         if (entry.dir) {
             html += QStringLiteral("<tr><td><a href=\"%1\">%2/</a></td><td class=\"n\"></td>"
@@ -2708,67 +2730,6 @@ QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString
 namespace {
 [[nodiscard]] QUrlQuery formBody(const QByteArray& body);   // defined with the Usenet handlers
 
-/// One part of a multipart/form-data body.
-struct FormPart {
-    QString name;
-    std::optional<QString> fileName;   ///< set: a file input
-    QByteArray data;
-};
-
-/// The parts of a multipart/form-data body (RFC 7578); empty when it is none.
-[[nodiscard]] QList<FormPart> multipartParts(const QByteArray& contentType, const QByteArray& body)
-{
-    QList<FormPart> parts;
-    const qsizetype at = contentType.indexOf("boundary=");
-    if (!contentType.trimmed().toLower().startsWith("multipart/form-data") || at < 0)
-        return parts;
-    QByteArray boundary = contentType.mid(at + 9);
-    if (const qsizetype semi = boundary.indexOf(';'); semi >= 0)
-        boundary.truncate(semi);
-    boundary = boundary.trimmed();
-    if (boundary.size() > 1 && boundary.startsWith('"') && boundary.endsWith('"'))
-        boundary = boundary.mid(1, boundary.size() - 2);
-    if (boundary.isEmpty())
-        return parts;
-    const QByteArray delimiter = "--" + boundary;
-    const QByteArray nextDelimiter = "\r\n" + delimiter;
-    qsizetype pos = body.indexOf(delimiter);
-    while (pos >= 0) {
-        pos += delimiter.size();
-        if (body.mid(pos, 2) == "--")
-            break;   // closing delimiter
-        if (body.mid(pos, 2) == "\r\n")
-            pos += 2;
-        const qsizetype headEnd = body.indexOf("\r\n\r\n", pos);
-        if (headEnd < 0)
-            break;
-        const qsizetype next = body.indexOf(nextDelimiter, headEnd + 4);
-        if (next < 0)
-            break;
-        FormPart part;
-        for (const QByteArray& line : body.mid(pos, headEnd - pos).split('\n')) {
-            if (!line.trimmed().toLower().startsWith("content-disposition:"))
-                continue;
-            // name="…"; filename="…" — quoted, as browsers send them
-            const auto param = [&line](QByteArrayView key) -> std::optional<QString> {
-                const QByteArray want = "; " + key.toByteArray() + "=\"";
-                const qsizetype a = line.indexOf(want);
-                if (a < 0)
-                    return std::nullopt;
-                const qsizetype b = line.indexOf('"', a + want.size());
-                return b < 0 ? std::nullopt
-                             : std::optional(QString::fromUtf8(line.mid(a + want.size(), b - a - want.size())));
-            };
-            part.name = param("name").value_or(QString());
-            part.fileName = param("filename");
-        }
-        part.data = body.mid(headEnd + 4, next - headEnd - 4);
-        if (!part.name.isEmpty())
-            parts.append(std::move(part));
-        pos = next + 2;
-    }
-    return parts;
-}
 }
 
 QHttpServerResponse WebServer::handlePost(const QHttpServerRequest& request)
@@ -2824,9 +2785,21 @@ QHttpServerResponse WebServer::handlePost(const QHttpServerRequest& request)
     const QString activePage = page.isEmpty() ? QStringLiteral("transfer") : page;
     if (ses.admin)
         dispatchActions(form, activePage, uploads);
+    else if (activePage == QStringLiteral("add") || activePage == QStringLiteral("speed")
+             || activePage == QStringLiteral("scheduler") || activePage == QStringLiteral("messages")) {
+        m_webUiFailed = true;
+        m_webUiNotice = tr("Guests cannot change anything.");
+    }
 
-    // Answer with a redirect, so a reload shows the page and repeats nothing.
-    return redirectTo(QStringLiteral("/?w=%1").arg(QString::fromLatin1(QUrl::toPercentEncoding(activePage))));
+    // Answer with a redirect, so a reload shows the page and repeats nothing. `ret`: the page
+    // the action came from (speed menu, drag and drop), plus at most one hex argument.
+    static const QRegularExpression retRe(QStringLiteral("^[a-z0-9]+(&[a-z]+=[0-9A-Za-z]{0,64})?$"));
+    if (const QString ret = form.queryItemValue(QStringLiteral("ret"), QUrl::FullyDecoded); retRe.match(ret).hasMatch())
+        return redirectTo(QStringLiteral("/?w=") + ret);
+    // pseudo pages that only act
+    const QString shown = activePage == QStringLiteral("speed") || activePage == QStringLiteral("add")
+        ? QStringLiteral("transfer") : activePage;
+    return redirectTo(QStringLiteral("/?w=%1").arg(QString::fromLatin1(QUrl::toPercentEncoding(shown))));
 }
 
 QHttpServerResponse WebServer::handleLogin(const QHttpServerRequest& request, const QUrlQuery& form)
@@ -2835,23 +2808,28 @@ QHttpServerResponse WebServer::handleLogin(const QHttpServerRequest& request, co
     const TranslationRouter::Scope language(m_translations, webLanguage({}));
 
     const QString password = form.queryItemValue(QStringLiteral("p"), QUrl::FullyDecoded);
+    // Where to go after the login: only the Add Link page, with its link percent-encoded.
+    static const QRegularExpression nextRe(QStringLiteral("^addlink&link=[A-Za-z0-9%._~-]{1,24000}$"));
+    QString next = form.queryItemValue(QStringLiteral("next"), QUrl::FullyDecoded);
+    if (!nextRe.match(next).hasMatch())
+        next.clear();
 
     // No admin password configured — deny login with clear message
     if (m_config.adminPasswordHash.isEmpty()
         && !(m_config.guestEnabled && !m_config.guestPasswordHash.isEmpty())) {
         return loginPage(QStringLiteral("<p class=\"failed\">%1</p>").arg(htmlText(
-            tr("Access denied — no password configured. Set a password in Options → Web Interface."))));
+            tr("Access denied — no password configured. Set a password in Options → Web Interface."))), next);
     }
 
     if (password.isEmpty())
-        return loginPage({});
+        return loginPage({}, next);
 
     // A client that keeps guessing waits, and its guess is not even looked at.
     const QString client = request.remoteAddress().toString();
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     if (const int wait = m_sessionManager->loginWaitSeconds(client, now); wait > 0) {
         QHttpServerResponse resp = loginPage(QStringLiteral("<p class=\"failed\">%1</p>").arg(htmlText(
-            tr("Too many failed logins. Try again in %n second(s).", nullptr, wait))));
+            tr("Too many failed logins. Try again in %n second(s).", nullptr, wait))), next);
         QHttpHeaders hdrs = resp.headers();
         hdrs.append(QHttpHeaders::WellKnownHeader::RetryAfter, QByteArray::number(wait));
         resp.setHeaders(std::move(hdrs));
@@ -2872,13 +2850,13 @@ QHttpServerResponse WebServer::handleLogin(const QHttpServerRequest& request, co
         m_sessionManager->noteLoginFailure(client, now);
         logWarning(QStringLiteral("WebServer: failed login from %1").arg(client));
         return loginPage(
-            QStringLiteral("<p class=\"failed\">%1</p>").arg(htmlText(tr("Login failed"))));
+            QStringLiteral("<p class=\"failed\">%1</p>").arg(htmlText(tr("Login failed"))), next);
     }
     m_sessionManager->noteLoginSuccess(client);
 
     // The session travels in a cookie the page's scripts cannot read and other
     // sites cannot send; it never appears in a URL or in the page.
-    QHttpServerResponse resp = redirectTo(QStringLiteral("/?w=transfer"));
+    QHttpServerResponse resp = redirectTo(next.isEmpty() ? QStringLiteral("/?w=transfer") : QStringLiteral("/?w=") + next);
     QHttpHeaders hdrs = resp.headers();
     hdrs.append(QHttpHeaders::WellKnownHeader::SetCookie, sessionCookie(sessionId, isHttps()));
     resp.setHeaders(std::move(hdrs));
@@ -2902,8 +2880,14 @@ QHttpServerResponse WebServer::handlePage(const QHttpServerRequest& request)
 
     // The session comes from the cookie alone; an id in the URL is not one.
     const QString ses = webSession(request).id;
-    if (ses.isEmpty())
+    if (ses.isEmpty()) {
+        // A magnet the browser handed over: the SameSite cookie stays home on that hop, so
+        // the login carries the link on to the Add Link page.
+        if (page == QStringLiteral("addlink"))
+            return loginPage({}, QStringLiteral("addlink&link=") + QString::fromLatin1(QUrl::toPercentEncoding(
+                query.queryItemValue(QStringLiteral("link"), QUrl::FullyDecoded).left(8000))));
         return loginPage({});
+    }
 
     // The header's language menu, guests included. Idempotent, so a reload that
     // repeats it is harmless; empty follows the app again.
@@ -2949,9 +2933,12 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page, con
     // --- ED2K link addition (any page, param "ed2k") ---
     // First: the page branches below return early (MFC WebServer.cpp:1396 runs it unconditionally)
     // FullyDecoded: PrettyDecoded leaves the '|' separators as %7C
-    if (const QString ed2k = query.queryItemValue(QStringLiteral("ed2k"), QUrl::FullyDecoded);
-        !ed2k.isEmpty() && m_downloadQueue)
-        m_downloadQueue->addDownloadFromED2KLink(ed2k, DownloadQueue::defaultTempDir());
+    // several when links are dropped or pasted onto a page
+    if (m_downloadQueue) {
+        for (const QString& ed2k : query.allQueryItemValues(QStringLiteral("ed2k"), QUrl::FullyDecoded))
+            if (!ed2k.isEmpty())
+                m_downloadQueue->addDownloadFromED2KLink(ed2k, DownloadQueue::defaultTempDir());
+    }
 
     // --- Transfer actions (page=transfer, param "op") ---
     if (page == QStringLiteral("transfer")) {
@@ -2972,37 +2959,43 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page, con
             return;
         }
 
-        // All other transfer ops require a file hash
-        const QString hashStr = query.queryItemValue(QStringLiteral("file"));
-        if (hashStr.size() != 32 || !m_downloadQueue)
+        // All other transfer ops name one file, or several ticked in the list
+        if (!m_downloadQueue)
             return;
-        std::array<uint8, 16> hash{};
-        if (decodeBase16(hashStr, hash.data(), 16) != 16)
-            return;
-        auto* file = m_downloadQueue->fileByID(hash.data());
-        if (!file)
-            return;
+        for (const QString& hashStr : query.allQueryItemValues(QStringLiteral("file"))) {
+            std::array<uint8, 16> hash{};
+            if (hashStr.size() != 32 || decodeBase16(hashStr, hash.data(), 16) != 16)
+                continue;
+            auto* file = m_downloadQueue->fileByID(hash.data());
+            if (!file)
+                continue;
 
-        if (op == QStringLiteral("stop"))
-            file->stopFile();
-        else if (op == QStringLiteral("pause"))
-            file->pauseFile();
-        else if (op == QStringLiteral("resume"))
-            file->resumeFile();
-        else if (op == QStringLiteral("cancel"))
-            m_downloadQueue->cancelFile(file);   // frees the file
-        else if (op == QStringLiteral("priolow")) {
-            file->setAutoDownPriority(false);
-            file->setDownPriority(kPrLow);
-        } else if (op == QStringLiteral("prionormal")) {
-            file->setAutoDownPriority(false);
-            file->setDownPriority(kPrNormal);
-        } else if (op == QStringLiteral("priohigh")) {
-            file->setAutoDownPriority(false);
-            file->setDownPriority(kPrHigh);
-        } else if (op == QStringLiteral("prioauto")) {
-            file->setAutoDownPriority(true);
-            file->setDownPriority(kPrHigh);
+            if (op == QStringLiteral("stop"))
+                file->stopFile();
+            else if (op == QStringLiteral("pause"))
+                file->pauseFile();
+            else if (op == QStringLiteral("resume"))
+                file->resumeFile();
+            else if (op == QStringLiteral("cancel"))
+                m_downloadQueue->cancelFile(file);   // frees the file
+            else if (op == QStringLiteral("priolow")) {
+                file->setAutoDownPriority(false);
+                file->setDownPriority(kPrLow);
+            } else if (op == QStringLiteral("prionormal")) {
+                file->setAutoDownPriority(false);
+                file->setDownPriority(kPrNormal);
+            } else if (op == QStringLiteral("priohigh")) {
+                file->setAutoDownPriority(false);
+                file->setDownPriority(kPrHigh);
+            } else if (op == QStringLiteral("prioauto")) {
+                file->setAutoDownPriority(true);
+                file->setDownPriority(kPrHigh);
+            } else if (op == QStringLiteral("category")) {
+                bool ok = false;
+                const uint32 cat = query.queryItemValue(QStringLiteral("cat")).toUInt(&ok);
+                if (ok)
+                    (void)ops::setDownloadCategory(hashStr, cat);
+            }
         }
         return;
     }
@@ -3076,6 +3069,26 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page, con
     if (page == QStringLiteral("options")) {
         if (query.hasQueryItem(QStringLiteral("saveprefs")))
             webOptionsAction(query);
+        return;
+    }
+    if (page == QStringLiteral("ed3k")) {
+        webEd3kAction(query);
+        return;
+    }
+    if (page == QStringLiteral("messages")) {
+        webMessagesAction(query);
+        return;
+    }
+    if (page == QStringLiteral("scheduler")) {
+        webSchedulerAction(query);
+        return;
+    }
+    if (page == QStringLiteral("speed")) {
+        webSpeedAction(query);
+        return;
+    }
+    if (page == QStringLiteral("add")) {
+        webAddAction(query, uploads);
         return;
     }
 
@@ -3259,6 +3272,8 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
                                           const QUrlQuery& query)
 {
     const bool isAdmin = m_sessionManager->isAdmin(sessionId);
+    // A live poll hands back the page's stream token: reused while valid (mintPageStreamToken)
+    m_reuseStreamToken = query.queryItemValue(QStringLiteral("st")).left(64);
 
     // Build header vars
     QHash<QString, QString> headerVars;
@@ -3292,6 +3307,8 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
     if (m_downloadQueue)
         headerVars[QStringLiteral("TransferCount")] = QString::number(m_downloadQueue->fileCount());
 
+    addUiHeaderVars(headerVars);
+
     // Admin controls
     headerVars[QStringLiteral("IsAdmin")] = isAdmin ? QStringLiteral("1") : QStringLiteral("0");
     headerVars[QStringLiteral("AdminAllowHiLevFunc")] = (isAdmin && m_config.adminAllowHiLevFunc)
@@ -3303,7 +3320,9 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
         QStringLiteral("shared"), QStringLiteral("stats"), QStringLiteral("graphs"),
         QStringLiteral("options"), QStringLiteral("sinfo"), QStringLiteral("log"),
         QStringLiteral("debuglog"), QStringLiteral("kad"), QStringLiteral("myinfo"),
-        QStringLiteral("usenet"), QStringLiteral("torrents"), QStringLiteral("hoster")
+        QStringLiteral("usenet"), QStringLiteral("torrents"), QStringLiteral("hoster"),
+        QStringLiteral("ed3k"), QStringLiteral("messages"), QStringLiteral("scheduler"),
+        QStringLiteral("addlink")
     };
     for (const auto& p : pages) {
         headerVars[QStringLiteral("Page_") + p] = (p == page)
@@ -3342,8 +3361,17 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
         content = buildTorrentsPage(isAdmin, sessionId, query);
     else if (page == QStringLiteral("hoster"))
         content = buildHosterPage(isAdmin);
+    else if (page == QStringLiteral("ed3k"))
+        content = buildEd3kPage(isAdmin);
+    else if (page == QStringLiteral("messages"))
+        content = buildMessagesPage(isAdmin, query);
+    else if (page == QStringLiteral("scheduler"))
+        content = buildSchedulerPage(isAdmin);
+    else if (page == QStringLiteral("addlink"))
+        content = buildAddLinkPage(isAdmin, query);
     else
         content = buildTransferPage(isAdmin, sessionId);
+    m_reuseStreamToken.clear();
 
     // Inject stylesheet into header via [StyleSheet] variable, then assemble page
     headerVars[QStringLiteral("StyleSheet")] =
@@ -3470,6 +3498,9 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
                 }
             }
             lineVars[QStringLiteral("DownloadStatusKey")] = statusKey;
+            lineVars[QStringLiteral("DownloadStatusText")] = htmlText(downloadStatusText(statusKey));
+            lineVars[QStringLiteral("DownloadCat")] = QString::number(file->category());
+            lineVars[QStringLiteral("AdminHidden")] = isAdmin ? QString() : QStringLiteral("hidden");
             lineVars[QStringLiteral("DownloadIndex")] = QString::number(index++);
 
             downLines += WebTemplateEngine::substitute(lineTmpl, lineVars);
@@ -3535,13 +3566,25 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
     transferVars[QStringLiteral("TotalUpTransferred")] = formatByteSize(totalUpTransferred);
     transferVars[QStringLiteral("TotalUpSpeed")] = formatByteRate(totalUpSpeed);
     transferVars[QStringLiteral("StreamToken")] = mintPageStreamToken(sessionId);   // Preview menu item
+    transferVars[QStringLiteral("AdminHidden")] = isAdmin ? QString() : QStringLiteral("hidden");
+    // the toolbar's category menu
+    QString catOptions;
+    if (m_preferences) {
+        const QList<DownloadCategory> cats = m_preferences->categories();
+        for (qsizetype i = 0; i < cats.size(); ++i)
+            catOptions += QStringLiteral("<option value=\"%1\">%2</option>")
+                              .arg(QString::number(i), htmlText(i == 0 ? tr("All") : cats.at(i).displayName()));
+    }
+    transferVars[QStringLiteral("TransferCategoryOptions")] = catOptions;
 
     const QString downHeader = WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("TRANSFER_DOWN_HEADER")), transferVars);
     const QString downFooter = m_templateEngine->section(QStringLiteral("TRANSFER_DOWN_FOOTER"));
     const QString upHeader = WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("TRANSFER_UP_HEADER")), transferVars);
-    const QString upFooter = m_templateEngine->section(QStringLiteral("TRANSFER_UP_FOOTER"));
+    // its total row and {{Total}} need the engine too
+    const QString upFooter = WebTemplateEngine::substitute(
+        m_templateEngine->section(QStringLiteral("TRANSFER_UP_FOOTER")), transferVars);
 
     const QString transferList = WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("TRANSFER_LIST")), transferVars);
@@ -4092,6 +4135,21 @@ QString WebServer::buildTorrentsPage(bool isAdmin, const QString& sessionId, con
         v[QStringLiteral("TorrentSize")] = size > 0 ? formatByteSize(size) : QString();
         v[QStringLiteral("TorrentPercent")] = percentText(r.value(QStringLiteral("done")).toInteger(), size);
         v[QStringLiteral("TorrentStatus")] = htmlText(torrentStatusName(r));
+        // the filter's: one word per state, the error text left out
+        {
+            const bool err = !r.value(QStringLiteral("error")).toString().isEmpty();
+            const bool paused = r.value(QStringLiteral("paused")).toBool();
+            const auto state = r.value(QStringLiteral("state")).toInteger();
+            const QString key = err ? QStringLiteral("error")
+                : paused ? QStringLiteral("paused")
+                : state == 5 ? QStringLiteral("seeding")
+                : state == 4 ? QStringLiteral("complete")
+                : state == 2 || state == 3 ? QStringLiteral("downloading")
+                : state == 1 || state == 6 ? QStringLiteral("hashing")
+                : QStringLiteral("waiting");
+            v[QStringLiteral("TorrentStatusKey")] = key;
+            v[QStringLiteral("TorrentStatusName")] = htmlText(err ? tr("Error") : torrentStatusName(r));
+        }
         v[QStringLiteral("TorrentDown")] = speedText(r.value(QStringLiteral("rateDown")).toInteger());
         v[QStringLiteral("TorrentUp")] = speedText(r.value(QStringLiteral("rateUp")).toInteger());
         v[QStringLiteral("TorrentSeeds")] = QStringLiteral("%1 (%2)").arg(argStr(r.value(QStringLiteral("seeds")).toInteger()),
@@ -4112,9 +4170,10 @@ QString WebServer::buildTorrentsPage(bool isAdmin, const QString& sessionId, con
         tr("%n torrent(s)", nullptr, int(rows.size())) + QStringLiteral(" — ")
         + tr("Down: %1, up: %2").arg(formatByteRate(double(down)), formatByteRate(double(up))));
     vars[QStringLiteral("TorrentLines")] = lines;
+    const QString token = mintPageStreamToken(sessionId);
+    vars[QStringLiteral("StreamToken")] = token;
     vars[QStringLiteral("TorrentFiles")] =
-        buildTorrentFiles(query.queryItemValue(QStringLiteral("id"), QUrl::FullyDecoded),
-                          mintPageStreamToken(sessionId));
+        buildTorrentFiles(query.queryItemValue(QStringLiteral("id"), QUrl::FullyDecoded), token);
     return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("TORRENTS")), vars);
 }
 
@@ -4144,6 +4203,7 @@ QString WebServer::buildHosterPage(bool isAdmin)
         v[QStringLiteral("HosterPercent")] = percentText(r.value(QStringLiteral("done")).toInteger(), size);
         v[QStringLiteral("HosterSpeed")] = speedText(r.value(QStringLiteral("speed")).toInteger());
         v[QStringLiteral("HosterStatus")] = htmlText(hosterStatusName(int(r.value(QStringLiteral("state")).toInteger())));
+        v[QStringLiteral("HosterStatusKey")] = QStringLiteral("s%1").arg(r.value(QStringLiteral("state")).toInteger());
         // technical, not localized: what the GUI words from the reason
         v[QStringLiteral("HosterStatusTitle")] = htmlText(r.value(QStringLiteral("reasonArg")).toString());
         lines += WebTemplateEngine::substitute(lineTmpl, v);
@@ -5287,8 +5347,14 @@ QHttpServerResponse WebServer::handleWebUsenetEntries(const QHttpServerRequest& 
 QString WebServer::mintPageStreamToken(const QString& sessionId)
 {
     // Guests too: they may preview and browse Incoming.
-    return sessionId.isEmpty() ? QString()
-                               : m_streamTokens.mint(webTokenScope(sessionId), kPageTokenIdle);
+    if (sessionId.isEmpty())
+        return {};
+    // A live poll would mint one every few seconds and push the playing one out of the store
+    if (!m_reuseStreamToken.isEmpty()) {
+        if (const auto scope = m_streamTokens.check(m_reuseStreamToken); scope && *scope == webTokenScope(sessionId))
+            return m_reuseStreamToken;
+    }
+    return m_streamTokens.mint(webTokenScope(sessionId), kPageTokenIdle);
 }
 
 QString WebServer::buildUsenetPage(bool isAdmin, const QString& sessionId, const QUrlQuery& query)
@@ -5532,7 +5598,7 @@ QString WebServer::buildUsenetList(const QString& /*sessionId*/, const QUrlQuery
                                          listVars);
 }
 
-QString WebServer::buildUsenetDetails(const QString& /*sessionId*/, const QString& id)
+QString WebServer::buildUsenetDetails(const QString& sessionId, const QString& id)
 {
     if (!usenetAvailable())
         return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("USENET_DETAILS_GONE")));
@@ -5605,7 +5671,7 @@ QString WebServer::buildUsenetDetails(const QString& /*sessionId*/, const QStrin
     vars[QStringLiteral("UsenetName")] = htmlText(d.value(QStringLiteral("name")).toString());
     vars[QStringLiteral("UsenetSize")] = formatByteSize(d.value(QStringLiteral("totalBytes")).toInteger());
     vars[QStringLiteral("UsenetDate")] = newest > 0
-        ? QDateTime::fromSecsSinceEpoch(newest).toString(QStringLiteral("yyyy-MM-dd HH:mm"))
+        ? htmlText(webDateTime(QDateTime::fromSecsSinceEpoch(newest), sessionId))
         : QString();
     vars[QStringLiteral("UsenetStatus")] = htmlText(usenetStatusText(d));
     vars[QStringLiteral("UsenetHealth")] = usenetHealthText(d);
@@ -5626,7 +5692,7 @@ QString WebServer::buildUsenetDetails(const QString& /*sessionId*/, const QStrin
 // Languages
 // ---------------------------------------------------------------------------
 
-QHttpServerResponse WebServer::loginPage(const QString& failedHtml)
+QHttpServerResponse WebServer::loginPage(const QString& failedHtml, const QString& next)
 {
     const QString tmpl =
         m_templateEngine ? m_templateEngine->section(QStringLiteral("LOGIN")) : QString();
@@ -5642,6 +5708,7 @@ QHttpServerResponse WebServer::loginPage(const QString& failedHtml)
     vars[QStringLiteral("WebControl")] = htmlText(tr("Web Control Panel"));
     vars[QStringLiteral("HtmlLang")] = htmlText(htmlLangCode(webLanguage({})));
     vars[QStringLiteral("FailedLogin")] = failedHtml;
+    vars[QStringLiteral("LoginNext")] = htmlText(next);
     return QHttpServerResponse(QByteArrayLiteral("text/html"),
                                WebTemplateEngine::substitute(tmpl, vars).toUtf8());
 }
@@ -5730,6 +5797,15 @@ QString WebServer::buildTorrentFiles(const QString& id, const QString& streamTok
     vars[QStringLiteral("TorrentFileLines")] = lines;
     return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("TORRENT_FILES")),
                                          vars);
+}
+
+QString WebServer::webDateTime(const QDateTime& dt, const QString& sessionId, const QString& requested) const
+{
+    const DateFormatMode mode = dateFormatModeFromInt(m_preferences ? m_preferences->dateFormat() : 0);
+    // webLanguage() is "" without translations: the OS locale then, as in the GUI
+    const QLocale lang = mode == DateFormatMode::Language ? localeForLanguage(webLanguage(sessionId, requested))
+                                                          : QLocale();
+    return formatDateTime(dt, mode, lang);
 }
 
 } // namespace eMule

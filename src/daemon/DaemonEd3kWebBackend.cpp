@@ -4,6 +4,7 @@
 #include "DaemonEd3kWebBackend.h"
 
 #include "BridgeAsk.h"
+#include "Ed3kBridge.h"
 #include "Ed3kDownloadsBridge.h"
 
 #include <QCborMap>
@@ -34,6 +35,12 @@ QCborArray DaemonEd3kWebBackend::downloads() const
 {
     const auto r = askBridge(Ed3kDownloadsBridge::handleRequest, IpcMsgType::GetEd3kDownloads, {});
     return r ? r->toMap().value(QStringLiteral("downloads")).toArray() : QCborArray{};
+}
+
+QCborMap DaemonEd3kWebBackend::status() const
+{
+    const auto r = askBridge(Ed3kBridge::handleRequest, IpcMsgType::GetEd3kStatus, {});
+    return r ? r->toMap() : QCborMap{};
 }
 
 Ed3kWebBackend::AddResult DaemonEd3kWebBackend::add(const QString& hexRoot, qint64 size, const QString& name,

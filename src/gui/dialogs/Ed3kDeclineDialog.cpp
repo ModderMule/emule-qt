@@ -18,6 +18,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -124,7 +125,7 @@ QString Ed3kDeclineDialog::countsText(const QCborMap& loaded)
 
 QString Ed3kDeclineDialog::urlStatusText(const QCborArray& status)
 {
-    const auto when = [](qint64 ms) { return QLocale().toString(QDateTime::fromMSecsSinceEpoch(ms), QLocale::ShortFormat); };
+    const auto when = [](qint64 ms) { return toDisplayString(QDateTime::fromMSecsSinceEpoch(ms)); };
     QStringList lines;
     for (const auto& v : status) {
         const QCborMap s = v.toMap();

@@ -83,6 +83,11 @@ file.
 | `EMULEQT_GUI_RES` | `1600x1000x24` | virtual display size |
 | `EMULEQT_VNC_PASSWORD` | – | password for noVNC/VNC; without it the GUI is open |
 | `EMULEQT_VNC_EXPOSE` | `0` | also listen for raw VNC on 5900 |
+| `EMULEQT_ARR` | `0` | Sonarr/Radarr bridge: qBittorrent API and Torznab on :4711 (needs `EMULEQT_API_KEY`) |
+| `EMULEQT_GLUETUN` | `0` | take the listen port from Gluetun's port forwarding |
+| `EMULEQT_GLUETUN_URL` | `http://127.0.0.1:8000` | Gluetun control server |
+| `EMULEQT_GLUETUN_API_KEY` | – | key of the control server's auth role |
+| `EMULEQT_GLUETUN_PORT_FOR` | `ed2k` | `ed2k` (TCP and UDP) or `bt` |
 
 ## GUI in the browser
 
@@ -133,6 +138,42 @@ bridge for stdio AI clients is in the image and in every release:
 ```bash
 emuleqt-mcp --url http://<host>:4711/mcp --api-key "$KEY"
 ```
+
+## Behind Gluetun (VPN)
+
+[docker/emuleqt/compose.gluetun.yml](../docker/emuleqt/compose.gluetun.yml) runs the
+core in Gluetun's network (`network_mode: service:gluetun`). Every packet goes
+through the VPN, so UPnP cannot open a port. With `EMULEQT_GLUETUN=1` the core
+reads the provider's forwarded port from the control server every minute
+(`/v1/portforward`, before Gluetun 3.40 `/v1/openvpn/portforwarded`) and makes it
+the eD2K port, TCP and UDP. Gluetun picks a new port on every reconnect; the
+core follows. While a network is connected the new port takes effect at the
+next restart (the log says so). The VPN state and public IP go to the log too.
+
+The LAN ports (4711, 4712, 5800) are published on the `gluetun` service, not on
+`emuleqt`. In the GUI the same switch is Options → Advanced → Integrations.
+
+## Sonarr and Radarr
+
+With `EMULEQT_ARR=1` and `EMULEQT_API_KEY` set, the web port also serves:
+
+- a qBittorrent Web API (`/api/v2`). In Sonarr/Radarr add a download client
+  "qBittorrent": host and port of the container (4711), any user name,
+  password = the API key.
+- a Torznab indexer (`/torznab/api`). Add an indexer "Torznab": URL
+  `http://<host>:4711/torznab`, API key = the API key.
+
+A search from Sonarr or Radarr runs an eD2K/Kad search and answers after the
+search time (default 30 s). eD2K files pose as torrents whose info hash is the
+MD4 plus eight zeros; the magnet carries the name and size, so the add builds
+the ed2k link from it. Finished files stay in the list until Sonarr or Radarr
+removes them after import.
+
+eD2K has no feed. Add the Sonarr/Radarr instances (address and API key) in
+Options → Advanced → Integrations: their Wanted › Missing lists are read every
+hour and searched in the background, and the hits are served as the indexer's
+RSS feed. Until there are hits the feed holds one placeholder row, because
+Sonarr's indexer test fails on an empty feed.
 
 ## Security
 

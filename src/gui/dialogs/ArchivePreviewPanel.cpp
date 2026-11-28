@@ -20,6 +20,7 @@
 #include <QStandardItemModel>
 #include <QTreeView>
 #include <QVBoxLayout>
+#include "utils/DateTimeFormat.h"
 
 #include <QtConcurrent/QtConcurrent>
 
@@ -192,7 +193,6 @@ void ArchivePreviewPanel::applyScan(const ScanOutput& output)
     m_updateBtn->setEnabled(true);
 
     m_model->removeRows(0, m_model->rowCount());
-    const QLocale locale;
     // An entry whose packed data has not arrived yet is greyed (MFC lParam 1,
     // ArchivePreviewDlg.cpp:297-311).
     const QBrush missing = palette().brush(QPalette::Disabled, QPalette::Text);
@@ -215,7 +215,7 @@ void ArchivePreviewPanel::applyScan(const ScanOutput& output)
         auto* attrItem = new SortableStandardItem(row.attributes);
         auto* mtimeItem = new SortableStandardItem;
         if (row.modified.isValid()) {
-            mtimeItem->setText(locale.toString(row.modified, QLocale::ShortFormat));
+            mtimeItem->setText(toDisplayString(row.modified));
             mtimeItem->setData(row.modified, SortRole);
         }
         auto* commentItem = new SortableStandardItem(row.comment);

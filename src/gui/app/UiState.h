@@ -245,6 +245,14 @@ public:
         scheduleSave();
     }
 
+    /// Display › Date format (DateFormatMode): 0 OS locale, 1 language locale, 2 ISO (#250)
+    [[nodiscard]] int dateFormat() const { return m_dateFormat; }
+    void setDateFormat(int mode)
+    {
+        m_dateFormat = mode;
+        scheduleSave();
+    }
+
     /// MiniMule closes itself three seconds after the pointer left it. Off, as in MFC,
     /// where it is the hidden "MiniMuleAutoClose" key (MiniMule.cpp:115). No option
     /// page offers it; set it in uistate.yml.
@@ -607,6 +615,7 @@ private:
     bool m_miniMuleAutoClose = false;
     bool m_firstStartWizardDone = false;
     std::optional<QString> m_language;   // unset = take preferences.yml's
+    int m_dateFormat = 0;
     int m_startCount = 0;
     bool m_lowIdHintDisabled = false;
     bool m_showCountryFlags = true;

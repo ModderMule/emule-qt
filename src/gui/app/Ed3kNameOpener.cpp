@@ -16,6 +16,7 @@
 #include <QLocale>
 #include <QMessageBox>
 #include <QUrl>
+#include "utils/DateTimeFormat.h"
 
 namespace eMule {
 
@@ -79,7 +80,7 @@ QString Ed3kNameOpener::howText(const QCborMap& r)
     case HowPetname:
         return tr("yours");
     case HowPinned:
-        return tr("pinned on %1").arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(a).date(), QLocale::ShortFormat));
+        return tr("pinned on %1").arg(toDisplayString(QDateTime::fromSecsSinceEpoch(a).date()));
     case HowList: {
         const QString title = r.value(QStringLiteral("howTitle")).toString();
         return title.isEmpty() ? tr("a name list") : tr("the list \"%1\"").arg(title);

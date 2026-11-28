@@ -35,14 +35,18 @@ constexpr uint32 kRecentWindowMs = 500;
 /// noise; and never more often than kLogMinIntervalMs.
 constexpr qint64 kLogChangePercent = 10;
 constexpr qint64 kLogMinIntervalMs = 5000;
-/// ed3k upload slots: KiB/s each, and the count's bounds (Protocol.md §12.5: 9 to 55 KiB/s
+/// ed3k upload slots: KiB/s each, and the count's bounds (Protocol.md §12.5: 9 KiB/s to 5 MiB/s
 /// per slot, at least 2)
 constexpr qint64 kEd3kSlotKb = 25;   // Options' slot speed automatic (0)
 constexpr qint64 kEd3kSlotKbMin = 9;
-constexpr qint64 kEd3kSlotKbMax = 55;
+// was: §12.5's old 55 KiB/s
+// constexpr qint64 kEd3kSlotKbMax = 55;
+constexpr qint64 kEd3kSlotKbMax = 5 * 1024;
 constexpr qint64 kEd3kMinSlots = 2;
 // was: a cap of 20; the share sizes them, as in the node (§12.5)
 // constexpr qint64 kEd3kMaxSlots = 20;
+/// ed3k slots at most per connection allowed: a third, the rest for downloads and Kad
+constexpr qint64 kEd3kConnsPerSlot = 3;
 
 BandwidthCoordinator* s_instance = nullptr;
 
@@ -293,7 +297,7 @@ bool BandwidthCoordinator::sampleEd3k()
 #endif
 }
 
-std::uint32_t BandwidthCoordinator::ed3kSlotsFor(qint64 upKb)
+std::uint32_t BandwidthCoordinator::ed3kSlotsFor(qint64 upKb, int ed2kHeld)
 {
     if (upKb <= 0)
         return 0;
@@ -302,7 +306,13 @@ std::uint32_t BandwidthCoordinator::ed3kSlotsFor(qint64 upKb)
     const qint64 user = qint64(thePrefs.uploadSlotTargetRate());
     const qint64 perSlot = user > 0 ? std::clamp(user, kEd3kSlotKbMin, kEd3kSlotKbMax) : kEd3kSlotKb;
     const qint64 n = std::max<qint64>(upKb / perSlot, kEd3kMinSlots);
-    return std::uint32_t(std::min<qint64>(n, std::numeric_limits<std::uint32_t>::max()));
+    // was: uncapped (50 MB/s gave 909 slots); now eD2K's 150 together with its holders, and
+    // a third of the connections.
+    // return std::uint32_t(std::min<qint64>(n, std::numeric_limits<std::uint32_t>::max()));
+    const qint64 cap = std::max(kEd3kMinSlots,
+                                std::min<qint64>(qint64(MAX_UP_CLIENTS_ALLOWED) - std::max(0, ed2kHeld),
+                                                 qint64(thePrefs.maxConnections()) / kEd3kConnsPerSlot));
+    return std::uint32_t(std::min(n, cap));
 }
 
 bool BandwidthCoordinator::ed3kSlotsMoved(std::uint32_t current, std::uint32_t wanted)
@@ -329,7 +339,8 @@ void BandwidthCoordinator::applyEd3kSlots(bool ed3kRunning, qint64 upKb)
         // may use (all of eD2K's, the throttler keeps the sum in it)
         // was: every tick; the share jitters, so the count moved by a few on almost each one
         // m_ed3k->setUploadSlots(ed3kSlotsFor(upKb));
-        if (const std::uint32_t want = ed3kSlotsFor(upKb); ed3kSlotsMoved(m_ed3kSlots, want)) {
+        const int ed2kHeld = theApp.uploadQueue ? theApp.uploadQueue->uploadQueueLength() : 0;
+        if (const std::uint32_t want = ed3kSlotsFor(upKb, ed2kHeld); ed3kSlotsMoved(m_ed3kSlots, want)) {
             m_ed3kSlots = want;
             m_ed3k->setUploadSlots(want);
         }
