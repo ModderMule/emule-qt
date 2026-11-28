@@ -642,6 +642,8 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
     const uint16  udpPort    = result.udpPort;
     const uint8*  sourceIPv6 = result.sourceIPv6;
     const uint8*  buddyIPv6  = result.buddyIPv6;
+    // QUIC NAT-T: connect options bit 0x40 (eMuleQt, eMuleAI, aMule) or our TAG_NATT
+    const bool    nattQuic   = (buddyCrypt & CONNECT_OPT_NATT_QUIC) || (result.natt & KADNATT_QUIC);
 
     Q_UNUSED(searchID);
 
@@ -761,7 +763,7 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         // unless an IPv6 dial reaches the source (tryToConnect).
         if (ip != 0)
             client->setConnectAddress(Address::fromHostOrder(ip));
-        if (result.natt & KADNATT_QUIC)
+        if (nattQuic)
             client->setSupportsNatTQuic(true);
         // bpv: a failed buddy callback asks the pointer for the current buddy (§5.6.1)
         if (result.pointerVersion == KAD_POINTER_VERSION && ip != 0)
@@ -780,7 +782,7 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
                          .arg(buddyCrypt, 2, 16, QLatin1Char('0')); });
             return;
         }
-        // Not MFC: kept while we are firewalled when the source speaks QUIC NAT-T (TAG_NATT);
+        // Not MFC: kept while we are firewalled when the source speaks QUIC NAT-T (0x40 or TAG_NATT);
         // its UDP is open, so we dial it over QUIC (natt::DirectUdpNatPath).
         if (theApp.isFirewalled()) {
             natt::PeerInfo natPeer;
@@ -790,7 +792,7 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
             }
             if (ip != 0 && udpPort != 0)
                 natPeer.kadEndpoint = Endpoint(Address::fromHostOrder(ip), udpPort);
-            natPeer.directUdp = (result.natt & KADNATT_QUIC) != 0;
+            natPeer.directUdp = nattQuic;
             if (!natPeer.directUdp || !natt::NatRendezvous::keepLowIdSource(natPeer)) {
                 logDebug(QStringLiteral("addKadSourceResult: skipping type 6 — we are firewalled"));
                 return;
@@ -802,7 +804,7 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         client->setConnectAddress(Address::fromHostOrder(ip));  // IP for UDP, not TCP (MFC:1596)
         if (clientHash)
             client->setUserHash(clientHash);
-        if (result.natt & KADNATT_QUIC)
+        if (nattQuic)
             client->setSupportsNatTQuic(true);
         // callback=true, or setConnectOptions ANDs bit 3 away again and this source is
         // left with no route at all — the check six lines up admitted it precisely

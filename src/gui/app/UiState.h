@@ -465,6 +465,15 @@ public:
         m_torrentPaneTab = tab;
         scheduleSave();
     }
+    /// Kad window: the network tab (0 = eD2K, 1 = ed3k).
+    [[nodiscard]] int kadNetworkTab() const { return m_kadNetworkTab; }
+    void setKadNetworkTab(int tab)
+    {
+        if (m_kadNetworkTab == tab)
+            return;
+        m_kadNetworkTab = tab;
+        scheduleSave();
+    }
 
     /// Search list: show what a server found on other networks.
     [[nodiscard]] bool searchShowUsenet() const { return m_searchShowUsenet; }
@@ -577,6 +586,7 @@ private:
     QList<int> m_torrentSplitSizes;
     int m_torrentFilter = 0;
     int m_torrentPaneTab = 0;
+    int m_kadNetworkTab = 1;
     int m_hosterFilter = 0;
     QList<int> m_statsGraphSplitSizes;
     int  m_windowWidth     = 0;

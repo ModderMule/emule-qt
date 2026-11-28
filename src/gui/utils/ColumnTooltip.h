@@ -16,7 +16,8 @@ namespace eMule {
 [[nodiscard]] QString columnTooltipHtml(const QString& text);
 
 /// App-wide filter: item-view tooltips with tab-separated lines are shown through
-/// columnTooltipHtml(). Models keep returning plain text.
+/// columnTooltipHtml(). Models keep returning plain text. Also hides any open
+/// tooltip when Ctrl is pressed.
 class ColumnTooltipFilter : public QObject {
 public:
     using QObject::QObject;

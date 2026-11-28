@@ -405,7 +405,7 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
         case Qt::ToolTipRole: {
             const QLocale locale;
             QString tip = tr("%1% — %2 of %3 articles")
-                              .arg(QString::number(it.percent, 'f', 1), locale.toString(it.doneSegments),
+                              .arg(formatPercent(it.percent), locale.toString(it.doneSegments),
                                    locale.toString(it.segmentCount));
             if (it.missingSegments > 0)
                 tip += tr(", %n missing", nullptr, it.missingSegments);
@@ -426,7 +426,7 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
             // tells the user nothing; show the stage's own progress instead.
             return isPostProcessing(it.status)
                 ? QStringLiteral("%1%").arg(it.postPercent)
-                : QStringLiteral("%1%").arg(it.percent, 0, 'f', 1);
+                : QStringLiteral("%1%").arg(formatPercent(it.percent));
         case ColStatus:
             if (!it.error.isEmpty())
                 return QStringLiteral("%1 — %2").arg(it.statusText, it.error);

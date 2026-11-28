@@ -87,6 +87,10 @@ template <std::integral T>
 /// "2:10 Hours", "1 Days 2:10 Hours", "1 Days 5 Minutes"; "?" for a negative value.
 [[nodiscard]] QString formatSecondsLongHM(qint64 seconds);
 
+/// A 0-100 percentage with one decimal, rounded down as MFC does (PartFile.cpp:1906):
+/// 99.96 reads "99.9", never "100.0" while bytes are missing (#260). No "%" sign.
+[[nodiscard]] QString formatPercent(double percent);
+
 /// A provider allowance in decimal GB, "500.0 GB" — what the plan and the
 /// invoice say. Deliberately not formatByteSize(), which is 1024-based: a 500 GB
 /// plan would read 465.66 GB beside the spin box it was typed into.

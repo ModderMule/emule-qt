@@ -30,7 +30,7 @@ Six paths, tried in this order for a source we want to download from:
 | eNode-go `PR_NAT` | flag `0x40000`, or `0x200000` when our login carried it; the peer is on our server and its user hash is known | UDP protocol `0xF1` to the `ST_NAT_PORT` (default 2004) |
 | Foreign callback | the peer is a LowID on **another** server, which announces UDP status flag `0x100000` | server UDP `0xA6` with our ID 0 to that server, UDP `0xA7` back |
 | Kad serving buddy | the source has a serving buddy, Kad connected | `OP_REASKCALLBACKUDP` with an embedded `OP_RENDEZVOUS` |
-| Direct UDP (no introducer) | Kad type 6 source with `nat` QUIC bit, QUIC runs here | `OP_DIRECTCALLBACKREQ` with option `0x40` to the source's Kad endpoint |
+| Direct UDP (no introducer) | Kad type 6 source with QUIC bit (`TAG_ENCRYPTION` `0x40` or `nat` `0x01`), QUIC runs here | `OP_DIRECTCALLBACKREQ` with option `0x40` to the source's Kad endpoint |
 
 All UDP leaves the client UDP socket, so every introducer sees the mapping the peer must punch.
 
@@ -347,7 +347,10 @@ publishes Kad type 6 (MFC). A firewalled downloader drops stock type 6 records (
 - Kad tag `nat` (string name, uint8): `0x01` = QUIC NAT-T. Published on every firewalled
   record (types 3, 5, 6) while the QUIC transport runs; never on 1/4. Storing nodes keep
   unknown string tags, like `ip6`. On 3/5 it is only a hint; the buddy path ignores it.
-- Downloader, firewalled, type 6 with `0x01`: keeps the source. It sends
+- The record's connect options (`TAG_ENCRYPTION`) say the same: `0x40` (`CONNECT_OPT_NATT_QUIC`).
+  eMuleAI sets only that bit and no `nat`; aMule reads/sets it too. Receiver takes a source
+  as QUIC capable on `0x40` **or** `nat` `0x01` (types 3, 5, 6).
+- Downloader, firewalled, type 6 with QUIC bit: keeps the source. It sends
   `OP_DIRECTCALLBACKREQ` (`<tcp port 2><our hash 16><opts 1>`, opts = crypt bits | `0x40`) to
   the source's Kad endpoint, obfuscated when the source supports crypt, up to 3 times 2 s apart
   until it dials. The endpoint is known at once: punch, CAPS and the QUIC dial follow as for
@@ -461,7 +464,7 @@ the IP the split side sees). Fix: a per-peer key IP, never our public IP, IPv4 o
   can serve the source, a LowID source goes to `ConnectingState::NatRendezvous` instead of
   failing. `askForDownload` and `PartFile::process` treat such a source as reachable.
 - LowID sources are kept while firewalled when a path could serve them: server sources,
-  Kad firewalled sources (types 3/5, and 6 with `nat`) and source exchange.
+  Kad firewalled sources (types 3/5, and 6 with the QUIC bit) and source exchange.
 - Nothing works without a data path: the QUIC transport (OpenSSL ≥ 3.5 build) or a confident
   public IPv6.
 - Preference `natTraversal` (default on), Options → Server.

@@ -186,6 +186,7 @@ private slots:
     void addKadSources_type3BpvReroutesAfterFailedCallback();
     void addKadSources_buddyIpIsNetworkOrder();
     void addKadSources_firewalledKeepsQuicType6();
+    void addKadSources_firewalledKeepsQuicType6FromConnectOptions();
 
     // eD2K link sources
     void linkSources_ipv6LiteralAdded();
@@ -2346,6 +2347,38 @@ void tst_DownloadQueue::addKadSources_firewalledKeepsQuicType6()
     const natt::PeerInfo peer = natt::PeerInfo::fromClient(*src);
     QVERIFY(peer.directUdp);
     QCOMPARE(peer.kadEndpoint, Endpoint(Address::fromString(QStringLiteral("77.66.55.41")), 4672));
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addKadSources_firewalledKeepsQuicType6FromConnectOptions()
+{
+    // eMuleAI/aMule records carry no `nat` tag; QUIC NAT-T is bit 0x40 in TAG_ENCRYPTION
+    eMule::testing::KadFixture fx{eMule::testing::KadMode::Firewalled};
+    fx.kadPrefs().setLastContact();
+    QVERIFY(theApp.isFirewalled());
+    natt::test::HubFixture hub;
+    hub.env->quic = true;
+    theApp.natRendezvous = hub.hub.get();
+    const auto restore = qScopeGuard([] { theApp.natRendezvous = nullptr; });
+
+    DownloadQueue dq;
+    uint8 hash[16] = {63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+    auto* pf = createTestPartFile(hash, QStringLiteral("kad_type6_quic_opts.bin"));
+    dq.addDownload(pf);
+
+    uint8 clientHash[16];
+    std::memset(clientHash, 0x5E, sizeof(clientHash));
+    const uint32 sourceIP = Address::fromString(QStringLiteral("77.66.55.42")).toUint32();
+    // crypt supported | direct callback | NATT_QUIC | NATT_UTP, as eMuleAI publishes
+    auto result = makeKadResult(hash, 6, clientHash, sourceIP, 4662, 4672,
+                                0x09 | CONNECT_OPT_NATT_QUIC | CONNECT_OPT_NATT_UTP);
+    QCOMPARE(result.natt, uint8{0});
+    dq.addKadSourceResult(result);
+    QCOMPARE(pf->sourceCount(), 1);
+    const UpDownClient* src = pf->srcList().front();
+    QVERIFY(src->supportsNatTQuic());
+    QVERIFY(natt::PeerInfo::fromClient(*src).directUdp);
 
     dq.deleteAll();
 }

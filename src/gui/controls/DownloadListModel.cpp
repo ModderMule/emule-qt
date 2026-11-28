@@ -542,8 +542,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColCompleted:  return formatByteSize(d.completedSize);
         case ColSpeed:      return d.datarate > 0 ? formatByteRate(d.datarate) : QString{};
         case ColProgress:   // while completing: how far the final hash/copy is
-            return QStringLiteral("%1%").arg(d.completionPermille >= 0 ? d.completionPermille / 10.0
-                                                                       : d.percentCompleted, 0, 'f', 1);
+            return QStringLiteral("%1%").arg(formatPercent(d.completionPermille >= 0 ? d.completionPermille / 10.0
+                                                                                     : d.percentCompleted));
         case ColSources:    return sourcesText(d);
         // The wire token, not a label: the column read "veryHigh" / "Auto [normal]".
         case ColPriority:   return downloadPriorityText(d.priority, d.isAutoDownPriority);
@@ -596,19 +596,22 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         QString tip = tr(
             "File Name:\t%1\n"
             "ED2K Hash:\t%2\n"
-            "Size:\t%3\n"
-            "Completed:\t%4 (%5%)\n"
-            "Type:\t%6\n"
-            "Status:\t%7\n"
-            "Priority:\t%8\n"
-            "Sources:\t%9\n"
-            "Requests:\t%10\n"
-            "Accepted Requests:\t%11\n"
-            "Uploaded:\t%12")
-            .arg(argStr(d.fileName), argStr(d.hash),
-                 argStr(formatByteSize(d.fileSize)),
-                 argStr(formatByteSize(d.completedSize)),
-                 QString::number(d.percentCompleted, 'f', 1),
+            "Size:\t%3")
+            .arg(argStr(d.fileName), argStr(d.hash), argStr(formatByteSize(d.fileSize)));
+        // #275: Temp file name, MFC GetInfoSummary IDS_FD_MET; empty for ed3k rows
+        if (!d.partMetName.isEmpty())
+            tip += u'\n' + tr("part.met file:\t%1").arg(d.partMetName);
+        tip += u'\n' + tr(
+            "Completed:\t%1 (%2%)\n"
+            "Type:\t%3\n"
+            "Status:\t%4\n"
+            "Priority:\t%5\n"
+            "Sources:\t%6\n"
+            "Requests:\t%7\n"
+            "Accepted Requests:\t%8\n"
+            "Uploaded:\t%9")
+            .arg(argStr(formatByteSize(d.completedSize)),
+                 formatPercent(d.percentCompleted),
                  argStr(fileTypeText(d.fileType, d.fileName)),
                  argStr(statusText(d)), argStr(downloadPriorityText(d.priority, d.isAutoDownPriority)),
                  argStr(sourcesText(d)),

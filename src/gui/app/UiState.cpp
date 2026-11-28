@@ -101,6 +101,7 @@ void UiState::load(const QString& configDir)
         m_torrentSplitSizes    = readIntList(root, "torrentSplitSizes");
         m_torrentFilter        = root["torrentFilter"].as<int>(m_torrentFilter);
         m_torrentPaneTab       = root["torrentPaneTab"].as<int>(m_torrentPaneTab);
+        m_kadNetworkTab        = root["kadNetworkTab"].as<int>(m_kadNetworkTab);
         m_hosterFilter         = root["hosterFilter"].as<int>(m_hosterFilter);
 
         m_windowWidth      = root["windowWidth"].as<int>(m_windowWidth);
@@ -279,6 +280,7 @@ void UiState::save(const QString& configDir)
     writeIntList(out, "torrentSplitSizes",    m_torrentSplitSizes);
     out << YAML::Key << "torrentFilter" << YAML::Value << m_torrentFilter;
     out << YAML::Key << "torrentPaneTab" << YAML::Value << m_torrentPaneTab;
+    out << YAML::Key << "kadNetworkTab" << YAML::Value << m_kadNetworkTab;
     out << YAML::Key << "hosterFilter" << YAML::Value << m_hosterFilter;
 
     out << YAML::Key << "windowWidth"      << YAML::Value << m_windowWidth;

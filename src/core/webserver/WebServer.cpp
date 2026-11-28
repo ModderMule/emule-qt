@@ -3146,7 +3146,7 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
             double progress = file->fileSize() > 0
                 ? static_cast<double>(file->completedSize()) * 100.0 / static_cast<double>(file->fileSize())
                 : 0.0;
-            lineVars[QStringLiteral("DownloadPercent")] = QString::number(progress, 'f', 1);
+            lineVars[QStringLiteral("DownloadPercent")] = formatPercent(progress);
 
             // Status key for context menu JS (simple string for state-aware menu)
             QString statusKey;

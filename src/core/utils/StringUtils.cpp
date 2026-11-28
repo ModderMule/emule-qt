@@ -6,7 +6,9 @@
 
 #include <QCoreApplication>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 
 
 namespace eMule {
@@ -184,6 +186,17 @@ QString formatShareRatio(qint64 uploaded, qint64 fileSize)
     if (fileSize <= 0)
         return {};
     return QString::number(shareRatio(uploaded, fileSize), 'f', 1);
+}
+
+QString formatPercent(double percent)
+{
+    if (!(percent > 0.0))
+        return QStringLiteral("0.0");
+    // epsilon: 57.3 stored as 57.2999.. must not drop a tenth; cap keeps an unfinished file off 100
+    double tenths = std::floor(percent * 10.0 + 1e-6) / 10.0;
+    if (percent < 100.0)
+        tenths = std::min(tenths, 99.9);
+    return QString::number(tenths, 'f', 1);
 }
 
 QString formatQuotaGb(qint64 bytes)

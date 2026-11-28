@@ -2,7 +2,10 @@
 
 #include <QAbstractItemView>
 #include <QHelpEvent>
+#include <QKeyEvent>
 #include <QToolTip>
+
+#include <algorithm>
 
 namespace eMule {
 
@@ -33,6 +36,15 @@ QString columnTooltipHtml(const QString& text)
 
 bool ColumnTooltipFilter::eventFilter(QObject* watched, QEvent* event)
 {
+    if (event->type() == QEvent::KeyPress) {
+        // Ctrl dismisses an open tooltip (#276). Qt hides only on non-modifier keys.
+        // macOS: Key_Control is Cmd, Key_Meta the Ctrl key; take both
+        const auto* key = static_cast<QKeyEvent*>(event);
+        if (!key->isAutoRepeat() && QToolTip::isVisible()
+            && (key->key() == Qt::Key_Control || key->key() == Qt::Key_Meta))
+            QToolTip::hideText();
+        return false;
+    }
     if (event->type() != QEvent::ToolTip)
         return false;
     auto* view = qobject_cast<QAbstractItemView*>(watched->parent());
@@ -47,8 +59,11 @@ bool ColumnTooltipFilter::eventFilter(QObject* watched, QEvent* event)
     if (!tip.contains(u'\t'))
         return false;   // let the view's delegate show it as usual
 
+    // Qt times the tip by its text length, markup included: the table HTML would keep
+    // a long tip up for a minute or more. Time it by the plain text, Qt's own formula
+    const int displayMs = 10000 + 40 * static_cast<int>(std::max<qsizetype>(0, tip.size() - 100));
     QToolTip::showText(help->globalPos(), columnTooltipHtml(tip), view->viewport(),
-                       view->visualRect(index));
+                       view->visualRect(index), displayMs);
     return true;
 }
 

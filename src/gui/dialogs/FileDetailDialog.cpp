@@ -89,7 +89,7 @@ QString fmtTimeAgo(qint64 epoch, const QString& none)
 QString sizeAndShare(qint64 part, qint64 whole)
 {
     const double pct = whole > 0 ? 100.0 * static_cast<double>(part) / static_cast<double>(whole) : 0.0;
-    return QStringLiteral("%1 (%2%)").arg(formatByteSize(part), QString::number(pct, 'f', 1));
+    return QStringLiteral("%1 (%2%)").arg(formatByteSize(part), formatPercent(pct));
 }
 
 /// One of MFC's group boxes: right-aligned labels, and a second label/value
@@ -325,7 +325,7 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
         addRow(tr("File Size"), tr("%1 (%2 Bytes)").arg(formatByteSize(size), QLocale().toString(size)));
         addRow(tr("Completed"), QStringLiteral("%1 (%2%)")
             .arg(formatByteSize(num(d, QLatin1StringView("completedSize"))),
-                 QString::number(d.value(QLatin1StringView("percentCompleted")).toDouble(), 'f', 1)));
+                 formatPercent(d.value(QLatin1StringView("percentCompleted")).toDouble())));
         addRow(tr("Transferred"), formatByteSize(num(d, QLatin1StringView("downTransferred"))));
         addRow(tr("Status"), na);
         addRow(tr("Priority"), na);
@@ -384,7 +384,7 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
     const qint64 completed = num(d, QLatin1StringView("completedSize"));
     const double pct = d.value(QLatin1StringView("percentCompleted")).toDouble();
     addRow(tr("Completed"), QStringLiteral("%1 (%2%)")
-        .arg(formatByteSize(completed), QString::number(pct, 'f', 1)));
+        .arg(formatByteSize(completed), formatPercent(pct)));
 
     // Downloads only: bytes received, which repeats exceed "Completed" (MFC GetTransferred)
     if (d.contains(QLatin1StringView("downTransferred")))

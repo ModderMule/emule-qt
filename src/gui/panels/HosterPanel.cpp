@@ -826,7 +826,7 @@ void HosterPanel::applySources(const QCborMap& sources)
             child->setIcon(ColName, e.icon());
             child->setToolTip(ColName, tip);
             const double pct = e.pieces > 0 ? 100.0 * e.have / e.pieces : 0.0;
-            child->setText(ColProgress, e.pieces > 0 ? QStringLiteral("%1%").arg(pct, 0, 'f', 1) : QString());
+            child->setText(ColProgress, e.pieces > 0 ? QStringLiteral("%1%").arg(formatPercent(pct)) : QString());
             child->setData(ColProgress, Qt::UserRole, pct);
             child->setText(ColSpeed, e.rate > 0 ? formatByteRate(double(e.rate)) : QString());
             child->setData(ColSpeed, Qt::UserRole, e.rate);
@@ -946,7 +946,7 @@ void HosterPanel::updatePackage(qint64 id)
     const double pct = complete == total ? 100.0 : (size > 0 ? 100.0 * double(done) / double(size) : 0.0);
     row->setText(ColSize, size > 0 ? formatByteSize(size) : QString());
     row->setData(ColSize, Qt::UserRole, size);
-    row->setText(ColProgress, QStringLiteral("%1%").arg(pct, 0, 'f', 1));
+    row->setText(ColProgress, QStringLiteral("%1%").arg(formatPercent(pct)));
     row->setData(ColProgress, Qt::UserRole, pct);
     // unfinished items all paused: muted; all failed: red
     setBar(row, parts, pct, complete == total, paused > 0 && paused + complete == total, failed + complete < total);
@@ -980,7 +980,7 @@ void HosterPanel::fillRow(QTreeWidgetItem* row, const QCborMap& it)
     row->setToolTip(ColName, it.value(QStringLiteral("url")).toString());
     row->setText(ColSize, size > 0 ? formatByteSize(size) : QString());
     row->setData(ColSize, Qt::UserRole, size);
-    row->setText(ColProgress, QStringLiteral("%1%").arg(pct, 0, 'f', 1));
+    row->setText(ColProgress, QStringLiteral("%1%").arg(formatPercent(pct)));
     row->setData(ColProgress, Qt::UserRole, pct);
     setBar(row, {{size, state == kStateComplete ? size : done}}, pct, state == kStateComplete, state == kStatePaused,
            state <= kStateComplete);

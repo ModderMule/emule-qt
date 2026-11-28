@@ -1631,7 +1631,7 @@ Ma komentarze</translation>
         <translation>Dodaj torrent</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+103"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+104"/>
         <source>Delete</source>
         <translation>Usuń</translation>
     </message>
@@ -3352,7 +3352,7 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
 <context>
     <name>eMule::CategoryFilterProxy</name>
     <message>
-        <location filename="../src/gui/controls/CategoryFilterProxy.cpp" line="+84"/>
+        <location filename="../src/gui/controls/CategoryFilterProxy.cpp" line="+98"/>
         <source>All</source>
         <translation>Wszystkie</translation>
     </message>
@@ -5557,12 +5557,12 @@ Nasłuchiwać na wszystkich adresach?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+781"/>
+        <location line="+784"/>
         <source>Asked for another file</source>
         <translation>Zapytanie o inny plik</translation>
     </message>
     <message>
-        <location line="-775"/>
+        <location line="-778"/>
         <source>Swap blocked for %1: the client said it lacks this file</source>
         <translation>Zamiana zablokowana na %1: klient zgłosił, że nie ma tego pliku</translation>
     </message>
@@ -5605,7 +5605,6 @@ Nasłuchiwać na wszystkich adresach?</translation>
         <translation>Nigdy</translation>
     </message>
     <message>
-        <location line="+40"/>
         <source>File Name:	%1
 ED2K Hash:	%2
 Size:	%3
@@ -5617,7 +5616,7 @@ Sources:	%9
 Requests:	%10
 Accepted Requests:	%11
 Uploaded:	%12</source>
-        <translation>Nazwa pliku:	%1
+        <translation type="vanished">Nazwa pliku:	%1
 Hash ED2K:	%2
 Rozmiar:	%3
 Ukończono:	%4 (%5%)
@@ -5630,7 +5629,40 @@ Przyjęte żądania:	%11
 Wysłano:	%12</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+40"/>
+        <source>File Name:	%1
+ED2K Hash:	%2
+Size:	%3</source>
+        <translation>Nazwa pliku:	%1
+Hash ED2K:	%2
+Rozmiar:	%3</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>part.met file:	%1</source>
+        <translation>Plik part.met:	%1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Completed:	%1 (%2%)
+Type:	%3
+Status:	%4
+Priority:	%5
+Sources:	%6
+Requests:	%7
+Accepted Requests:	%8
+Uploaded:	%9</source>
+        <translation>Ukończono:	%1 (%2%)
+Typ:	%3
+Status:	%4
+Priorytet:	%5
+Źródła:	%6
+Żądania:	%7
+Przyjęte żądania:	%8
+Wysłano:	%9</translation>
+    </message>
+    <message>
+        <location line="+18"/>
         <source>Network:	%1 (single transfer mode)</source>
         <translation>Sieć:	%1 (tryb pojedynczego transferu)</translation>
     </message>
@@ -13140,7 +13172,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+155"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+156"/>
         <source>Finding a resolver</source>
         <translation>Szukanie resolvera</translation>
     </message>
@@ -13426,7 +13458,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation>Pobierania z hostingów</translation>
     </message>
     <message>
-        <location line="+1059"/>
+        <location line="+1068"/>
         <source>Clipboard</source>
         <translation>Schowek</translation>
     </message>
@@ -13554,7 +13586,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation type="vanished">Opcje...</translation>
     </message>
     <message>
-        <location line="-970"/>
+        <location line="-974"/>
         <source>File Name</source>
         <translation>Nazwa pliku</translation>
     </message>
@@ -13589,7 +13621,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation>Źródło</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+26"/>
         <source>Add hoster links...</source>
         <translation>Dodaj linki hostingów...</translation>
     </message>
@@ -13603,7 +13635,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         </translation>
     </message>
     <message>
-        <location line="+112"/>
+        <location line="+113"/>
         <location line="+41"/>
         <source>Hoster links</source>
         <translation>Linki hostingów</translation>
@@ -13738,13 +13770,13 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation>Wznów</translation>
     </message>
     <message>
-        <location line="-600"/>
-        <location line="+605"/>
+        <location line="-601"/>
+        <location line="+606"/>
         <source>Remove</source>
         <translation>Usuń</translation>
     </message>
     <message>
-        <location line="-834"/>
+        <location line="-843"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>Archiwum wymaga hasła (Ustaw hasło…)</translation>
     </message>
@@ -13785,34 +13817,34 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1078"/>
+        <location line="+1087"/>
         <source>Link Grabber (%1)</source>
         <translation>LinkGrabber (%1)</translation>
     </message>
     <message>
-        <location line="-1064"/>
-        <location line="+679"/>
+        <location line="-1073"/>
+        <location line="+688"/>
         <source>Add Links...</source>
         <translation>Dodaj linki...</translation>
     </message>
     <message>
-        <location line="-678"/>
+        <location line="-687"/>
         <source>Links to files at hosters, one per line</source>
         <translation>Linki do plików w hostingach, jeden w wierszu</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+677"/>
+        <location line="+686"/>
         <source>Open DLC...</source>
         <translation>Otwórz DLC...</translation>
     </message>
     <message>
-        <location line="-676"/>
+        <location line="-685"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>Dodaje linki z kontenera linków (.dlc, .rsdf, .ccf); możesz go też upuścić tutaj</translation>
     </message>
     <message>
-        <location line="+603"/>
+        <location line="+612"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Podgląd niedostępny — serwer WWW nie działa lub nie otrzymano tokenu strumienia.</translation>
     </message>
@@ -31526,7 +31558,7 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
 <context>
     <name>eMule::TorrentFilterProxy</name>
     <message>
-        <location filename="../src/gui/controls/TorrentFilterProxy.cpp" line="+70"/>
+        <location filename="../src/gui/controls/TorrentFilterProxy.cpp" line="+84"/>
         <source>All</source>
         <translation>Wszystkie</translation>
     </message>
@@ -32249,7 +32281,7 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
 <context>
     <name>eMule::TorrentPanel</name>
     <message>
-        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+137"/>
+        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+138"/>
         <source>Torrent download completed: %1</source>
         <translation>Ukończono pobieranie torrenta: %1</translation>
     </message>
@@ -32268,12 +32300,12 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
         <location line="+15"/>
         <location line="+11"/>
         <location line="+16"/>
-        <location line="+831"/>
+        <location line="+855"/>
         <source>Not connected to the eMule core.</source>
         <translation>Brak połączenia z rdzeniem eMule.</translation>
     </message>
     <message>
-        <location line="-898"/>
+        <location line="-922"/>
         <location line="+77"/>
         <source>Cannot read %1.</source>
         <translation>Nie można odczytać %1.</translation>
@@ -32297,7 +32329,7 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
         <translation>Pliki torrent (*.torrent);;Wszystkie pliki (*)</translation>
     </message>
     <message>
-        <location line="+100"/>
+        <location line="+101"/>
         <source>Add Torrent…</source>
         <translation>Dodaj torrent…</translation>
     </message>
@@ -32372,7 +32404,7 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
         <translation>Wklej linki magnet</translation>
     </message>
     <message>
-        <location line="+100"/>
+        <location line="+123"/>
         <source>BitTorrent Options…</source>
         <translation>Opcje BitTorrent…</translation>
     </message>
@@ -32579,95 +32611,95 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
     </message>
     <message>
         <location line="-366"/>
-        <location line="+2277"/>
-        <location line="+196"/>
+        <location line="+2293"/>
+        <location line="+198"/>
         <source>Low</source>
         <translation>Niski</translation>
     </message>
     <message>
-        <location line="-2472"/>
-        <location line="+2276"/>
-        <location line="+197"/>
+        <location line="-2490"/>
+        <location line="+2292"/>
+        <location line="+199"/>
         <source>Normal</source>
         <translation>Normalny</translation>
     </message>
     <message>
-        <location line="-2472"/>
-        <location line="+2275"/>
-        <location line="+198"/>
+        <location line="-2490"/>
+        <location line="+2291"/>
+        <location line="+200"/>
         <source>High</source>
         <translation>Wysoki</translation>
     </message>
     <message>
-        <location line="-2469"/>
-        <location line="+2473"/>
+        <location line="-2487"/>
+        <location line="+2491"/>
         <source>Very Low</source>
         <translation>Bardzo niski</translation>
     </message>
     <message>
-        <location line="-2471"/>
-        <location line="+2473"/>
+        <location line="-2489"/>
+        <location line="+2491"/>
         <source>Very High</source>
         <translation>Bardzo wysoki</translation>
     </message>
     <message>
-        <location line="-2471"/>
-        <location line="+2474"/>
+        <location line="-2489"/>
+        <location line="+2492"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2463"/>
+        <location line="-2481"/>
         <location line="+319"/>
-        <location line="+535"/>
-        <location line="+1416"/>
+        <location line="+550"/>
+        <location line="+1417"/>
         <source>Pause</source>
         <translation>Pauza</translation>
     </message>
     <message>
-        <location line="-2261"/>
+        <location line="-2277"/>
         <location line="+310"/>
-        <location line="+541"/>
-        <location line="+1412"/>
+        <location line="+556"/>
+        <location line="+1413"/>
         <source>Stop</source>
         <translation>Zatrzymaj</translation>
     </message>
     <message>
-        <location line="-2254"/>
+        <location line="-2270"/>
         <location line="+301"/>
-        <location line="+547"/>
-        <location line="+1408"/>
+        <location line="+562"/>
+        <location line="+1409"/>
         <source>Resume</source>
         <translation>Wznów</translation>
     </message>
     <message>
-        <location line="-1955"/>
-        <location line="+553"/>
-        <location line="+1404"/>
+        <location line="-1971"/>
+        <location line="+568"/>
+        <location line="+1405"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Anuluj</translation>
     </message>
     <message>
-        <location line="-2233"/>
+        <location line="-2249"/>
         <location line="+274"/>
-        <location line="+558"/>
+        <location line="+573"/>
         <location line="+695"/>
         <source>Open File</source>
         <translation>Otwórz plik</translation>
     </message>
     <message>
-        <location line="-1518"/>
+        <location line="-1533"/>
         <location line="+2"/>
         <location line="+263"/>
         <location line="+20"/>
-        <location line="+552"/>
+        <location line="+567"/>
         <location line="+739"/>
         <source>Preview</source>
         <translation>Podgląd</translation>
     </message>
     <message>
-        <location line="-1568"/>
+        <location line="-1583"/>
         <location line="+257"/>
         <location line="+20"/>
         <source>Preview with</source>
@@ -32687,7 +32719,7 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
         <location line="+9"/>
         <location line="+223"/>
         <location line="+21"/>
-        <location line="+2173"/>
+        <location line="+2191"/>
         <location line="+18"/>
         <location line="+123"/>
         <location line="+16"/>
@@ -32695,7 +32727,7 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
         <translation>Szczegóły...</translation>
     </message>
     <message>
-        <location line="-2565"/>
+        <location line="-2583"/>
         <location line="+214"/>
         <location line="+21"/>
         <source>Comments...</source>
@@ -32708,14 +32740,14 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1609"/>
+        <location line="+1624"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Importuj części do pliku...</translation>
     </message>
     <message>
-        <location line="-1615"/>
+        <location line="-1630"/>
         <location line="+193"/>
         <location line="+17"/>
         <source>Mass Rename...</source>
@@ -32724,12 +32756,12 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
     <message>
         <location line="-168"/>
         <location line="+147"/>
-        <location line="+623"/>
+        <location line="+638"/>
         <source>Clear Completed</source>
         <translation>Wyczyść skończone</translation>
     </message>
     <message>
-        <location line="-762"/>
+        <location line="-777"/>
         <location line="+144"/>
         <location line="+16"/>
         <source>Source Handling</source>
@@ -32742,19 +32774,19 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1499"/>
-        <location line="+1424"/>
+        <location line="+1514"/>
+        <location line="+1427"/>
         <source>Source Limit...</source>
         <translation>Limit źródeł...</translation>
     </message>
     <message>
-        <location line="-2920"/>
-        <location line="+2916"/>
+        <location line="-2938"/>
+        <location line="+2934"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>Przełącz wszystkie źródła A4AF na ten plik</translation>
     </message>
     <message>
-        <location line="-2914"/>
+        <location line="-2932"/>
         <source>cannot swap sources.</source>
         <translation>nie można przełączyć źródeł.</translation>
     </message>
@@ -32778,7 +32810,7 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
         <translation>Linki eD2K...</translation>
     </message>
     <message>
-        <location line="+2842"/>
+        <location line="+2860"/>
         <source>Paste eD2K Links</source>
         <translation>Wklej linki eD2K</translation>
     </message>
@@ -32787,9 +32819,9 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
         <translation type="vanished">Zestawy ed3k...</translation>
     </message>
     <message>
-        <location line="-2807"/>
+        <location line="-2825"/>
         <location line="+69"/>
-        <location line="+2181"/>
+        <location line="+2199"/>
         <location line="+17"/>
         <location line="+113"/>
         <location line="+93"/>
@@ -32797,7 +32829,7 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
         <translation>Znajdź...</translation>
     </message>
     <message>
-        <location line="-2465"/>
+        <location line="-2483"/>
         <location line="+64"/>
         <location line="+7"/>
         <location line="+10"/>
@@ -32815,23 +32847,23 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
         <location line="-59"/>
         <location line="+38"/>
         <location line="+23"/>
-        <location line="+580"/>
+        <location line="+595"/>
         <source>Assign To Category</source>
         <translation>Przypisz do kategorii</translation>
     </message>
     <message>
-        <location line="-636"/>
+        <location line="-651"/>
         <source>New...</source>
         <translation>Nowa...</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+639"/>
+        <location line="+654"/>
         <source>(Unassign)</source>
         <translation>(Usuń przypisanie)</translation>
     </message>
     <message>
-        <location line="-621"/>
+        <location line="-636"/>
         <location line="+12"/>
         <source>Show Toolbar</source>
         <translation>Pokaż pasek narzędzi</translation>
@@ -32857,7 +32889,7 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
         <translation>Pobieranie</translation>
     </message>
     <message>
-        <location line="+373"/>
+        <location line="+388"/>
         <source>Clients on queue:   0</source>
         <translation>Klienci w kolejce:   0</translation>
     </message>
@@ -32868,12 +32900,12 @@ Dla prywatnego torrenta nie zaznaczaj żadnego; podaj poniżej URL prywatnego tr
     </message>
     <message>
         <location line="+11"/>
-        <location line="+1405"/>
+        <location line="+1406"/>
         <source>Priority</source>
         <translation>Priorytet</translation>
     </message>
     <message>
-        <location line="-1368"/>
+        <location line="-1369"/>
         <source>Open Folder</source>
         <translation>Otwórz folder</translation>
     </message>
@@ -33005,7 +33037,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>Otwieranie pliku niedostępne — serwer WWW nie działa lub nie otrzymano tokenu strumienia.</translation>
     </message>
     <message>
-        <location line="+383"/>
+        <location line="+384"/>
         <source>Uploading</source>
         <translation>Wysyłanie</translation>
     </message>
@@ -33071,7 +33103,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>Pobieraj w porządku alfabetycznym</translation>
     </message>
     <message>
-        <location line="+204"/>
+        <location line="+206"/>
         <source>Copy Address</source>
         <translation>Kopiuj adres</translation>
     </message>
@@ -33482,16 +33514,16 @@ The sources then see this node&apos;s address; queue places are lost.</source>
 <context>
     <name>eMule::UsenetPanel</name>
     <message>
-        <location filename="../src/gui/panels/UsenetPanel.cpp" line="+172"/>
+        <location filename="../src/gui/panels/UsenetPanel.cpp" line="+173"/>
         <location line="+7"/>
         <location line="+44"/>
-        <location line="+536"/>
+        <location line="+549"/>
         <location line="+15"/>
         <source>Add NZB</source>
         <translation>Dodaj NZB</translation>
     </message>
     <message>
-        <location line="-601"/>
+        <location line="-614"/>
         <location line="+50"/>
         <location line="+62"/>
         <source>Not connected to the eMule core.</source>
@@ -33499,34 +33531,34 @@ The sources then see this node&apos;s address; queue places are lost.</source>
     </message>
     <message>
         <location line="-105"/>
-        <location line="+594"/>
+        <location line="+607"/>
         <source>Cannot read %1.</source>
         <translation>Nie można odczytać %1.</translation>
     </message>
     <message>
-        <location line="-490"/>
+        <location line="-503"/>
         <source>Add NZB from URL</source>
         <translation>Dodaj NZB z URL</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+29"/>
         <source>Add NZB…</source>
         <translation>Dodaj NZB…</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1032"/>
+        <location line="+1039"/>
         <source>Pause</source>
         <translation>Pauza</translation>
     </message>
     <message>
-        <location line="-1028"/>
-        <location line="+1031"/>
+        <location line="-1035"/>
+        <location line="+1038"/>
         <source>Resume</source>
         <translation>Wznów</translation>
     </message>
     <message>
-        <location line="-1029"/>
+        <location line="-1036"/>
         <source>Remove</source>
         <translation>Usuń</translation>
     </message>
@@ -33537,12 +33569,12 @@ The sources then see this node&apos;s address; queue places are lost.</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+980"/>
+        <location line="+987"/>
         <source>Pause All</source>
         <translation>Wstrzymaj wszystkie</translation>
     </message>
     <message>
-        <location line="-973"/>
+        <location line="-980"/>
         <source>Add NZB from URL…</source>
         <translation>Dodaj NZB z URL…</translation>
     </message>
@@ -33557,7 +33589,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>Sprawdź dostępność</translation>
     </message>
     <message numerus="yes">
-        <location line="+104"/>
+        <location line="+111"/>
         <source>Remove %n download(s) from the list?</source>
         <translation>
             <numerusform>Usunąć %n pobieranie z listy?</numerusform>

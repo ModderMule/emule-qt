@@ -186,6 +186,18 @@ private slots:
 
     // ---- formatDuration ----
 
+    // #260: rounds down, an unfinished file never reads 100.0
+    void testFormatPercent()
+    {
+        QCOMPARE(eMule::formatPercent(0.0), QStringLiteral("0.0"));
+        QCOMPARE(eMule::formatPercent(-1.0), QStringLiteral("0.0"));
+        QCOMPARE(eMule::formatPercent(57.3), QStringLiteral("57.3"));
+        QCOMPARE(eMule::formatPercent(12.39), QStringLiteral("12.3"));
+        QCOMPARE(eMule::formatPercent(99.96), QStringLiteral("99.9"));
+        QCOMPARE(eMule::formatPercent(100.0 * (1.0 - 1.0 / 1e12)), QStringLiteral("99.9"));
+        QCOMPARE(eMule::formatPercent(100.0), QStringLiteral("100.0"));
+    }
+
     void testFormatDurationZero()
     {
         QCOMPARE(eMule::formatDuration(0s), QStringLiteral("0s"));

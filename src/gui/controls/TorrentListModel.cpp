@@ -314,7 +314,7 @@ QVariant TorrentListModel::data(const QModelIndex& index, int role) const
             return r->error;
         if (index.column() == ColProgress) {
             return tr("%1% — %2 of %3 pieces")
-                .arg(QString::number(r->progress * 100.0, 'f', 1))
+                .arg(formatPercent(r->progress * 100.0))
                 .arg(qRound(r->progress * r->pieces))
                 .arg(r->pieces);
         }
@@ -526,7 +526,7 @@ QVariant TorrentListModel::displayData(const TorrentRow& r, int column) const
     case ColName:      return r.name;
     case ColSize:      return r.hasMetadata ? formatByteSize(r.size) : QStringLiteral("?");
     case ColDone:      return formatByteSize(r.done);
-    case ColProgress:  return QStringLiteral("%1%").arg(r.progress * 100.0, 0, 'f', 1);
+    case ColProgress:  return QStringLiteral("%1%").arg(formatPercent(r.progress * 100.0));
     case ColStatus:    return statusText(r);
     case ColDownSpeed: return r.rateDown > 0 ? formatByteRate(r.rateDown) : QString();
     case ColUpSpeed:   return r.rateUp > 0 ? formatByteRate(r.rateUp) : QString();
@@ -635,7 +635,7 @@ QVariant TorrentListModel::fileData(const TorrentRow& r, const TorrentFileRow& f
         case ColName:     return name;
         case ColSize:     return formatByteSize(f.size);
         case ColDone:     return formatByteSize(f.done);
-        case ColProgress: return QStringLiteral("%1%").arg(share * 100.0, 0, 'f', 1);
+        case ColProgress: return QStringLiteral("%1%").arg(formatPercent(share * 100.0));
         case ColStatus:   return torrentFilePriorityName(f.priority);
         default:          return {};
         }
