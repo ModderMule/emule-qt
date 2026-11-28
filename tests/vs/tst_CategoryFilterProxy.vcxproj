@@ -178,10 +178,14 @@
   <ItemGroup>
     <ClCompile Include="..\tst_CategoryFilterProxy.cpp" />
     <ClCompile Include="..\..\src\gui\controls\CategoryFilterProxy.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\FilterEdit.cpp" />
     <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\controls\CategoryFilterProxy.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\FilterEdit.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
