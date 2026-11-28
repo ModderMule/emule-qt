@@ -55,6 +55,12 @@
 #include <QTreeView>
 #include <QTreeWidget>
 #ifdef Q_OS_WIN
+#include "controls/FolderTreeModel.h"
+#include "utils/SharedDirState.h"
+
+#include <QSignalSpy>
+
+#include <algorithm>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -96,6 +102,22 @@ constexpr int kDialogBudget = 700;
 
 /// uistate.yml key of the options dialog size (RememberedSizeDialog)
 const QString kSizeKey = QStringLiteral("OptionsDialog");
+
+#ifdef Q_OS_WIN
+/// @p path's row once @p folders has loaded down to it; invalid on timeout or when only
+/// a folder above it was found.
+QPersistentModelIndex revealFolder(FolderTreeModel& folders, const QString& path)
+{
+    QSignalSpy revealed(&folders, &FolderTreeModel::revealed);
+    folders.reveal(path);
+    if (revealed.isEmpty() && !revealed.wait(30'000))
+        return {};
+    const QModelIndex idx = revealed.first().first().value<QModelIndex>();
+    if (SharedDirState::dirKey(folders.filePath(idx)) != SharedDirState::dirKey(path))
+        return {};
+    return idx;
+}
+#endif
 
 const char* pageName(int page)
 {
@@ -1369,6 +1391,31 @@ void TestOptionsDialogSizing::theSharedDirTreeStartsAtTheMachineRoot()
     OptionsDialog dlg(nullptr, nullptr);
     auto* tree = stackOf(dlg)->widget(OptionsDialog::PageDirectories)->findChild<QTreeView*>();
     QVERIFY(tree);
+#ifdef Q_OS_WIN
+    // UNC shares join the drives as roots: FolderTreeModel, no QFileSystemModel + proxy
+    auto* folders = qobject_cast<FolderTreeModel*>(tree->model());
+    QVERIFY(folders);
+    QVERIFY(!tree->rootIndex().isValid());
+
+    // Home is still where the tree opens, now below a drive root.
+    // Asked again: the dialog's own reveal may be over before a spy could see it
+    QTRY_VERIFY(!folders->homePath().isEmpty());
+    QCOMPARE(SharedDirState::dirKey(folders->homePath()), SharedDirState::dirKey(QDir::homePath()));
+    const QPersistentModelIndex home = revealFolder(*folders, folders->homePath());
+    QVERIFY(home.isValid());
+    QTRY_VERIFY(tree->isExpanded(home));   // the dialog expands what is revealed
+    QModelIndex top = home;
+    while (top.parent().isValid())
+        top = top.parent();
+    QVERIFY(QDir(folders->filePath(top)).isRoot());
+
+    // Hidden folders (the attribute) are not listed
+    const QPersistentModelIndex dir = revealFolder(*folders, scratch.path());
+    QVERIFY(dir.isValid());
+    folders->fetchMore(dir);
+    QTRY_COMPARE(folders->rowCount(dir), 1);
+    QCOMPARE(folders->index(0, 0, dir).data().toString(), QStringLiteral("shown"));
+#else
     auto* proxy = qobject_cast<QAbstractProxyModel*>(tree->model());
     QVERIFY(proxy);
     auto* fsModel = qobject_cast<QFileSystemModel*>(proxy->sourceModel());
@@ -1401,6 +1448,7 @@ void TestOptionsDialogSizing::theSharedDirTreeStartsAtTheMachineRoot()
         QCOMPARE(proxy->mapFromSource(fsModel->index(volume.absoluteFilePath())).isValid(),
                  !volume.isSymLink());
 #endif
+#endif // Q_OS_WIN
 }
 
 /// Report #9: Ctrl+click (MFC OnLButtonDown, DirectoryTreeCtrl.cpp:136) checked only the
@@ -1419,17 +1467,32 @@ void TestOptionsDialogSizing::ctrlClickSharesTheSubdirectories()
     QVERIFY(QTest::qWaitForWindowExposed(&dlg));
     auto* tree = stackOf(dlg)->widget(OptionsDialog::PageDirectories)->findChild<QTreeView*>();
     QVERIFY(tree);
+#ifdef Q_OS_WIN
+    auto* folders = qobject_cast<FolderTreeModel*>(tree->model());
+    QVERIFY(folders);
+    QTRY_VERIFY(!folders->homePath().isEmpty());   // the dialog's home reveal would replace ours
+    const QPersistentModelIndex dir = revealFolder(*folders, root);
+    // checks below dir live as paths: its subfolders need not be loaded
+    const auto checkOf = [&](const QString& rel) {
+        const QString key = SharedDirState::dirKey(rel.isEmpty() ? root : root + u'/' + rel);
+        return std::ranges::any_of(folders->checkedPaths(),
+                                   [&key](const QString& p) { return SharedDirState::dirKey(p) == key; })
+                   ? int(Qt::Checked) : int(Qt::Unchecked);
+    };
+#else
     auto* proxy = qobject_cast<QAbstractProxyModel*>(tree->model());
+    QVERIFY(proxy);
     auto* fsModel = qobject_cast<QFileSystemModel*>(proxy->sourceModel());
+    QVERIFY(fsModel);
     const QPersistentModelIndex dir = proxy->mapFromSource(fsModel->index(root));
-    QVERIFY(dir.isValid());
-    tree->scrollTo(dir);
-    QTRY_VERIFY(tree->visualRect(dir).isValid());
-
     const auto checkOf = [&](const QString& rel) {
         const QModelIndex i = fsModel->index(rel.isEmpty() ? root : root + u'/' + rel);
         return fsModel->data(i, Qt::CheckStateRole).toInt();
     };
+#endif
+    QVERIFY(dir.isValid());
+    tree->scrollTo(dir);
+    QTRY_VERIFY(tree->visualRect(dir).isValid());
     const auto clickBox = [&](Qt::KeyboardModifiers mods) {
         QStyleOptionViewItem opt;
         opt.initFrom(tree);
@@ -1440,15 +1503,16 @@ void TestOptionsDialogSizing::ctrlClickSharesTheSubdirectories()
         QTest::mouseClick(tree->viewport(), Qt::LeftButton, mods, box.center());
     };
 
+    // the subtree may follow later: FolderTreeModel walks it off-thread
     clickBox(Qt::ControlModifier);
     QTRY_COMPARE(checkOf(QString()), int(Qt::Checked));
-    QCOMPARE(checkOf(QStringLiteral("a")), int(Qt::Checked));
-    QCOMPARE(checkOf(QStringLiteral("a/a1")), int(Qt::Checked));
-    QCOMPARE(checkOf(QStringLiteral("b")), int(Qt::Checked));
+    QTRY_COMPARE(checkOf(QStringLiteral("a")), int(Qt::Checked));
+    QTRY_COMPARE(checkOf(QStringLiteral("a/a1")), int(Qt::Checked));
+    QTRY_COMPARE(checkOf(QStringLiteral("b")), int(Qt::Checked));
 
     clickBox(Qt::ControlModifier);
     QTRY_COMPARE(checkOf(QString()), int(Qt::Unchecked));
-    QCOMPARE(checkOf(QStringLiteral("a/a1")), int(Qt::Unchecked));
+    QTRY_COMPARE(checkOf(QStringLiteral("a/a1")), int(Qt::Unchecked));
 
     // A plain click still toggles the one folder
     clickBox(Qt::NoModifier);
