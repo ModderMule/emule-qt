@@ -153,6 +153,9 @@ public:
                                  int method = -1,
                                  const QString& tabTitle = {});
 
+    /// Pick a method in the combo by SearchType value; no-op when hidden or unknown
+    void selectMethod(int searchType);
+
     /// "Search Related Files": ask the connected server what else the sharers of these
     /// files have — MFC CSearchResultsWnd::SearchRelatedFiles.
     void startRelatedSearch(const QStringList& hashes, const QStringList& names);

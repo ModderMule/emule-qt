@@ -24,6 +24,35 @@ namespace eMule::indexer {
 
 IndexerFeedList* theIndexerFeeds = nullptr;
 
+namespace {
+
+/// A URL feed's network override as a row payload kind. Saved searches keep
+/// the per-row guess: their accounts already say torznab or newznab.
+[[nodiscard]] IndexerPayload forcedPayload(const IndexerFeed& feed)
+{
+    if (feed.kind != IndexerFeedKind::Url)
+        return IndexerPayload::Unknown;
+    switch (feed.network) {
+    case IndexerFeedNetwork::Usenet:
+        return IndexerPayload::Usenet;
+    case IndexerFeedNetwork::BitTorrent:
+        return IndexerPayload::Torrent;
+    case IndexerFeedNetwork::Auto:
+        break;
+    }
+    return IndexerPayload::Unknown;
+}
+
+/// Row hints first; with none, what was fetched decides.
+[[nodiscard]] bool isTorrentPayload(const IndexerResult& row, const QByteArray& body)
+{
+    if (row.payload != IndexerPayload::Unknown || !row.isUsenet())
+        return !row.isUsenet();
+    return looksLikeTorrentFile(body) || body.startsWith("magnet:");
+}
+
+} // namespace
+
 IndexerFeedList::IndexerFeedList(QObject* parent)
     : QObject(parent)
     , m_client(new IndexerClient(this))
@@ -291,9 +320,12 @@ void IndexerFeedList::collect(const QString& feedKey, const QString& account,
                                      ? line
                                      : entry->state.lastError + QStringLiteral("; ") + line;
     } else {
-        for (const auto& row : page.results) {
+        const IndexerPayload forced = forcedPayload(entry->feed);
+        for (IndexerResult row : page.results) {
             if (row.guid.isEmpty())
                 continue;
+            if (forced != IndexerPayload::Unknown)
+                row.payload = forced;
             entry->harvested.append(row);
             entry->sourceOf.insert(row.guid, account);
         }
@@ -474,7 +506,7 @@ void IndexerFeedList::deliver(Entry& entry, const IndexerResult& row, const QByt
     QString addError;
     const FeedAddOutcome outcome =
         m_sink({.feedName = entry.feed.name, .title = row.title, .payload = payload,
-                .torrent = !row.isUsenet(), .password = row.password,
+                .torrent = isTorrentPayload(row, payload), .password = row.password,
                 .downloadCategory = entry.feed.downloadCategory,
                 .indexerName = row.indexerName, .guid = row.guid, .downloadUrl = row.downloadUrl},
                addError);

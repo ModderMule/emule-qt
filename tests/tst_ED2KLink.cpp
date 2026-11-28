@@ -44,6 +44,7 @@ private slots:
     void toLink_sourcesRoundTrip();
     void toLink_partHashesAndAich();
     void toLink_encodesName();
+    void toLink_commaKeptInName();
 
     // Legacy-parser safety (see docs: v6 hints must be invisible to old clients)
     void legacyShape_sourcesBlockHasNoIPv6();
@@ -442,6 +443,24 @@ void tst_ED2KLink::toLink_encodesName()
     // The name survives the round-trip; '|' is stripped as an invalid filename char.
     QCOMPARE(std::get<ED2KFileLink>(*reparsed).name,
              stripInvalidFilenameChars(link.name));
+}
+
+void tst_ED2KLink::toLink_commaKeptInName()
+{
+    // ',' encodes to "%2C"; a chained .arg(size) used to turn it into "12345C"
+    const QString name = QStringLiteral("abc,def,gh+%3.foo");
+    ED2KFileLink link;
+    link.name = name;
+    link.size = 12345;
+    QVERIFY(strmd4(kTestHash, link.hash.data()));
+
+    for (const QString& uri : {link.toLink(), ed2kFileLink(name, 12345, kTestHash)}) {
+        auto reparsed = parseED2KLink(uri);
+        QVERIFY2(reparsed.has_value(), qPrintable(uri));
+        const auto& out = std::get<ED2KFileLink>(*reparsed);
+        QCOMPARE(out.name, name);
+        QCOMPARE(out.size, uint64{12345});
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 
 #include <algorithm>
@@ -123,7 +124,7 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt, const Address& 
             return;
         } else {
             logServerVerbose([&]() -> QString { return QStringLiteral("connectTo: resolving dynIP hostname '%1' for server %2")
-                                 .arg(m_curServer->dynIP()).arg(m_curServer->name()); });
+                                 .arg(argStr(m_curServer->dynIP()), argStr(m_curServer->name())); });
             startDnsLookup();
             return;
         }
@@ -146,11 +147,11 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt, const Address& 
     }
 
     logInfo(QStringLiteral("Connecting to server %1 (%2) noCrypt=%3 supportsObfuTCP=%4 obfuPort=%5")
-                .arg(m_curServer->name())
-                .arg(Endpoint(m_sessionAddress, port).toString())
-                .arg(noCrypt)
-                .arg(m_curServer->supportsObfuscationTCP())
-                .arg(m_curServer->obfuscationPortTCP()));
+                .arg(argStr(m_curServer->name()),
+                     argStr(Endpoint(m_sessionAddress, port).toString()),
+                     argStr(noCrypt),
+                     argStr(m_curServer->supportsObfuscationTCP()),
+                     argStr(m_curServer->obfuscationPortTCP())));
 
     connectToPeer(m_sessionAddress, port);
 }
@@ -325,7 +326,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
         bool obfuscated = (opcode == OP_FOUNDSOURCES_OBFU);
         logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_FOUNDSOURCES%1 received (%2 bytes)")
-                             .arg(obfuscated ? QStringLiteral("_OBFU") : QString()).arg(size); });
+                             .arg(argStr(obfuscated ? QStringLiteral("_OBFU") : QString()), argStr(size)); });
         emit foundSourcesReceived(packet, size, obfuscated);
         break;
     }
@@ -387,6 +388,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         QString ed3kLink;               // ST_ED3K: an ident without it clears the copy's
         std::optional<std::array<uint8, 16>> natToken;   // ST_NATT_TOKEN (ed2k-server 0.9.87)
         bool natProof = false;                           // ST_NATT_PROOF (0.9.88)
+        uint32 ipv6Callback = 0;                         // ST_IPV6_CALLBACK (ed2k-server#62)
         // OFFERFILES v1: each of the five uint32 tags must come exactly once.
         Server::OfferFilesV1 offerV1;
         uint32 offerV1Version = 0;
@@ -435,8 +437,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                         haveSvrIPv6Tag = haveSvrIPv6Tag || specTag;
                         serverIPv6 = Address::fromIPv6Bytes(tag.hashValue());
                         logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: server IPv6 %1 (0x%2)")
-                                             .arg(serverIPv6.toString())
-                                             .arg(tag.nameId(), 2, 16, QLatin1Char('0')); });
+                                             .arg(argStr(serverIPv6.toString()),
+                                                  argFmt(tag.nameId(), 2, 16, QLatin1Char('0'))); });
                     }
                 }
                 else if (tag.nameId() == CT_MOD_YOUR_IP && tag.isHash()) {
@@ -471,6 +473,10 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                 else if (tag.nameId() == ST_NATT_PROOF && tag.isInt()) {
                     natProof = tag.intValue() == 1;
                 }
+                else if (tag.nameId() == ST_IPV6_CALLBACK && tag.isInt()) {
+                    // Any int width: the feature byte is a uint8 today.
+                    ipv6Callback = static_cast<uint32>(tag.intValue());
+                }
                 else if (tag.nameId() == ST_IPV6_STATUS && tag.isInt()) {
                     // The server's verdict on whether the IPv6 we advertised is reachable.
                     const uint8 status = static_cast<uint8>(tag.intValue());
@@ -498,14 +504,26 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                 && Server::isValidOfferFilesV1(offerV1)) {
                 if (!m_curServer->offerFilesV1())
                     logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: OFFERFILES v1 batch=%1 interval=%2 ms soft=%3 hard=%4")
-                                         .arg(offerV1.batchMax).arg(offerV1.minIntervalMs)
-                                         .arg(offerV1.softFiles).arg(offerV1.hardFiles); });
+                                         .arg(argStr(offerV1.batchMax), argStr(offerV1.minIntervalMs),
+                                              argStr(offerV1.softFiles), argStr(offerV1.hardFiles)); });
                 m_curServer->setOfferFilesV1(offerV1);
             } else if (std::any_of(offerV1Seen.begin() + 2, offerV1Seen.end(),
                                    [](int n) { return n > 0; })) {
                 logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: ignoring an incomplete or invalid OFFERFILES v1 advertisement"); });
             }
             m_curServer->setIdentReceived();
+            // IPv6 callback (ed2k-server#62): every ident says whether it is offered now.
+            // Offered: opt in as a target, since we handle OP_CALLBACKREQUESTED_IPV6. Sent on
+            // each ident that offers it (login, a dial-back verdict): the opt-in is dropped
+            // when we withdraw our IPv6, and a repeat is harmless.
+            const bool ipv6CbOffered = (ipv6Callback & IPV6CB_CALLBACK) != 0;
+            m_curServer->setIPv6CallbackOffered(ipv6CbOffered);
+            if (ipv6CbOffered) {
+                auto optIn = std::make_unique<Packet>(OP_IPV6_CALLBACK_OPTIN, 1, OP_EDONKEYPROT);
+                optIn->pBuffer[0] = static_cast<char>(IPV6CB_CALLBACK);
+                sendPacket(std::move(optIn));
+                logServerVerbose([&]() -> QString { return QStringLiteral(">>> OP_IPV6_CALLBACK_OPTIN (IPv6 callback offered)"); });
+            }
             m_curServer->setServerHash(serverHash);
             m_curServer->setNatPort(natPort);
             m_curServer->setEd3kLink(ed3kLink);
@@ -541,15 +559,15 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                                                                            : QStringLiteral(" (pinned)")); });
             } else if (!metaApiUrl.isEmpty()) {
                 logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: ignoring Meta API '%1' (version %2)")
-                                     .arg(metaApiUrl).arg(metaApiVersion); });
+                                     .arg(argStr(metaApiUrl), argStr(metaApiVersion)); });
             }
         }
 
         logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: name='%1' (%2) ident=%3 tags=%4")
-                             .arg(name)
-                             .arg(Endpoint(m_sessionAddress, peerPort()).toString())
-                             .arg(Endpoint::fromNetworkOrder(serverIP, serverPort).toString())
-                             .arg(tagCount); });
+                             .arg(argStr(name),
+                                  argStr(Endpoint(m_sessionAddress, peerPort()).toString()),
+                                  argStr(Endpoint::fromNetworkOrder(serverIP, serverPort).toString()),
+                                  argStr(tagCount)); });
         emit serverIdentReceived(serverHash, serverIP, serverPort, name, description);
         if (!learned.isNull())
             emit serverAddressLearned(learned);
@@ -601,19 +619,40 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
     case OP_CALLBACKREQUESTED_IPV6: {
         // Format: ipv6[16] (network order), port[2] (LITTLE-endian — PR_NAT is the only
-        // BE path). The server sends this to a v6-capable LowID target when the requester
-        // is reachable only over IPv6; we call the requester back over IPv6.
+        // BE path) [, cryptOptions[1], userHash[16] when both sides obfuscate]. The server
+        // sends it because we opted in (OP_IPV6_CALLBACK_OPTIN) and a LowID requester with
+        // a dialled-back IPv6 asked for us (ed2k-server#62); we call it back over IPv6.
         if (size < 18)
             break;
 
         const Endpoint requester(Address::fromIPv6Bytes(packet), peekUInt16(packet + 16));
-        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_CALLBACKREQUESTED_IPV6 from %1")
-                             .arg(requester.toString()); });
-        emit callbackRequestedIPv6(requester);
+        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_CALLBACKREQUESTED_IPV6 from %1 (%2 crypt bytes)")
+                             .arg(requester.toString()).arg(size > 18 ? size - 18 : 0); });
+        if (auto* filter = theApp.ipFilter) {
+            if (filter->isFiltered(requester.address(), thePrefs.ipFilterLevel())) {
+                filter->logLastHit(u"IPv6 callback request");
+                if (auto* stats = theApp.statistics)
+                    stats->addFilteredClient();
+                break;
+            }
+        }
+        const uint8* cryptOptions = size > 18 ? packet + 18 : nullptr;
+        emit callbackRequestedIPv6(requester, cryptOptions, size > 18 ? size - 18 : 0);
         break;
     }
 
     case OP_CALLBACK_FAIL:
+        // <target id 4><reason 1>: our OP_IPV6_CALLBACK_REQUEST (ed2k-server#62) or
+        // OP_CALLBACKREQUEST (#63) was refused, and says for whom and why. Empty (older
+        // servers, MFC-era): our OP_CALLBACKREQUEST failed, target unknown.
+        if (size >= 5) {
+            const uint32 targetID = peekUInt32(packet);
+            const uint8 reason = packet[4];
+            logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_CALLBACK_FAIL: callback for %1 refused, reason %2")
+                                 .arg(argStr(targetID), argStr(reason)); });
+            emit callbackRefused(targetID, reason);
+            break;
+        }
         logDebug(QStringLiteral("Server: Callback attempt failed"));
         emit callbackFailed();
         break;
@@ -669,9 +708,9 @@ void ServerSocket::setConnectionState(ServerConnState newState)
         return;
 
     logServerVerbose([&]() -> QString { return QStringLiteral("[%1] socket state: %2 -> %3")
-                         .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
-                         .arg(QLatin1String(serverConnStateName(m_connectionState)))
-                         .arg(QLatin1String(serverConnStateName(newState))); });
+                         .arg(argStr(m_curServer ? m_curServer->name() : QStringLiteral("?")),
+                              QLatin1String(serverConnStateName(m_connectionState)),
+                              QLatin1String(serverConnStateName(newState))); });
 
     m_connectionState = newState;
     emit connectionStateChanged(newState);
@@ -700,11 +739,11 @@ void ServerSocket::setConnectionState(ServerConnState newState)
 void ServerSocket::onError(int errorCode)
 {
     logDebug([&]() -> QString { return QStringLiteral("ServerSocket error: %1 server=%2 peer=%3 connState=%4 cryptState=%5")
-                   .arg(errorCode)
-                   .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
-                   .arg(Endpoint(m_sessionAddress, peerPort()).toString())
-                   .arg(static_cast<int>(m_connectionState))
-                   .arg(static_cast<int>(m_streamCryptState)); });
+                   .arg(argStr(errorCode),
+                        argStr(m_curServer ? m_curServer->name() : QStringLiteral("?")),
+                        argStr(Endpoint(m_sessionAddress, peerPort()).toString()),
+                        argStr(static_cast<int>(m_connectionState)),
+                        argStr(static_cast<int>(m_streamCryptState))); });
 
     // Any socket error on an *established* connection is a lost connection, not a
     // dead server or a fatal error. Qt reports the peer's FIN as an error before
@@ -860,9 +899,9 @@ void ServerSocket::onSocketConnected()
         return;
     }
     logDebug([&]() -> QString { return QStringLiteral("ServerSocket connected to %1 (%2) serverCrypt=%3")
-                .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
-                .arg(Endpoint(Address::fromQHostAddress(peerAddress()), peerPort()).toString())
-                .arg(isServerCryptEnabledConnection()); });
+                .arg(argStr(m_curServer ? m_curServer->name() : QStringLiteral("?")),
+                     argStr(Endpoint(Address::fromQHostAddress(peerAddress()), peerPort()).toString()),
+                     argStr(isServerCryptEnabledConnection())); });
     m_lastTransmission = getTickCount();
     m_lastSent = m_lastTransmission;
 
@@ -910,11 +949,11 @@ void ServerSocket::onSocketError(QAbstractSocket::SocketError error)
         return;
 
     logDebug([&]() -> QString { return QStringLiteral("ServerSocket::onSocketError: %1 (%2) server=%3 peer=%4 connState=%5 cryptState=%6")
-                   .arg(static_cast<int>(error)).arg(errorString())
-                   .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
-                   .arg(Endpoint(m_sessionAddress, peerPort()).toString())
-                   .arg(static_cast<int>(m_connectionState))
-                   .arg(static_cast<int>(m_streamCryptState)); });
+                   .arg(argStr(static_cast<int>(error)), argStr(errorString()),
+                        argStr(m_curServer ? m_curServer->name() : QStringLiteral("?")),
+                        argStr(Endpoint(m_sessionAddress, peerPort()).toString()),
+                        argStr(static_cast<int>(m_connectionState)),
+                        argStr(static_cast<int>(m_streamCryptState))); });
 
     // Normally the second notification: EMSocket routed the error to onError()
     // first and the state is already terminal. Firing again would report the same

@@ -21,6 +21,8 @@
 #include <QString>
 #include <QtTypes>
 
+#include "utils/ArgStr.h"
+
 namespace eMule {
 
 /// How TLS is established.
@@ -154,7 +156,7 @@ struct NewsServer {
     /// excluded from the wrong server.
     [[nodiscard]] QString key() const
     {
-        return QStringLiteral("%1:%2/%3").arg(host).arg(port).arg(user);
+        return QStringLiteral("%1:%2/%3").arg(argStr(host), argStr(port), argStr(user));
     }
 };
 

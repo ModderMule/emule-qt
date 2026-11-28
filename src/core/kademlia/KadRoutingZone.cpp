@@ -17,6 +17,7 @@
 #include "net/Address.h"
 #include "prefs/Preferences.h"
 #include "utils/SafeFile.h"
+#include "utils/ArgStr.h"
 
 
 #include <QDir>
@@ -124,7 +125,7 @@ bool RoutingZone::add(const UInt128& id, uint32 ip, uint16 udpPort, uint16 tcpPo
     // Validate IP (allow LAN IPs when filterLANIPs is disabled)
     if (!Address::fromHostOrder(ip).isRoutable(!thePrefs.filterLANIPs())) {
         logKad(QStringLiteral("Kad: Rejected contact %1 — isRoutable failed (filterLAN=%2)")
-                   .arg(Address::fromHostOrder(ip).toString()).arg(thePrefs.filterLANIPs()));
+                   .arg(argStr(Address::fromHostOrder(ip).toString()), argStr(thePrefs.filterLANIPs())));
         return false;
     }
 

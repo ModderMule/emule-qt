@@ -4,6 +4,7 @@
 #include "McpStdioBridge.h"
 
 #include "app/AppConfig.h"
+#include "utils/ArgStr.h"
 
 #include <QFile>
 #include <QJsonDocument>
@@ -52,8 +53,8 @@ McpStdioBridge::Target McpStdioBridge::targetFromConfig(const QString& configDir
         target.apiKey = QByteArray::fromStdString(ws["apiKey"].as<std::string>(std::string()));
         target.insecureTls = https;   // a local daemon's certificate is usually self-signed
         target.url = QUrl(QStringLiteral("%1://%2:%3/mcp")
-                              .arg(https ? QStringLiteral("https") : QStringLiteral("http"), host)
-                              .arg(port));
+                              .arg(argStr(https ? QStringLiteral("https") : QStringLiteral("http")), argStr(host),
+                                   argStr(port)));
         if (!ws["mcpEnabled"].as<bool>(false)) {
             problem = QStringLiteral("The MCP endpoint is switched off. Enable it in Options > "
                                      "Web Interface (or set webserver.mcpEnabled) and restart "

@@ -10,6 +10,7 @@
 #include "net/BindAddress.h"
 #include "net/DefaultGateway.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QStringList>
 
@@ -329,8 +330,8 @@ void PortMapper::onProbeDeadline()
     if (!pending.isEmpty() && !anyAvailable && !m_probeExtended) {
         m_probeExtended = true;
         logDebug([&]() -> QString { return QStringLiteral("PortMap: nothing has answered yet — giving %1 another %2 ms")
-                     .arg(pending.join(QStringLiteral(", ")))
-                     .arg(m_probeTotalMs - m_probeGraceMs); });
+                     .arg(argStr(pending.join(QStringLiteral(", "))),
+                          argStr(m_probeTotalMs - m_probeGraceMs)); });
         m_probeDeadline.start(m_probeTotalMs - m_probeGraceMs);
         return;
     }
@@ -468,8 +469,8 @@ void PortMapper::tryNextCandidate()
     }
 
     logDebug([&]() -> QString { return QStringLiteral("PortMap: trying %1 for %2 mapping(s)")
-                 .arg(backend->name())
-                 .arg(m_trialExpected); });
+                 .arg(argStr(backend->name()),
+                      argStr(m_trialExpected)); });
 
     // requestMapping() is allowed to answer synchronously, and UdpMappingBackend does for
     // "no gateway for this family", "could not encode request" and "could not open a
@@ -496,8 +497,8 @@ void PortMapper::evaluateTrial()
 
     m_trialResults.push_back(TrialResult{slot, m_trialMappings, quality});
     logDebug([&]() -> QString { return QStringLiteral("PortMap: %1 trial graded %2")
-                 .arg(m_backends[slot].backend->name())
-                 .arg(static_cast<int>(quality)); });
+                 .arg(argStr(m_backends[slot].backend->name()),
+                      argStr(static_cast<int>(quality))); });
 
     // An exact match cannot be beaten, so stop the race immediately.
     if (quality == TrialQuality::Exact) {
@@ -561,8 +562,8 @@ void PortMapper::commitBestTrial()
     }
 
     logInfo(QStringLiteral("PortMap: using %1 — %2 mapping(s) active")
-                .arg(winner->name())
-                .arg(m_active.size()));
+                .arg(argStr(winner->name()),
+                     argStr(m_active.size())));
     recomputeStatus();
 }
 
@@ -606,10 +607,10 @@ void PortMapper::onMappingResult(PortMapBackend* backend, const PortMapping& map
             m_trialMappings.push_back(mapping);
         else
             logDebug([&]() -> QString { return QStringLiteral("PortMap: %1 could not map %2/%3: %4")
-                         .arg(backend->name(),
-                              portMapPurposeName(mapping.request.purpose))
-                         .arg(mapping.request.internalPort)
-                         .arg(error); });
+                         .arg(argStr(backend->name()),
+                              argStr(portMapPurposeName(mapping.request.purpose)),
+                              argStr(mapping.request.internalPort),
+                              argStr(error)); });
 
         // Deferred while tryNextCandidate() is still issuing this candidate's requests —
         // it calls evaluateTrial() itself once the loop is done. See the note there.
@@ -660,10 +661,10 @@ void PortMapper::onMappingResult(PortMapBackend* backend, const PortMapping& map
         ++it->consecutiveFailures;
         // first failure shown, the retries in the verbose log
         const QString line = QStringLiteral("PortMap: renewing %1 failed (%2/%3): %4")
-                                 .arg(portMapPurposeName(mapping.request.purpose))
-                                 .arg(it->consecutiveFailures)
-                                 .arg(kMaxRenewFailures)
-                                 .arg(error);
+                                 .arg(argStr(portMapPurposeName(mapping.request.purpose)),
+                                      argStr(it->consecutiveFailures),
+                                      argStr(kMaxRenewFailures),
+                                      argStr(error));
         if (it->consecutiveFailures == 1)
             logWarning(line);
         else

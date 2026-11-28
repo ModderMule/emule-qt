@@ -359,6 +359,7 @@ void tst_IndexerPrefs::feedsRoundTrip()
         pasted.name = QStringLiteral("Pasted");
         pasted.kind = IndexerFeedKind::Url;
         pasted.url = QStringLiteral("https://ix.example/rss?r=abc");
+        pasted.network = IndexerFeedNetwork::BitTorrent;
         pasted.enabled = false;
 
         p.setIndexerFeeds({search, pasted});
@@ -387,6 +388,8 @@ void tst_IndexerPrefs::feedsRoundTrip()
     QCOMPARE(feeds[1].name, QStringLiteral("Pasted"));
     QCOMPARE(feeds[1].kind, IndexerFeedKind::Url);
     QCOMPARE(feeds[1].url, QStringLiteral("https://ix.example/rss?r=abc"));
+    QCOMPARE(feeds[1].network, IndexerFeedNetwork::BitTorrent);
+    QCOMPARE(feeds[0].network, IndexerFeedNetwork::Auto);
     QVERIFY(!feeds[1].enabled);
 }
 

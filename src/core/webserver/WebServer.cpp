@@ -44,6 +44,7 @@
 #include "utils/ShareRatio.h"
 #include "utils/StringUtils.h"
 #include "utils/UsenetDisplay.h"
+#include "utils/ArgStr.h"
 
 #include <QCborArray>
 #include <QCoreApplication>
@@ -586,17 +587,17 @@ bool WebServer::start(const WebServerConfig& config)
 
     const auto actualPort = m_tcpServer->serverPort();
     logInfo(QStringLiteral("WebServer: listening on %1 port %2%3")
-                .arg(addr == QHostAddress::Any ? QStringLiteral("all interfaces") : addr.toString())
-                .arg(actualPort)
-                .arg(m_config.httpsEnabled ? QStringLiteral(" (HTTPS)") : QString()));
+                .arg(argStr(addr == QHostAddress::Any ? QStringLiteral("all interfaces") : addr.toString()),
+                     argStr(actualPort),
+                     argStr(m_config.httpsEnabled ? QStringLiteral(" (HTTPS)") : QString())));
     // Where the API explains itself. A wildcard bind is shown as localhost.
     const QString base = QStringLiteral("%1://%2:%3")
-        .arg(m_config.httpsEnabled ? QStringLiteral("https") : QStringLiteral("http"),
-             addr == QHostAddress::Any || addr == QHostAddress::AnyIPv4 || addr == QHostAddress::AnyIPv6
+        .arg(argStr(m_config.httpsEnabled ? QStringLiteral("https") : QStringLiteral("http")),
+             argStr(addr == QHostAddress::Any || addr == QHostAddress::AnyIPv4 || addr == QHostAddress::AnyIPv6
                  ? QStringLiteral("localhost")
                  : addr.protocol() == QAbstractSocket::IPv6Protocol
-                       ? QStringLiteral("[%1]").arg(addr.toString()) : addr.toString())
-        .arg(actualPort);
+                       ? QStringLiteral("[%1]").arg(addr.toString()) : addr.toString()),
+             argStr(actualPort));
     if (m_config.restApiEnabled) {
         logDebug(QStringLiteral("WebServer: REST API playground at %1/api/v1/docs").arg(base));
         logDebug(QStringLiteral("WebServer: OpenAPI document at %1/api/v1/openapi.json").arg(base));
@@ -1209,7 +1210,7 @@ QFuture<QHttpServerResponse> WebServer::serveWhenAvailable(std::function<UsenetS
         // the window — a slow source, or a hole nobody holds. A prompt 416 beats
         // a player hanging on a request that might take the rest of the download.
         logDebug([&]() -> QString { return QStringLiteral("%1: 416 — timed out waiting for byte %2 of \"%3\" (have %4)")
-                       .arg(what).arg(wantStart).arg(now.fileName).arg(now.availableEnd); });
+                       .arg(argStr(what), argStr(wantStart), argStr(now.fileName), argStr(now.availableEnd)); });
         return rangeNotSatisfiable(now.totalSize > 0 ? now.totalSize : now.availableEnd);
     };
 
@@ -1295,8 +1296,8 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
 
     if (dbg)
         logDebug([&]() -> QString { return QStringLiteral("Preview: file=%1  pieces=%2  size=%3  available=%4  mime=%5")
-            .arg(fileName).arg(pieces.size()).arg(fileSize).arg(contentEnd)
-            .arg(QString::fromUtf8(mimeType)); });
+            .arg(argStr(fileName), argStr(pieces.size()), argStr(fileSize), argStr(contentEnd),
+                 QString::fromUtf8(mimeType)); });
 
     // --- Range, for seeking support (required by VLC et al.) ---
     qint64 rangeStart = 0;
@@ -1397,8 +1398,8 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
 
     if (dbg)
         logDebug([&]() -> QString { return QStringLiteral("Preview: serving %1 bytes [%2-%3/%4]  hasRange=%5  pieces=%6")
-            .arg(data.size()).arg(rangeStart).arg(rangeEnd).arg(fileSize)
-            .arg(hasRange).arg(pieces.size()); });
+            .arg(argStr(data.size()), argStr(rangeStart), argStr(rangeEnd), argStr(fileSize),
+                 argStr(hasRange), argStr(pieces.size())); });
 
     // Pieces of a stated length, and no total: whoever built them knows how far
     // the file goes but not how far it will go — an extraction still writing it
@@ -3793,10 +3794,10 @@ QString WebServer::buildTorrentsPage(bool isAdmin, const QString& sessionId, con
         v[QStringLiteral("TorrentStatus")] = htmlText(torrentStatusName(r));
         v[QStringLiteral("TorrentDown")] = speedText(r.value(QStringLiteral("rateDown")).toInteger());
         v[QStringLiteral("TorrentUp")] = speedText(r.value(QStringLiteral("rateUp")).toInteger());
-        v[QStringLiteral("TorrentSeeds")] = QStringLiteral("%1 (%2)").arg(r.value(QStringLiteral("seeds")).toInteger())
-                                                .arg(r.value(QStringLiteral("seedsTotal")).toInteger());
-        v[QStringLiteral("TorrentPeers")] = QStringLiteral("%1 (%2)").arg(r.value(QStringLiteral("peers")).toInteger())
-                                                .arg(r.value(QStringLiteral("peersTotal")).toInteger());
+        v[QStringLiteral("TorrentSeeds")] = QStringLiteral("%1 (%2)").arg(argStr(r.value(QStringLiteral("seeds")).toInteger()),
+                                                     argStr(r.value(QStringLiteral("seedsTotal")).toInteger()));
+        v[QStringLiteral("TorrentPeers")] = QStringLiteral("%1 (%2)").arg(argStr(r.value(QStringLiteral("peers")).toInteger()),
+                                                     argStr(r.value(QStringLiteral("peersTotal")).toInteger()));
         const double ratio = shareRatio(uploaded, downloaded, r.value(QStringLiteral("haveBytes")).toInteger());
         v[QStringLiteral("TorrentRatio")] = ratio == kShareRatioInfinite ? QStringLiteral("∞")
                                             : ratio < 0                  ? QString()
@@ -5010,11 +5011,11 @@ QString WebServer::buildUsenetPage(bool isAdmin, const QString& sessionId, const
         const QString assign = i == 0 ? tr("No category") : title;
         tabs += QStringLiteral("<a class=\"un-cattab%1\" href=\"?w=usenet&amp;cat=%2\" "
                                "data-cat=\"%2\" title=\"%3\" style=\"%4\">%5</a>")
-                    .arg(i == currentCat ? QStringLiteral(" active") : QString())
-                    .arg(i)
-                    .arg(known ? htmlText(cats.at(i).comment) : QString(),
-                         known && i > 0 ? categoryCssColor(cats.at(i).color) : QString(),
-                         htmlText(title));
+                    .arg(argStr(i == currentCat ? QStringLiteral(" active") : QString()),
+                         argStr(i),
+                         argStr(known ? htmlText(cats.at(i).comment) : QString()),
+                         argStr(known && i > 0 ? categoryCssColor(cats.at(i).color) : QString()),
+                         argStr(htmlText(title)));
         catOptions += QStringLiteral("<option value=\"%1\">%2</option>").arg(i).arg(htmlText(assign));
         catNames << jsString(assign);
     }

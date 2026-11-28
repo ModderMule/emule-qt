@@ -37,6 +37,7 @@
 #include "webserver/ApiBackend.h"
 #include "webserver/JsonSerializers.h"
 #include "webserver/OpenApiWriter.h"
+#include "utils/ArgStr.h"
 
 #include <QHttpServer>
 #include <QHttpServerRequest>
@@ -1709,8 +1710,8 @@ void WebServer::addUsenetOperations()
             if (const Result item = toResult(handleRestUsenetItem(id)); !item.ok())
                 return item;
             return apiPreviewLink(c, s("/api/v1/usenet/%1/%2/preview")
-                                         .arg(QString::fromLatin1(QUrl::toPercentEncoding(id)))
-                                         .arg(c.integer(L("fileIndex"))));
+                                         .arg(QString::fromLatin1(QUrl::toPercentEncoding(id)),
+                                              argStr(c.integer(L("fileIndex")))));
         };
         add(op);
     }
@@ -1862,7 +1863,7 @@ Result WebServer::apiSnapshot()
         ed2k[s("connecting")] = m_serverConnect->isConnecting();
         ed2k[s("lowID")] = m_serverConnect->isConnected() && m_serverConnect->isLowID();
         if (const auto* server = m_serverConnect->currentServer())
-            ed2k[s("server")] = QStringLiteral("%1:%2").arg(server->address()).arg(server->port());
+            ed2k[s("server")] = QStringLiteral("%1:%2").arg(argStr(server->address()), argStr(server->port()));
     }
     out[s("ed2k")] = ed2k;
 

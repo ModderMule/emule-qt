@@ -470,7 +470,7 @@ enum class IpcMsgType : int {
     GrabIndexerResult       = 707,
 
     /// [] -> [[{name, kind, enabled, query, categories, indexers, url, hasUrl,
-    ///          accept, reject, minSize, maxSize, maxAgeDays, intervalMinutes,
+    ///          network (auto|usenet|bittorrent, URL feeds), accept, reject, minSize, maxSize, maxAgeDays, intervalMinutes,
     ///          grabExisting, lastPolled, lastError, lastMatched, seenCount,
     ///          polling}]]
     /// `url` arrives **redacted** and `hasUrl` says whether one is stored. A

@@ -9,6 +9,7 @@
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -347,13 +348,13 @@ Outcome run(const QString& configDir, Preferences& prefs)
     logInfo(QStringLiteral("Imported %1 settings from %2: %3 files (%4 own ones + %10 settings files "
                            "backed up to %5), %6 preferences, %7 categories, %8 shared folders, "
                            "%9 temp folders queued")
-                .arg(kind == SourceKind::Amule ? QStringLiteral("aMule") : QStringLiteral("eMule"),
-                     out.sourceDir)
-                .arg(out.filesCopied).arg(out.filesBackedUp)
-                .arg(out.backupDir.isEmpty() ? QStringLiteral("-") : out.backupDir)
-                .arg(out.prefsApplied).arg(out.categories).arg(out.sharedDirs)
-                .arg(out.pendingTempDirs.size())
-                .arg(out.settingsBackedUp));
+                .arg(argStr(kind == SourceKind::Amule ? QStringLiteral("aMule") : QStringLiteral("eMule")),
+                     argStr(out.sourceDir),
+                     argStr(out.filesCopied), argStr(out.filesBackedUp),
+                     argStr(out.backupDir.isEmpty() ? QStringLiteral("-") : out.backupDir),
+                     argStr(out.prefsApplied), argStr(out.categories), argStr(out.sharedDirs),
+                     argStr(out.pendingTempDirs.size()),
+                     argStr(out.settingsBackedUp)));
     return out;
 }
 

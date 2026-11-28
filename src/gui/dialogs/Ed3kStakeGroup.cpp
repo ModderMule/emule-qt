@@ -7,6 +7,7 @@
 
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
+#include "utils/ArgStr.h"
 
 #include <QCborArray>
 #include <QDateTime>
@@ -140,8 +141,8 @@ void Ed3kStakeGroup::fill(const QCborMap& stake)
         m_rateLabel->setText(tr("Burning for stake is off on this ledger."));
     else
         m_rateLabel->setText(tr("A credit buys %1 E3S, claimable %2 day(s) after the burn.")
-                                 .arg(e3sText(rate))
-                                 .arg(QLocale().toString(double(delay) / 86400.0, 'g', 3)));
+                                 .arg(argStr(e3sText(rate)),
+                                      argStr(QLocale().toString(double(delay) / 86400.0, 'g', 3))));
 
     const qint64 selected = m_tree->currentItem() ? m_tree->currentItem()->data(0, Qt::UserRole).toLongLong() : -1;
     m_tree->clear();
@@ -226,8 +227,8 @@ QString Ed3kStakeGroup::lookupText(const QCborMap& lookup)
     const qint64 readyAt = lookup.value(QStringLiteral("readyAt")).toInteger();
     const QString when = QLocale().toString(QDateTime::fromSecsSinceEpoch(readyAt), QLocale::ShortFormat);
     const QString what = tr("Claim %1: %2 E3S to %3.")
-                             .arg(id)
-                             .arg(e3sText(lookup.value(QStringLiteral("amount")).toString()), lookup.value(QStringLiteral("to")).toString());
+                             .arg(argStr(id),
+                                  argStr(e3sText(lookup.value(QStringLiteral("amount")).toString())), argStr(lookup.value(QStringLiteral("to")).toString()));
     return readyAt <= QDateTime::currentSecsSinceEpoch() ? what + QLatin1Char(' ') + tr("Ready since %1.").arg(when)
                                                          : what + QLatin1Char(' ') + tr("Ready at %1.").arg(when);
 }

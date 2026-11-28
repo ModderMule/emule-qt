@@ -7,6 +7,7 @@
 #include "Ed3kSession.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 
@@ -240,9 +241,9 @@ void Ed3kUploads::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* ha
         if (m_rows.erase({key, se->node}) == 0)
             return;
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: upload slot of %1 ended (why %2, %3 B)")
-                         .arg(QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(se->node.bytes.data()), 4).toHex()))
-                         .arg(int(se->why))
-                         .arg(se->bytes); });
+                         .arg(QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(se->node.bytes.data()), 4).toHex()),
+                              argStr(int(se->why)),
+                              argStr(se->bytes)); });
     } else if (const auto* q = std::get_if<e::QueueEntryEnded>(&ev)) {
         const auto it = m_rows.find({key, q->node});
         if (it == m_rows.end() || it->second.holding)

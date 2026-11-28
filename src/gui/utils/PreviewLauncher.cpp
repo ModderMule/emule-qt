@@ -9,6 +9,7 @@
 #include "media/PreviewApps.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -227,10 +228,10 @@ QString daemonHosterStreamUrl(const IpcClient* ipc, qint64 itemId, const QString
     if (!ipc || !ipc->isConnected() || itemId <= 0 || streamToken.isEmpty())
         return {};
     return QStringLiteral("%1://%2:%3/api/v1/hoster/%4/preview?token=%5")
-        .arg(daemonWebScheme(), ipc->daemonHost())
-        .arg(thePrefs.webServerPort())
-        .arg(itemId)
-        .arg(streamToken);
+        .arg(argStr(daemonWebScheme()), argStr(ipc->daemonHost()),
+             argStr(thePrefs.webServerPort()),
+             argStr(itemId),
+             argStr(streamToken));
 }
 
 const PreviewApps& previewApps()
@@ -263,9 +264,9 @@ QString daemonStreamUrl(const IpcClient* ipc, const QString& fileHash,
     // ToDo: each GUI preview should mint its own short-lived token via IPC
     // instead of handing the one long-lived "gui" token to every player.
     return QStringLiteral("%1://%2:%3/api/v1/downloads/%4/preview?token=%5")
-        .arg(daemonWebScheme(), ipc->daemonHost())
-        .arg(thePrefs.webServerPort())
-        .arg(fileHash, streamToken);
+        .arg(argStr(daemonWebScheme()), argStr(ipc->daemonHost()),
+             argStr(thePrefs.webServerPort()),
+             argStr(fileHash), argStr(streamToken));
 }
 
 QString daemonUsenetStreamUrl(const IpcClient* ipc, const QString& itemId, int fileIndex,
@@ -277,11 +278,11 @@ QString daemonUsenetStreamUrl(const IpcClient* ipc, const QString& itemId, int f
     }
 
     QString url = QStringLiteral("%1://%2:%3/api/v1/usenet/%4/%5/preview?token=%6")
-                      .arg(daemonWebScheme(), ipc->daemonHost())
-                      .arg(thePrefs.webServerPort())
-                      .arg(itemId)
-                      .arg(fileIndex)
-                      .arg(streamToken);
+                      .arg(argStr(daemonWebScheme()), argStr(ipc->daemonHost()),
+                           argStr(thePrefs.webServerPort()),
+                           argStr(itemId),
+                           argStr(fileIndex),
+                           argStr(streamToken));
 
     // Appended only when a file was actually chosen, so the default URL stays
     // exactly what it was.
@@ -297,11 +298,11 @@ QString daemonTorrentStreamUrl(const IpcClient* ipc, const QString& torrentId, i
     if (!ipc || !ipc->isConnected() || torrentId.isEmpty() || fileIndex < -1 || streamToken.isEmpty())
         return {};
     return QStringLiteral("%1://%2:%3/api/v1/torrents/%4/%5/preview?token=%6")
-        .arg(daemonWebScheme(), ipc->daemonHost())
-        .arg(thePrefs.webServerPort())
-        .arg(QString::fromLatin1(QUrl::toPercentEncoding(torrentId, QByteArrayLiteral(":"))))
-        .arg(fileIndex)
-        .arg(streamToken);
+        .arg(argStr(daemonWebScheme()), argStr(ipc->daemonHost()),
+             argStr(thePrefs.webServerPort()),
+             QString::fromLatin1(QUrl::toPercentEncoding(torrentId, QByteArrayLiteral(":"))),
+             argStr(fileIndex),
+             argStr(streamToken));
 }
 
 QString daemonIncomingUrl(const IpcClient* ipc, const QString& streamToken,

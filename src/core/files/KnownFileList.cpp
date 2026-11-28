@@ -15,6 +15,7 @@
 #include "utils/FileDate.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
+#include "utils/ArgStr.h"
 
 #include <QFile>
 #include <QRandomGenerator>
@@ -550,7 +551,7 @@ KnownFileList::MetRead KnownFileList::readKnownMet(const QString& filePath, bool
         if ((version != MET_HEADER && version != MET_HEADER_I64TAGS)
             || (ed3kOnly && (version != MET_HEADER_I64TAGS || file.readUInt8() != kEd3kOnlyMetVersion))) {
             logError(QStringLiteral("%1: unsupported version 0x%2")
-                         .arg(QFileInfo(filePath).fileName()).arg(version, 2, 16, QChar(u'0')));
+                         .arg(argStr(QFileInfo(filePath).fileName()), argFmt(version, 2, 16, QChar(u'0'))));
             return MetRead::Damaged;
         }
 

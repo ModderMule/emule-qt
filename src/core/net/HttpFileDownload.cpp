@@ -7,6 +7,7 @@
 #include "net/GuardedNetworkAccessManager.h"
 #include "net/HttpDefaults.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QEventLoop>
 #include <QNetworkReply>
@@ -233,8 +234,8 @@ void HttpDownloadJob::onReplyFinished()
     r.entryName = unwrapped.entryName;
     if (unwrapped.wasArchive) {
         logInfo(QStringLiteral("Unpacked \"%1\" (%2 bytes) from the downloaded archive")
-                    .arg(r.entryName.isEmpty() ? QStringLiteral("<unnamed>") : r.entryName)
-                    .arg(r.data.size()));
+                    .arg(argStr(r.entryName.isEmpty() ? QStringLiteral("<unnamed>") : r.entryName),
+                         argStr(r.data.size())));
     }
     complete(std::move(r));
 }

@@ -3,6 +3,7 @@
 
 #include "nntp/NntpCommand.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QElapsedTimer>
 #include <QMutex>
@@ -174,14 +175,14 @@ void NntpSocket::connectToServer(const NewsServer& server)
 
     m_state = State::Connecting;
     logUsenetDebug([&]() -> QString { return QStringLiteral("NNTP: connecting to %1:%2%3%4")
-                .arg(m_server.host)
-                .arg(m_server.port)
-                .arg(m_server.tlsMode == TlsMode::None ? QString{}
-                                                       : QStringLiteral(" (TLS)"))
-                .arg(m_proxy.type() == QNetworkProxy::NoProxy
+                .arg(argStr(m_server.host),
+                     argStr(m_server.port),
+                     argStr(m_server.tlsMode == TlsMode::None ? QString{}
+                                                       : QStringLiteral(" (TLS)")),
+                     argStr(m_proxy.type() == QNetworkProxy::NoProxy
                          ? QString{}
                          : QStringLiteral(" via proxy %1:%2")
-                               .arg(m_proxy.hostName()).arg(m_proxy.port())); });
+                               .arg(argStr(m_proxy.hostName()), argStr(m_proxy.port())))); });
 
     // Implicit TLS negotiates before the greeting; STARTTLS and cleartext both
     // start as plain TCP. This is the explicit form of what SmtpClient decides
@@ -405,9 +406,9 @@ void NntpSocket::onSocketError()
     }
     if (proxyFault) {
         fail(NntpError::ProxyFailed, QStringLiteral("proxy %1:%2: %3")
-                                         .arg(m_proxy.hostName())
-                                         .arg(m_proxy.port())
-                                         .arg(m_socket->errorString()));
+                                         .arg(argStr(m_proxy.hostName()),
+                                              argStr(m_proxy.port()),
+                                              argStr(m_socket->errorString())));
         return;
     }
 
@@ -424,8 +425,8 @@ void NntpSocket::onSslErrors(const QList<QSslError>& errors)
         // The user asked for this explicitly. Say so once rather than silently.
         logUsenetWarning(QStringLiteral("NNTP: %1 — ignoring %2 certificate error(s), "
                                   "verification is disabled for this server")
-                       .arg(m_server.displayName())
-                       .arg(errors.size()));
+                       .arg(argStr(m_server.displayName()),
+                            argStr(errors.size())));
         m_socket->ignoreSslErrors();
         return;
 
@@ -482,15 +483,15 @@ void NntpSocket::onResponseTimeout()
 {
     fail(NntpError::Timeout,
          QStringLiteral("No response from %1 within %2 s")
-             .arg(m_server.displayName())
-             .arg(m_responseTimeoutMs / 1000));
+             .arg(argStr(m_server.displayName()),
+                  argStr(m_responseTimeoutMs / 1000)));
 }
 
 void NntpSocket::onIdleTimeout()
 {
     if (m_state == State::Ready) {
         logUsenetDebug([&]() -> QString { return QStringLiteral("NNTP: %1 idle for %2 s, closing")
-                           .arg(m_server.displayName()).arg(m_idleTimeoutMs / 1000); });
+                           .arg(argStr(m_server.displayName()), argStr(m_idleTimeoutMs / 1000)); });
         close();
     }
 }

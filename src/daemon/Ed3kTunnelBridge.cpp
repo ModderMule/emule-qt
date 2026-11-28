@@ -3,6 +3,7 @@
 /// IpcServer, pair secrets and the peer list (see the header).
 
 #include "Ed3kTunnelBridge.h"
+#include "utils/ArgStr.h"
 
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
@@ -170,7 +171,7 @@ void befriend(const Peer& p)
                              .arg(ed3k::base32(*key),
                                   QString::fromLatin1(QUrl::toPercentEncoding(QStringLiteral("qDonkey ") + p.name)));
     if (auto ok = f->add(link, {}); !ok)
-        logWarning(QStringLiteral("ed3k tunnel: %1 not added as ed3k friend (%2)").arg(p.name).arg(int(ok.error())));
+        logWarning(QStringLiteral("ed3k tunnel: %1 not added as ed3k friend (%2)").arg(argStr(p.name), argStr(int(ok.error()))));
     else
         logInfo(QStringLiteral("ed3k tunnel: %1 is an ed3k friend now (finds the core by key)").arg(p.name));
 }
@@ -313,8 +314,8 @@ private:
             p.known = o->known;
             p.age.start();
             logInfo(QStringLiteral("ed3k tunnel %1: phone %2 from %3%4")
-                        .arg(p.id).arg(QString::fromLatin1(p.peer.toHex().left(12)), p.remote,
-                             p.known ? QString() : QStringLiteral(" (not paired yet)")));
+                        .arg(argStr(p.id), QString::fromLatin1(p.peer.toHex().left(12)), argStr(p.remote),
+                             argStr(p.known ? QString() : QStringLiteral(" (not paired yet)"))));
             if (p.known)
                 learnKey(p.peer, p.key);
             m_pipes.emplace(p.id, std::move(p));
@@ -374,7 +375,7 @@ private:
         if (!p.known) {
             if (!takeSecretFor(p.peer, proof)) {
                 logWarning(QStringLiteral("ed3k tunnel %1: phone %2 not paired and no valid pair proof, closed")
-                               .arg(p.id).arg(QString::fromLatin1(p.peer.toHex().left(12))));
+                               .arg(argStr(p.id), QString::fromLatin1(p.peer.toHex().left(12))));
                 closeTunnel(p.id);
                 return;
             }
@@ -387,7 +388,7 @@ private:
             setAllowed(p.peer, true);
             befriend(list.last());
             p.known = true;
-            logInfo(QStringLiteral("ed3k tunnel %1: paired %2 (%3)").arg(p.id).arg(name, QString::fromLatin1(p.peer.toHex())));
+            logInfo(QStringLiteral("ed3k tunnel %1: paired %2 (%3)").arg(argStr(p.id), argStr(name), QString::fromLatin1(p.peer.toHex())));
         }
         bridge(p, rest);
     }

@@ -26,6 +26,7 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
+#include "utils/ArgStr.h"
 
 
 namespace eMule {
@@ -255,9 +256,9 @@ void UpDownClient::setUploadFileID(KnownFile* newReqFile)
 {
     if (thePrefs.logRawSocketPackets())
         logDebug([&]() -> QString { return QStringLiteral("setUploadFileID: old=%1 new=%2 for %3")
-                     .arg(m_uploadFile ? m_uploadFile->fileName() : QStringLiteral("null"))
-                     .arg(newReqFile ? newReqFile->fileName() : QStringLiteral("null"))
-                     .arg(userName()); });
+                     .arg(argStr(m_uploadFile ? m_uploadFile->fileName() : QStringLiteral("null")),
+                          argStr(newReqFile ? newReqFile->fileName() : QStringLiteral("null")),
+                          argStr(userName())); });
     if (m_uploadFile == newReqFile)
         return;
 
@@ -332,8 +333,8 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
     const auto drop = [&](const QString& why) {
         if (thePrefs.logUlDlEvents()) {
             logDebug([&]() -> QString { return QStringLiteral("addReqBlock: %1 — %2 (%3-%4) dropped")
-                         .arg(userName(), why)
-                         .arg(reqBlock->startOffset).arg(reqBlock->endOffset); });
+                         .arg(argStr(userName()), argStr(why),
+                              argStr(reqBlock->startOffset), argStr(reqBlock->endOffset)); });
         }
         delete reqBlock;
     };
@@ -389,8 +390,8 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
     if (isRepeatChunkRequest(*reqBlock)) {
         const uint64 part = reqBlock->startOffset / PARTSIZE;
         const QString reason = QStringLiteral("re-requested part %1 of '%2' after getting it %3 times")
-                                   .arg(part).arg(srcFile->fileName())
-                                   .arg(RepeatChunkGuard::kMaxDeliveries);
+                                   .arg(argStr(part), argStr(srcFile->fileName()),
+                                        argStr(RepeatChunkGuard::kMaxDeliveries));
         delete reqBlock;
         if (thePrefs.logBannedClients())
             logLeecher(QStringLiteral("Clients: %1 (%2), %3")
@@ -1165,9 +1166,9 @@ void UpDownClient::processRequestParts(const uint8* data, uint32 size, bool i64O
 {
     if (thePrefs.logRawSocketPackets())
         logDebug([&]() -> QString { return QStringLiteral("processRequestParts: size=%1 i64=%2 uploadFile=%3 from %4")
-                     .arg(size).arg(i64Offsets)
-                     .arg(m_uploadFile ? m_uploadFile->fileName() : QStringLiteral("null"))
-                     .arg(userName()); });
+                     .arg(argStr(size), argStr(i64Offsets),
+                          argStr(m_uploadFile ? m_uploadFile->fileName() : QStringLiteral("null")),
+                          argStr(userName())); });
 
     const uint32 expectedSize = i64Offsets ? 64u : 40u; // 16 + 3*(4 or 8) + 3*(4 or 8)
     if (size < expectedSize)
@@ -1343,9 +1344,9 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
 
     if (thePrefs.logRawSocketPackets())
         logDebug([&]() -> QString { return QStringLiteral("processMultiPacketExt2: file=%1 hash=%2 from %3")
-                     .arg(reqFile->fileName())
-                     .arg(md4str(fileIdent.getMD4Hash()))
-                     .arg(userName()); });
+                     .arg(argStr(reqFile->fileName()),
+                          argStr(md4str(fileIdent.getMD4Hash())),
+                          argStr(userName())); });
 
     // Build response
     SafeMemFile dataOut;
@@ -1676,9 +1677,9 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
 
     if (thePrefs.logRawSocketPackets())
         logDebug([&]() -> QString { return QStringLiteral("processMultiPacketAnswer: file=%1 dlState=%2 from %3")
-                     .arg(m_reqFile->fileName())
-                     .arg(static_cast<int>(m_downloadState))
-                     .arg(userName()); });
+                     .arg(argStr(m_reqFile->fileName()),
+                          argStr(static_cast<int>(m_downloadState)),
+                          argStr(userName())); });
 
     // Process sub-responses
     while ((dataIn.length() - dataIn.position()) > 0) {

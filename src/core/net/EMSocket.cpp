@@ -12,6 +12,7 @@
 #include "transfer/UploadBandwidthThrottler.h"
 #include "utils/Log.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QScopeGuard>
 #include <QTimer>
@@ -185,8 +186,8 @@ void EMSocket::setConState(EMSState val)
 void EMSocket::onConnected()
 {
     logDebug([&]() -> QString { return QStringLiteral("EMSocket::onConnected — peer=%1 fd=%2")
-                 .arg(Endpoint(Address::fromQHostAddress(peerAddress()), peerPort()).toString())
-                 .arg(socketDescriptor()); });
+                 .arg(argStr(Endpoint(Address::fromQHostAddress(peerAddress()), peerPort()).toString()),
+                      argStr(socketDescriptor())); });
     m_conState.store(EMSState::Connected, std::memory_order_release);
     onSocketConnected(); // trigger encryption handshake if needed
 }
@@ -462,8 +463,8 @@ void EMSocket::readIncoming(bool peerShutdown)
         }
     } catch (const std::exception& ex) {
         logDebug([&]() -> QString { return QStringLiteral("EMSocket::onReadyRead — exception in packet processing: %1 (peer %2:%3)")
-                       .arg(QLatin1String(ex.what()))
-                       .arg(peerAddress().toString()).arg(peerPort()); });
+                       .arg(QLatin1String(ex.what()),
+                            argStr(peerAddress().toString()), argStr(peerPort())); });
         m_pendingPacket.reset();
         m_pendingPacketSize = 0;
         onError(kErrWrongHeader);

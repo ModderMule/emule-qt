@@ -4,6 +4,7 @@
 
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QFile>
@@ -209,7 +210,7 @@ bool BackgroundFileWriter::writeWithRetries(std::unique_lock<std::mutex>& lock, 
         lock.lock();
     }
     if (!ok && !m_writingDropped && !m_jobs.contains(path))
-        logWarning(QStringLiteral("Cannot write %1 (%2 tries)").arg(path).arg(kRetryDelays.size() + 1));
+        logWarning(QStringLiteral("Cannot write %1 (%2 tries)").arg(argStr(path), argStr(kRetryDelays.size() + 1)));
     return ok;
 }
 

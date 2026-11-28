@@ -8,6 +8,7 @@
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
 #include "utils/ModalHost.h"
+#include "utils/ArgStr.h"
 
 #include <QCborArray>
 #include <QDateTime>
@@ -61,8 +62,8 @@ void Ed3kNameOpener::open(const QString& text)
         const QCborMap data = reply.field(1).toMap();
         if (!reply.fieldBool(0)) {
             logWarning(QStringLiteral("ed3k name not resolved (error %1): %2")
-                           .arg(data.value(QStringLiteral("error")).toInteger())
-                           .arg(text));
+                           .arg(argStr(data.value(QStringLiteral("error")).toInteger()),
+                                argStr(text)));
             return;
         }
         self->m_waiting.insert(data.value(QStringLiteral("id")).toInteger());

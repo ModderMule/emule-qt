@@ -6,6 +6,7 @@
 
 #include "app/AppConfig.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -256,13 +257,13 @@ QString symbolizeFrames(const DWORD64* frames, int count)
         DWORD64 symOffset = 0;
         if (symbols && fromAddr(process, addr, &symOffset, sym)) {
             line += QStringLiteral("!%1+0x%2")
-                        .arg(QString::fromWCharArray(sym->Name, static_cast<qsizetype>(sym->NameLen)))
-                        .arg(symOffset, 0, 16);
+                        .arg(argStr(QString::fromWCharArray(sym->Name, static_cast<qsizetype>(sym->NameLen))),
+                             argFmt(symOffset, 0, 16));
             IMAGEHLP_LINEW64 src{};
             src.SizeOfStruct = sizeof(src);
             DWORD lineOffset = 0;
             if (lineFromAddr && lineFromAddr(process, addr, &lineOffset, &src) && src.FileName)
-                line += QStringLiteral(" (%1:%2)").arg(QString::fromWCharArray(src.FileName)).arg(src.LineNumber);
+                line += QStringLiteral(" (%1:%2)").arg(argStr(QString::fromWCharArray(src.FileName)), argStr(src.LineNumber));
         } else if (moduleBase != 0) {
             line += QStringLiteral("+0x%1").arg(addr - moduleBase, 0, 16);
         } else {

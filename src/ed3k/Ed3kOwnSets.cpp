@@ -12,6 +12,7 @@
 #include "files/SharedDirWatcher.h"
 #include "utils/FileTypeFilter.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -1016,8 +1017,8 @@ std::vector<std::pair<QString, QString>> Ed3kOwnSets::scan(const Set& s) const
         // one directory: a name twice gets a number (file-set.md §2.2)
         QString name = fi.fileName();
         for (int n = 2; names.contains(name); ++n)
-            name = fi.suffix().isEmpty() ? QStringLiteral("%1 (%2)").arg(fi.completeBaseName()).arg(n)
-                                         : QStringLiteral("%1 (%2).%3").arg(fi.completeBaseName()).arg(n).arg(fi.suffix());
+            name = fi.suffix().isEmpty() ? QStringLiteral("%1 (%2)").arg(argStr(fi.completeBaseName()), argStr(n))
+                                         : QStringLiteral("%1 (%2).%3").arg(argStr(fi.completeBaseName()), argStr(n), argStr(fi.suffix()));
         names.insert(name);
         out.emplace_back(name, fi.absoluteFilePath());
     }

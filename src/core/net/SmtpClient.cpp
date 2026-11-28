@@ -7,6 +7,7 @@
 #include "net/ProxySettings.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QSslConfiguration>
 #include <QSslSocket>
@@ -60,9 +61,9 @@ void SmtpClient::sendMail(const QString& server, int port, SmtpSecurity security
     m_socket->setProxy(proxy);
     const bool proxied = proxy.type() != QNetworkProxy::NoProxy;
     logInfo(QStringLiteral("SMTP: connecting to %1:%2%3...")
-                .arg(server)
-                .arg(port)
-                .arg(proxied ? QStringLiteral(" via proxy %1:%2").arg(proxy.hostName()).arg(proxy.port()) : QString()));
+                .arg(argStr(server),
+                     argStr(port),
+                     argStr(proxied ? QStringLiteral(" via proxy %1:%2").arg(argStr(proxy.hostName()), argStr(proxy.port())) : QString())));
 
     if (!InterfacePin::prepareOutgoing(*m_socket, proxied)) {
         logWarning(QStringLiteral("SMTP: not sent — the selected network interface is not available"));

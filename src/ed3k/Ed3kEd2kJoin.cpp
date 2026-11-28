@@ -10,6 +10,7 @@
 #include "files/PartFile.h"
 #include "transfer/DownloadQueue.h"
 #include "utils/Opcodes.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 
@@ -183,7 +184,7 @@ void Ed3kEd2kJoin::onPartVerdict(const QByteArray& md4, std::uint32_t part, bool
     const bool ours = first != f.blocks.end() && *first < to;
     if (ok) {
         if (ours && f.pair == Pair::Unknown) {
-            logInfo(QStringLiteral("\"%1\": ed3k data passed eD2K part %2, pair trusted").arg(f.name).arg(part));
+            logInfo(QStringLiteral("\"%1\": ed3k data passed eD2K part %2, pair trusted").arg(argStr(f.name), argStr(part)));
             setPair(f, Pair::Trusted);
         }
         f.shareDirty = true;
@@ -208,7 +209,7 @@ void Ed3kEd2kJoin::onPartVerdict(const QByteArray& md4, std::uint32_t part, bool
     const auto verdict = e->aliasSearchPartFailed(m_session.now(), *f.search, *f.root, part, spanOf(*data));
     if (!verdict) {
         logDebug([&]() -> QString { return QStringLiteral("\"%1\": part %2 not checked under the root (error %3)")
-                     .arg(f.name).arg(part).arg(errorName(verdict.error())); });
+                     .arg(argStr(f.name), argStr(part), argStr(errorName(verdict.error()))); });
         return;
     }
     if (*verdict == ED3K_PART_CLAIM_FALSE) {
@@ -519,7 +520,7 @@ Ed3kEd2kJoin::File* Ed3kEd2kJoin::ensureFile(PartFile& pf)
     // old size, so start over under the new md4 ‖ size
     if (const auto old = m_files.find(md4); old != m_files.end() && old->second.size != uint64(pf.fileSize())) {
         logInfo(QStringLiteral("\"%1\": size changed from %2 to %3 bytes, ed3k looked up again")
-                    .arg(old->second.name).arg(old->second.size).arg(uint64(pf.fileSize())));
+                    .arg(argStr(old->second.name), argStr(old->second.size), argStr(uint64(pf.fileSize()))));
         forget(md4);
     }
     auto [it, added] = m_files.try_emplace(md4);
@@ -540,7 +541,7 @@ void Ed3kEd2kJoin::forget(const QByteArray& md4)
     File& f = it->second;
     releaseHints(f);
     if (f.bytes > 0)
-        logInfo(QStringLiteral("\"%1\": %2 bytes came over ed3k").arg(f.name).arg(f.bytes));
+        logInfo(QStringLiteral("\"%1\": %2 bytes came over ed3k").arg(argStr(f.name), argStr(f.bytes)));
     if (f.root) {
         stopDownload(*f.root);
         if (isShared(*f.root))
@@ -592,7 +593,7 @@ void Ed3kEd2kJoin::onAliasFound(const ffi::event::AliasFound& found)
     // a later AliasFound of the search in use: its candidates wait for a false pair
     if (f.root)
         return;
-    logDebug([&]() -> QString { return QStringLiteral("\"%1\": %2 ed3k root(s) claimed for its ed2k hash").arg(f.name).arg(found.roots); });
+    logDebug([&]() -> QString { return QStringLiteral("\"%1\": %2 ed3k root(s) claimed for its ed2k hash").arg(argStr(f.name), argStr(found.roots)); });
     takeNextCandidate(f);
 }
 

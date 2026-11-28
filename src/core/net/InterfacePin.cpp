@@ -4,6 +4,7 @@
 
 #include "net/InterfacePin.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QAbstractSocket>
 
@@ -230,7 +231,7 @@ void warnOnce(const QString& name, int error)
 {
     static std::mutex lock;
     static QString warned;
-    const QString key = QStringLiteral("%1/%2").arg(name).arg(error);
+    const QString key = QStringLiteral("%1/%2").arg(argStr(name), argStr(error));
     {
         std::lock_guard guard(lock);
         if (warned == key)
@@ -238,7 +239,7 @@ void warnOnce(const QString& name, int error)
         warned = key;
     }
     logWarning(QStringLiteral("Cannot pin a socket to interface %1 (error %2) — socket not used")
-                   .arg(name).arg(error));
+                   .arg(argStr(name), argStr(error)));
 }
 
 } // namespace

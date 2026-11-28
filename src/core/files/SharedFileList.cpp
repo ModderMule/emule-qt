@@ -30,6 +30,7 @@
 #include "utils/FileDate.h"
 #include "utils/PathUtils.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -189,8 +190,8 @@ void HashingThread::run()
             emit fullRehashDone(kf, job.directory, job.filename, changedSinceScan);
         } else if (ok) {
             logDebug([&]() -> QString { return QStringLiteral("Hashed OK: %1/%2 (%3 bytes)")
-                         .arg(job.directory, job.filename)
-                         .arg(kf->fileSize()); });
+                         .arg(argStr(job.directory), argStr(job.filename),
+                              argStr(kf->fileSize())); });
             if (!job.sharedDirectory.isEmpty())
                 kf->setSharedDirectory(job.sharedDirectory);
             // before hashingFinished: queued to the same thread, its result is there first
@@ -946,8 +947,8 @@ void SharedFileList::loadSharedFilesConfig()
     }
 
     logDebug([&]() -> QString { return QStringLiteral("sharedfiles.dat: %1 shared, %2 excluded")
-                 .arg(m_singleSharedFiles.size())
-                 .arg(m_singleExcludedFiles.size()); });
+                 .arg(argStr(m_singleSharedFiles.size()),
+                      argStr(m_singleExcludedFiles.size())); });
 }
 
 void SharedFileList::saveSharedFilesConfig() const
@@ -2284,8 +2285,8 @@ void SharedFileList::rescan(const QStringList& onlyDirs, RescanFollowUps follow)
 
     if (joined > 0 || relocated > 0 || !leaving.empty() || !toHash.empty())
         logInfo(QStringLiteral("Shared files%1: %2 joined, %3 left, %4 renamed, %5 to hash")
-                    .arg(full ? QString() : QStringLiteral(" in ") + onlyDirs.join(QStringLiteral(", ")))
-                    .arg(joined).arg(leaving.size()).arg(relocated).arg(toHash.size()));
+                    .arg(argStr(full ? QString() : QStringLiteral(" in ") + onlyDirs.join(QStringLiteral(", "))),
+                         argStr(joined), argStr(leaving.size()), argStr(relocated), argStr(toHash.size())));
     emit scanned(full);
 }
 
@@ -2982,7 +2983,7 @@ void SharedFileList::publishDueKeyword(time_t tProbe)
 
         if (added > 0) {
             kad::logKad(QStringLiteral("Kad: publishing keyword \"%1\" (%2 files)")
-                            .arg(kw->keyword()).arg(added));
+                            .arg(argStr(kw->keyword()), argStr(added)));
             kad::SearchManager::startSearch(search);
             kw->incPublishedCount();
             ++running;
@@ -3023,7 +3024,7 @@ QString SharedFileList::pseudoDirName(const ShareRules& rules, const QString& di
     if (m_pseudoDirNames.contains(name)) {
         QString unique;
         for (int i = 2;; ++i) {
-            unique = QStringLiteral("%1_%2").arg(name).arg(i);
+            unique = QStringLiteral("%1_%2").arg(argStr(name), argStr(i));
             if (!m_pseudoDirNames.contains(unique))
                 break;
             if (i > 200)
@@ -3076,7 +3077,7 @@ bool SharedFileList::hasWrongSize(const KnownFile* file)
     }
     logWarning(QStringLiteral("Not sharing \"%1\": it is incomplete — its hashset is for a "
                               "larger file than its %2 bytes. Delete it and download it again.")
-                   .arg(file->fileName()).arg(static_cast<uint64>(file->fileSize())));
+                   .arg(argStr(file->fileName()), argStr(static_cast<uint64>(file->fileSize()))));
     return true;
 }
 

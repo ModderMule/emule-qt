@@ -13,6 +13,7 @@
 #include "utils/FileDate.h"
 #include "utils/OwnerOnly.h"
 #include "utils/SystemMemory.h"
+#include "utils/ArgStr.h"
 
 #include <QCryptographicHash>
 #include <QDataStream>
@@ -269,7 +270,7 @@ void Ed3kShared::start()
             return it == m_files.end() ? QString() : it->second.entry.path;
         });
     logInfo(QStringLiteral("%1 file(s) of the share list, %2 to hash on %3 disk(s)")
-                .arg(m_files.size()).arg(hashQueueSize()).arg(m_hashQueues.size()));
+                .arg(argStr(m_files.size()), argStr(hashQueueSize()), argStr(m_hashQueues.size())));
     m_sideOn->store(true);
     hashNext();
     m_hashRamSent.reset();
@@ -671,7 +672,7 @@ void Ed3kShared::onListScanned(bool full)
     if (!m_started || !full || std::exchange(m_scanLogged, true))
         return;
     logInfo(QStringLiteral("%1 file(s) of the share list after its scan, %2 to hash")
-                .arg(m_files.size()).arg(hashQueueSize() + m_hashingVolumes.size()));
+                .arg(argStr(m_files.size()), argStr(hashQueueSize() + m_hashingVolumes.size())));
     // before it most entries are unlisted: nothing worth a check
     m_prunedAtMs = 0;
     pruneCacheLater();
@@ -1139,7 +1140,7 @@ void Ed3kShared::hashNext()
                     m_runBytes += static_cast<qint64>(hashed->size);
                     if (lcEmuleSharedVerbose().isDebugEnabled())
                         logInfo(QStringLiteral("Hashed \"%1\" (%2 bytes) in %3 ms")
-                                    .arg(QDir::toNativeSeparators(path)).arg(hashed->size).arg(fileTimer.elapsed()));
+                                    .arg(argStr(QDir::toNativeSeparators(path)), argStr(hashed->size), argStr(fileTimer.elapsed())));
                 }
                 onHashed(md4, path, mtime, hashed);
                 hashNext();
@@ -1413,7 +1414,7 @@ void Ed3kShared::loadCache()
         m_cache[md4] = std::move(h);
     }
     if (in.status() != QDataStream::Ok)
-        logWarning(QStringLiteral("%1 is cut short, %2 entries kept").arg(cachePath()).arg(m_cache.size()));
+        logWarning(QStringLiteral("%1 is cut short, %2 entries kept").arg(argStr(cachePath()), argStr(m_cache.size())));
     compactHashes();
 }
 
@@ -1658,7 +1659,7 @@ void Ed3kShared::endHashRun()
     const qint64 ms = m_runTimer.elapsed();
     m_runTimer.invalidate();
     logInfo(QStringLiteral("hashing done: %1 file(s), %2 MiB in %3 s")
-                .arg(m_runFiles).arg(m_runBytes >> 20).arg(static_cast<double>(ms) / 1000.0, 0, 'f', 1));
+                .arg(argStr(m_runFiles), argStr(m_runBytes >> 20), argFmt(static_cast<double>(ms) / 1000.0, 0, 'f', 1)));
     releaseRamHashes();
 }
 
@@ -1688,8 +1689,8 @@ void Ed3kShared::logHashProgress()
         return;
     const double secs = static_cast<double>(std::max<qint64>(1, m_runTimer.elapsed())) / 1000.0;
     logInfo(QStringLiteral("hashing: %1 file(s) done, %2 left, %3 MiB/s")
-                .arg(m_runFiles).arg(hashQueueSize() + m_hashingVolumes.size())
-                .arg(static_cast<double>(m_runBytes >> 20) / secs, 0, 'f', 1));
+                .arg(argStr(m_runFiles), argStr(hashQueueSize() + m_hashingVolumes.size()),
+                     argFmt(static_cast<double>(m_runBytes >> 20) / secs, 0, 'f', 1)));
 }
 
 Ed3kShared::Counts Ed3kShared::counts() const

@@ -17,6 +17,7 @@
 #include "utils/RatingIcons.h"
 #include "utils/SharedDirState.h"
 #include "utils/StringUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -189,13 +190,13 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
             "Complete Sources:\t%11\n"
             "Shared eD2K|Kad:\t%12\n"
             "Folder:\t%13")
-            .arg(f.fileName, f.ed3kOnly ? QStringLiteral("-") : f.hash, fileTypeText(f.fileType, f.fileName),
-                 uploadPriorityText(f.upPriority, f.isAutoUpPriority))
-            .arg(f.requests).arg(f.allTimeRequests)
-            .arg(f.acceptedUploads).arg(f.allTimeAccepted)
-            .arg(formatByteSize(f.transferred), formatByteSize(f.allTimeTransferred))
-            .arg(completeSourcesText(f.completeSourcesLo, f.completeSourcesHi, false),
-                 networkText(f.publishedED2K, f.kadPublished), f.path);
+            .arg(argStr(f.fileName), argStr(f.ed3kOnly ? QStringLiteral("-") : f.hash), argStr(fileTypeText(f.fileType, f.fileName)),
+                 argStr(uploadPriorityText(f.upPriority, f.isAutoUpPriority)),
+                 argStr(f.requests), argStr(f.allTimeRequests),
+                 argStr(f.acceptedUploads), argStr(f.allTimeAccepted),
+                 argStr(formatByteSize(f.transferred)), argStr(formatByteSize(f.allTimeTransferred)),
+                 argStr(completeSourcesText(f.completeSourcesLo, f.completeSourcesHi, false)),
+                 argStr(networkText(f.publishedED2K, f.kadPublished)), argStr(f.path));
         // The marks in column 0 explain themselves here, worded exactly as they are
         // in the download list — same helper, same cell, same sentence.
         QString torrents;

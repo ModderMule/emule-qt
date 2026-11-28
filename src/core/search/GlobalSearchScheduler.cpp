@@ -14,6 +14,7 @@
 #include "server/ServerList.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
+#include "utils/ArgStr.h"
 
 #include <QTimer>
 
@@ -217,13 +218,13 @@ void GlobalSearchScheduler::onSweepTick()
 
         const auto udpPort = static_cast<uint16>(toask->port() + 4);
         logServerVerbose([&]() -> QString { return QStringLiteral("  -> %1 (%2) UDP:%3 opcode=0x%4 (%5 of %6)%7")
-                             .arg(toask->name(), toask->addressWithPort())
-                             .arg(udpPort)
-                             .arg(pkt->opcode, 2, 16, QLatin1Char('0'))
-                             .arg(m_examined)
-                             .arg(theApp.serverList->serverCount())
-                             .arg(declineMeta && pkt->opcode == OP_GLOBSEARCHREQ3
-                                      ? QStringLiteral(" no-meta") : QString()); });
+                             .arg(argStr(toask->name()), argStr(toask->addressWithPort()),
+                                  argStr(udpPort),
+                                  argFmt(pkt->opcode, 2, 16, QLatin1Char('0')),
+                                  argStr(m_examined),
+                                  argStr(theApp.serverList->serverCount()),
+                                  argStr(declineMeta && pkt->opcode == OP_GLOBSEARCHREQ3
+                                      ? QStringLiteral(" no-meta") : QString())); });
         if (theApp.serverConnect)
             theApp.serverConnect->sendUDPPacket(std::move(pkt), *toask, udpPort);
     }

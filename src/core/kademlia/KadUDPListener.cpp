@@ -27,6 +27,7 @@
 #include "net/Address.h"
 #include "net/EMSocket.h"
 #include "net/Packet.h"
+#include "net/natt/NatRendezvous.h"
 #include "utils/TimeUtils.h"
 
 
@@ -2073,6 +2074,22 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
     auto* clientList = Kademlia::getClientList();
     if (!clientList || !prefs)
         return;
+
+    // Not MFC: a repeat from a node we serve refreshes its UDP endpoint for the NAT-T
+    // endpoint hint (natt-rendezvous.md, served node keepalive). The receiver key proves
+    // the IP. No answer, so the sender does not take it as a new buddy offer.
+    if (m_rxKeyValid) {
+        SafeMemFile rio(data, len);
+        io::readUInt128(rio);                        // buddy ID
+        uint8 refreshHash[16];
+        io::readUInt128(rio).toByteArray(refreshHash);   // same form as incomingBuddy()
+        if (UpDownClient* served = clientList->refreshServedBuddy(ip, udpPort, refreshHash)) {
+            note.answered();
+            if (theApp.natRendezvous)
+                theApp.natRendezvous->handleServedRefresh(*served);
+            return;
+        }
+    }
 
     // Reject if we ourselves are firewalled or UDP-unverified — we can't be a buddy.
     // Matches MFC line 1690.

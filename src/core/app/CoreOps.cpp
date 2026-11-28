@@ -29,6 +29,7 @@
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 #include "utils/PathUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -469,8 +470,8 @@ AddServerOutcome addServer(const QString& address, uint16 port, const QString& n
         const QString text = QCoreApplication::translate("eMule::IpcClientHandler",
                                  "Server %1:%2 not added — LAN address filtered "
                                  "(\"Filter server and client LAN IPs\" is on)")
-                                 .arg(server->bracketedAddress())
-                                 .arg(port);
+                                 .arg(argStr(server->bracketedAddress()),
+                                      argStr(port));
         logWarning(text);
         out.lanFiltered = true;
         out.status = Status::fail(422, text);

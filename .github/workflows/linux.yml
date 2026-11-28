@@ -36,8 +36,8 @@ jobs:
 
     env:
       DEBIAN_FRONTEND: noninteractive
-      QT_VERSION: "6.10.3"
-      QT_ROOT_DIR: /opt/Qt/6.10.3/gcc_64
+      QT_VERSION: "6.12.1"
+      QT_ROOT_DIR: /opt/Qt/6.12.1/gcc_64
       # 22.04 default is GCC 11; GCC 12 is the newest in its archive. Code must
       # stay buildable with it (no std::ranges::contains, std::print, ...).
       CC: gcc-12

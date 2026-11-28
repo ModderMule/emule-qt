@@ -103,6 +103,7 @@ existing IPv6-capable eMule fork, so that the two implementations agree on the w
 | --- | --- | --- | --- | --- |
 | `CT_EMULE_SERVINGBUDDYIPV6` | `0xA0` | HASH (16 B) | c↔c | Hello (§3.1) |
 | `CT_MOD_MISCOPTIONS` | `0xAA` | UINT32 bitfield | c↔c | Hello (§3.1) |
+| `ST_IPV6_CALLBACK` | `0xAA` | UINT8 bitfield | server→client | `OP_SERVERIDENT` (§4.5); not `CT_MOD_MISCOPTIONS`, which is a hello tag |
 | `ST_IPV6_STATUS` | `0xAB` | UINT8 bitfield | server→client | `OP_SERVERIDENT` (§4.3) |
 | `CT_MOD_YOUR_IP` | `0xAD` | UINT32 (v4) or HASH (v6) | c↔c, server→client | Hello (§3.1), `OP_SERVERIDENT` (§4.3) |
 | `CT_MOD_IP_V6` | `0xAE` | HASH (16 B) | c↔c, client→server | Hello (§3.1), login (§4.1), ExtSX (§3.3) |
@@ -119,6 +120,8 @@ existing IPv6-capable eMule fork, so that the two implementations agree on the w
 | --- | --- | --- | --- | --- |
 | `OP_CHANGE_CLIENT_IP` | `0xAC` | `0xE3` (`OP_EDONKEYPROT`) | c↔c, TCP | Implemented (§3.2) |
 | `OP_CALLBACKREQUESTED_IPV6` | `0x26` | `0xE3` (`OP_EDONKEYPROT`) | server→client, TCP | Implemented (§4.5) |
+| `OP_IPV6_CALLBACK_REQUEST` | `0x64` | `0xE3` (`OP_EDONKEYPROT`) | client→server, TCP | Implemented (§4.5) |
+| `OP_IPV6_CALLBACK_OPTIN` | `0x65` | `0xE3` (`OP_EDONKEYPROT`) | client→server, TCP | Implemented (§4.5) |
 
 **No new opcode carries IPv6 sources.** IPv6 sources travel inside the existing
 `OP_ANSWERSOURCES2` (§3.3), `OP_FOUNDSOURCES` / `OP_FOUNDSOURCES_OBFU` / `OP_GLOBFOUNDSOURCES`
@@ -605,7 +608,7 @@ by trial: both layouts are valid key material and trying both would succeed on g
   no IPv6-specific reask opcode or field. Upload-side sender attribution MUST compare the full
   128-bit address, not a 32-bit projection.
 - The server-mediated `OP_CALLBACKREQUEST` (`0x1C`) remains IPv4/LowID only; the IPv6 equivalent is
-  the server→client `OP_CALLBACKREQUESTED_IPV6` of §4.5.
+  `OP_IPV6_CALLBACK_REQUEST` and the server→client `OP_CALLBACKREQUESTED_IPV6` of §4.5.
 
 #### 3.5.1 Buddy-relayed reask — `OP_REASKCALLBACKTCP` (`0x9A`) with an IPv6 requester
 
@@ -806,19 +809,46 @@ everything else.
 - Obfuscation flags and the user hash, when present, apply identically to both families.
 - No server IP/port is stamped on a v6 source; it is reached directly.
 
-### 4.5 `OP_CALLBACKREQUESTED_IPV6` (`0x26`, server→client, TCP)
+### 4.5 IPv6 LowID callback — `0x64` / `0x65` / `0x26`
 
-The IPv6 counterpart of `OP_CALLBACKREQUESTED` (`0x35`), used when a firewalled IPv6 peer asks the
-server to have us call it back.
+Shared by eNode-go and ed2k-server (andrey23127/ed2k-server#62, ModderMule/eNode-go#2). A LowID
+requester whose IPv6 passed the server's dial-back asks the server to have a LowID target dial that
+IPv6. Both sides are explicit: `CT_MOD_IP_V6` alone does not mean a client can take `0x26` (eMuleAI
+cannot), and `OP_CALLBACKREQUEST` (`0x1C`) never ends in a `0x26`.
+
+**Offer.** `ST_IPV6_CALLBACK` (`0xAA`, UINT8; read any int width) bit 0 `IPV6CB_CALLBACK` in
+`OP_SERVERIDENT`. Each ident says whether it is offered now; absent means no.
+
+**Opt-in, target → server: `OP_IPV6_CALLBACK_OPTIN` (`0x65`)**, payload empty or `<features 1>`,
+bit 0 set = in, clear = out. No reply. eMuleQt sends `<0x01>` after every ident that offers the
+callback (login, a dial-back verdict): the server drops the opt-in when `OP_IPV6_UPDATE` withdraws
+our IPv6, and a repeat is harmless.
+
+**Request, requester → server: `OP_IPV6_CALLBACK_REQUEST` (`0x64`)**, `<target LowID 4 LE>`. Sent
+instead of `0x1C` when we are LowID on the server, the target is LowID on the same server, the ident
+offered the callback and `ST_IPV6_STATUS` is `0x07`. Tried before the NAT rendezvous.
+
+**`OP_CALLBACKREQUESTED_IPV6` (`0x26`), server → target:**
 
 ```
-uint8[16]  requester's public IPv6, network order
+uint8[16]  requester's dialled-back IPv6, network order
 uint16     requester's TCP port, LITTLE-endian
+[uint8     crypt options]   only when both clients support obfuscation,
+[uint8[16] user hash]       as in 0x35's 23-byte form
 ```
 
 Minimum payload 18 bytes. On receipt, create a client with a LowID-range placeholder eD2K ID, set
-its address and IPv6 to the given address, mark it IPv6-reachable, and connect. The ban list is
-checked; the IPv4 ipfilter is a no-op here. The classic `0x35` path is unchanged.
+its address and IPv6 to the given address, mark it IPv6-reachable, take the crypt options and user
+hash when present, and connect. The ban list and the IP filter are checked.
+
+**Refusal, server → requester:** `OP_CALLBACK_FAIL` (`0x36`) of 5 bytes, `<target LowID 4><reason 1>`.
+The same form answers a refused `0x1C` (ed2k-server#63, eNode-go), with reasons 5, 7, 8 only:
+that server callback ends at once (Kad buddy, else the attempt). An empty `0x36` (other servers,
+or a `0x1C` from a LowID) names no target and acts only while one `0x1C` is pending. Reasons: 1 not offered, 2 requester HighID, 3 requester not
+verified, 4 self, 5 target gone, 6 target not opted in, 7 target unreachable, 8 rate limited (an
+allowance shared with `0x1C`). The named source goes on to its next route at once (NAT rendezvous,
+Kad buddy); a 45 s timeout does the same. Reasons 1-3 stop requests to this server until the next
+ident; that source is not asked for again for 30 min after 4-6 or a timeout, 1 min otherwise.
 
 ### 4.6 `OP_SERVERLIST` (`0x32`) — optional trailing IPv6 block
 

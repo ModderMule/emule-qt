@@ -98,6 +98,7 @@ static void unixSignalHandler(int)
 #include "utils/ModalHost.h"
 
 #include "IpcMessage.h"
+#include "utils/ArgStr.h"
 
 namespace {
 
@@ -273,7 +274,7 @@ void claimFreePorts(const QString& configDir, bool firstStart)
         const QString why = reserved ? QStringLiteral("reserved by the system")
                                      : QStringLiteral("taken by another program");
         if (const uint16_t freePort = Preferences::freeIpcPort(host, taken, ownPorts); freePort != 0) {
-            eMule::logInfo(QStringLiteral("IPC port %1 is %2, using %3").arg(taken).arg(why).arg(freePort));
+            eMule::logInfo(QStringLiteral("IPC port %1 is %2, using %3").arg(eMule::argStr(taken), eMule::argStr(why), eMule::argStr(freePort)));
             eMule::thePrefs.setIpcPort(freePort);
             changed = true;
         } else {
@@ -468,7 +469,7 @@ QString appImageCoreDir()
     const QByteArray key = QCryptographicHash::hash(eMule::AppConfig::configDir().toUtf8(),
                                                     QCryptographicHash::Md5).toHex().left(8);
     const QString base = QDir::tempPath() + QStringLiteral("/emuleqt-core-%1-%2")
-                                                .arg(::getuid()).arg(QLatin1StringView(key));
+                                                .arg(eMule::argStr(::getuid()), QLatin1StringView(key));
     const QByteArray native = QFile::encodeName(base);
     struct stat st{};
     if ((::mkdir(native.constData(), 0700) != 0 && errno != EEXIST)
@@ -737,8 +738,8 @@ int main(int argc, char* argv[])
         s_attachedCoreProgram = core->program;
         eMule::logInfo(QStringLiteral("Core of another install is running (pid %1), using its "
                                       "config at %2")
-                           .arg(core->pid)
-                           .arg(QDir::toNativeSeparators(core->configDir)));
+                           .arg(eMule::argStr(core->pid),
+                                eMule::argStr(QDir::toNativeSeparators(core->configDir))));
     }
     const QString configDir = eMule::AppConfig::configDir();
     eMule::CrashHandler::install(configDir + QStringLiteral("/crashes"));
@@ -959,12 +960,12 @@ int main(int argc, char* argv[])
                 port = cli.corePort();
             isRemote = true;
             eMule::logInfo(QStringLiteral("Core given on the command line: %1:%2")
-                               .arg(connectHost).arg(port));
+                               .arg(eMule::argStr(connectHost), eMule::argStr(port)));
         } else if (eMule::CoreAttachment::isRemoteAddress(connectHost)) {
             // FAST PATH: remote address configured — skip daemon discovery
             isRemote = true;
             eMule::logInfo(QStringLiteral("Remote core configured at %1:%2 — skipping local daemon discovery.")
-                               .arg(connectHost).arg(port));
+                               .arg(eMule::argStr(connectHost), eMule::argStr(port)));
         } else {
             // Local path — try to find the daemon binary
             daemonPath = resolveDaemonPath();
@@ -1010,7 +1011,7 @@ int main(int argc, char* argv[])
         }
 
         eMule::logInfo(QStringLiteral("Connecting to daemon at %1:%2...")
-                           .arg(connectHost).arg(port));
+                           .arg(eMule::argStr(connectHost), eMule::argStr(port)));
         eMule::CoreAttachment::instance().setTarget(connectHost, port, isRemote);
 
         // Wire IPC client to main window and panels
@@ -1311,7 +1312,7 @@ int main(int argc, char* argv[])
                 QObject::connect(dlg, &eMule::CoreConnectDialog::retryLastCoreRequested,
                                  &mainWindow, [&ipcClient, lastCore, startLocalCoreIfDown] {
                     eMule::logInfo(QStringLiteral("Retrying last core at %1:%2...")
-                                       .arg(lastCore->host).arg(lastCore->port));
+                                       .arg(eMule::argStr(lastCore->host), eMule::argStr(lastCore->port)));
                     const bool remote = eMule::CoreAttachment::isRemoteAddress(lastCore->host);
                     eMule::CoreAttachment::instance().setTarget(lastCore->host, lastCore->port, remote);
                     ipcClient.setAuthToken(lastCore->token);

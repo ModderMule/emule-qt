@@ -8,6 +8,7 @@
 #include "app/AppConfig.h"
 #include "webserver/ApiEventHub.h"
 #include "webserver/OpenApiWriter.h"
+#include "utils/ArgStr.h"
 
 #include <QFile>
 #include <QHttpServer>
@@ -465,7 +466,7 @@ bool WebServer::originAllowed(const QHttpServerRequest& req) const
     // The page was served by this server.
     const QUrl url(text);
     const QByteArray host = req.headers().combinedValue(QByteArrayLiteral("Host"));
-    const QString self = url.port() > 0 ? QStringLiteral("%1:%2").arg(url.host()).arg(url.port())
+    const QString self = url.port() > 0 ? QStringLiteral("%1:%2").arg(argStr(url.host()), argStr(url.port()))
                                         : url.host();
     return !host.isEmpty() && QString::fromLatin1(host) == self;
 }

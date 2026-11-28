@@ -15,6 +15,7 @@
 #include "utils/Opcodes.h"
 #include "utils/PathUtils.h"
 #include "utils/SafeRemove.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -1826,12 +1827,12 @@ void Ed3kJoinBase::saveDeleted() const
     QString out;
     for (const DeletedFile& d : deletedRows())
         out += QStringLiteral("%1\t%2\t%3\t%4\t%5\t%6\t%7\t%8\n")
-                   .arg(hexOf(d.root.bytes), QString::fromLatin1(QUrl::toPercentEncoding(d.owner)))
-                   .arg(d.member)
-                   .arg(d.size)
-                   .arg(d.deletedAt)
-                   .arg(d.checkedAt)
-                   .arg(field(d.name), d.check.join(QLatin1Char(' ')));
+                   .arg(argStr(hexOf(d.root.bytes)), QString::fromLatin1(QUrl::toPercentEncoding(d.owner)),
+                        argStr(d.member),
+                        argStr(d.size),
+                        argStr(d.deletedAt),
+                        argStr(d.checkedAt),
+                        argStr(field(d.name)), argStr(d.check.join(QLatin1Char(' '))));
     QDir().mkpath(joinDir(m_tag));
     const QByteArray utf8 = out.toUtf8();
     writeBlobLater(deletedPath(), spanOf(utf8));
@@ -2616,7 +2617,7 @@ bool Ed3kJoinBase::tryNextSet(const QString& owner)
                 continue;
             t.root = c.root;
             t.publishers.assign(c.publishers.begin(), c.publishers.end());
-            logInfo(QStringLiteral("trying set %1 of %2 (%3 site(s))").arg(hexOf(c.root.bytes), owner).arg(c.sites));
+            logInfo(QStringLiteral("trying set %1 of %2 (%3 site(s))").arg(argStr(hexOf(c.root.bytes)), argStr(owner), argStr(c.sites)));
             return true;
         }
         (void)e->aliasSearchEnd(*t.search);
@@ -2762,7 +2763,7 @@ void Ed3kJoinBase::shareKeptHashed(const QString& owner, int member, const ffi::
         }
         if (hashed->root != root || hashed->size != size) {
             logInfo(QStringLiteral("kept member %1 of %2 changed: not shared any more (%3 B, %4; kept %5 B, %6)")
-                        .arg(member).arg(owner).arg(hashed->size).arg(hexOf(hashed->root.bytes)).arg(size).arg(hexOf(root.bytes)));
+                        .arg(argStr(member), argStr(owner), argStr(hashed->size), argStr(hexOf(hashed->root.bytes)), argStr(size), argStr(hexOf(root.bytes))));
             Kept kept = readKept(owner);
             std::erase_if(kept.members, [&](const Kept::Member& m) { return m.member == member; });
             writeKept(owner, kept);
@@ -2874,7 +2875,7 @@ void Ed3kJoinBase::publishKeptRead(const QString& owner, const Kept& kept, const
         }
     }
     logDebug([&]() -> QString {
-        return QStringLiteral("kept records of %1 published again (%2 alias(es), %3 of unshared files skipped)").arg(owner).arg(published).arg(unshared);
+        return QStringLiteral("kept records of %1 published again (%2 alias(es), %3 of unshared files skipped)").arg(argStr(owner), argStr(published), argStr(unshared));
     });
     pumpSession();
     emit keptRecordsPublished(owner, published);

@@ -4,6 +4,7 @@
 
 #include "net/ListenAddressSet.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QStringList>
 
@@ -58,7 +59,7 @@ bool ListenAddressSet::openAll(const QList<QHostAddress>& wanted, uint16 port, Q
             m_port = p;
             if (!m_bound.isEmpty()) {
                 if (m_bound.size() > 1 || m_bound.front() != QHostAddress(QHostAddress::Any))
-                    logDebug(QStringLiteral("%1: port %2 on %3").arg(setName()).arg(m_port).arg(joined(m_bound)));
+                    logDebug(QStringLiteral("%1: port %2 on %3").arg(argStr(setName()), argStr(m_port), argStr(joined(m_bound))));
                 return true;
             }
             error = wanted.isEmpty() ? QStringLiteral("no usable address on the interface")
@@ -98,7 +99,7 @@ bool ListenAddressSet::syncTo(const QList<QHostAddress>& wanted)
             m_pending.removeOne(a);
             m_reported.removeOne(a);
             changed = true;
-            logInfo(QStringLiteral("%1: listening on %2 port %3").arg(setName(), a.toString()).arg(m_port));
+            logInfo(QStringLiteral("%1: listening on %2 port %3").arg(argStr(setName()), argStr(a.toString()), argStr(m_port)));
             continue;
         }
         if (!m_pending.contains(a))
@@ -107,7 +108,7 @@ bool ListenAddressSet::syncTo(const QList<QHostAddress>& wanted)
         if (!m_reported.contains(a)) {
             m_reported.append(a);
             const QString line = QStringLiteral("%1: cannot listen on %2 port %3: %4")
-                                     .arg(setName(), a.toString()).arg(m_port).arg(why);
+                                     .arg(argStr(setName()), argStr(a.toString()), argStr(m_port), argStr(why));
             if (r == BindResult::Later)
                 logDebug(line);
             else

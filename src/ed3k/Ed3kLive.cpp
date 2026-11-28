@@ -10,6 +10,7 @@
 #include "Ed3kSiteServer.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QHttpHeaders>
 #include <QHttpServerRequest>
@@ -332,7 +333,7 @@ QString Ed3kLive::urlOf(const QString& id) const
 {
     if (!m_sites.isListening())
         return {};
-    return QStringLiteral("http://live-%1.localhost:%2/").arg(id).arg(m_sites.port());
+    return QStringLiteral("http://live-%1.localhost:%2/").arg(argStr(id), argStr(m_sites.port()));
 }
 
 bool Ed3kLive::addPeer(const QString& id, const ffi::Source& peer)

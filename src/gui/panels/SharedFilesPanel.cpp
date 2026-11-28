@@ -51,6 +51,7 @@
 
 #include "IpcMessage.h"
 #include "app/SkinIcons.h"
+#include "utils/ArgStr.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -1523,7 +1524,7 @@ void SharedFilesPanel::showFilesCount(int files)
 {
     const int hashing = m_ipc ? m_ipc->sharedHashingCount() : 0;
     m_headerLabel->setText(hashing > 0
-        ? tr("Shared Files (%1, Hashing %2)").arg(files).arg(hashing)
+        ? tr("Shared Files (%1, Hashing %2)").arg(argStr(files), argStr(hashing))
         : tr("Shared Files (%1)").arg(files));
 }
 
@@ -1578,10 +1579,10 @@ void SharedFilesPanel::requestBrowseDirectory(const QString& dirPath)
         m_haveSnapshot = false;   // the list now holds a directory, not the share
         m_model->resetFiles(std::move(rows));
         m_headerLabel->setText(tr("%1 (%2 of %3 shared)")
-                                   .arg(QDir(dirPath).dirName().isEmpty() ? dirPath
-                                                                          : QDir(dirPath).dirName())
-                                   .arg(sharedCount)
-                                   .arg(m_model->fileCount()));
+                                   .arg(argStr(QDir(dirPath).dirName().isEmpty() ? dirPath
+                                                                          : QDir(dirPath).dirName()),
+                                        argStr(sharedCount),
+                                        argStr(m_model->fileCount())));
         restoreSelection(selection);
         updateStatsTab();
         updateContentTab();
@@ -2435,7 +2436,7 @@ void SharedFilesPanel::populateFilesystemChildren(QTreeWidgetItem* parentItem)
     if (parentItem != m_allDirsItem && parentPath.isEmpty())
         return;
     if (m_ipc && m_fsTreeCore.isEmpty())
-        m_fsTreeCore = QStringLiteral("%1:%2").arg(m_ipc->daemonHost()).arg(m_ipc->daemonPort());
+        m_fsTreeCore = QStringLiteral("%1:%2").arg(argStr(m_ipc->daemonHost()), argStr(m_ipc->daemonPort()));
 
     // the core's disk: asked over IPC when it runs on another host. Symlinked folders
     // listed like MFC; the tree loads lazily, so a loop costs nothing.
@@ -2521,7 +2522,7 @@ QTreeWidgetItem* SharedFilesPanel::findFilesystemItem(const QString& path) const
 
 void SharedFilesPanel::resetFilesystemTree()
 {
-    const QString core = m_ipc ? QStringLiteral("%1:%2").arg(m_ipc->daemonHost()).arg(m_ipc->daemonPort())
+    const QString core = m_ipc ? QStringLiteral("%1:%2").arg(argStr(m_ipc->daemonHost()), argStr(m_ipc->daemonPort()))
                                : QString();
     if (core == m_fsTreeCore)
         return;

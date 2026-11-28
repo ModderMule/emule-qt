@@ -139,6 +139,8 @@ public:
     /// We serve a Kad buddy and just relayed an OP_REASKCALLBACKUDP for it.
     void handleBuddyRelay(const Endpoint& requester, const uint8* data, uint32 size,
                           const UpDownClient& served);
+    /// We serve @p served and its repeat FINDBUDDY_REQ refreshed its UDP endpoint.
+    void handleServedRefresh(const UpDownClient& served);
     /// Our serving buddy relayed an OP_RENDEZVOUS. @p data starts after the opcode byte.
     bool handleRendezvousFromBuddy(const Endpoint& requester, const uint8* data, uint32 size);
     /// OP_DIRECTCALLBACKREQ with CONNECT_OPT_NATT_QUIC: we are the UDP-open source, the

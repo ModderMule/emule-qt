@@ -21,6 +21,7 @@
 #include "portmap/PortMapper.h"
 #include "utils/Log.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QHostAddress>
@@ -140,9 +141,9 @@ void ServerConnect::tryAnotherConnectionRequest()
             // Only auto-connect to static servers if configured
             if (!m_config.autoConnectStaticOnly || next->isStaticMember()) {
                 logServerVerbose([&]() -> QString { return QStringLiteral("tryAnotherConnectionRequest: next candidate %1 (%2) obfuscated=%3 (slot %4/%5)")
-                                     .arg(next->name(), next->addressWithPort())
-                                     .arg(m_tryObfuscated)
-                                     .arg(m_connectionAttempts.size() + 1).arg(m_maxSimCons); });
+                                     .arg(argStr(next->name()), argStr(next->addressWithPort()),
+                                          argStr(m_tryObfuscated),
+                                          argStr(m_connectionAttempts.size() + 1), argStr(m_maxSimCons)); });
                 connectToServer(next, true, !m_tryObfuscated);
             } else {
                 logServerVerbose([&]() -> QString { return QStringLiteral("tryAnotherConnectionRequest: skipping non-static %1 (static-only auto-connect)")
@@ -163,7 +164,7 @@ void ServerConnect::connectToAnyServer(size_t startAt, bool prioSort,
                                        bool isAuto, bool noCrypt)
 {
     logServerVerbose([&]() -> QString { return QStringLiteral("connectToAnyServer: %1 servers in list, startAt=%2 prioSort=%3 isAuto=%4 noCrypt=%5")
-                         .arg(m_serverList.serverCount()).arg(startAt).arg(prioSort).arg(isAuto).arg(noCrypt); });
+                         .arg(argStr(m_serverList.serverCount()), argStr(startAt), argStr(prioSort), argStr(isAuto), argStr(noCrypt)); });
     if (thePrefs.disableEd2k()) {
         logInfo(QStringLiteral("Not connecting: eD2K is disabled"));
         return;
@@ -257,8 +258,8 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
     auto* socket = createServerSocket(m_singleConnecting);
 
     logServerVerbose([&]() -> QString { return QStringLiteral("connectToServer: %1 (%2) multiconnect=%3 noCrypt=%4 openSockets=%5")
-                         .arg(server->name()).arg(server->addressWithPort())
-                         .arg(multiconnect).arg(noCrypt).arg(m_openSockets.size()); });
+                         .arg(argStr(server->name()), argStr(server->addressWithPort()),
+                              argStr(multiconnect), argStr(noCrypt), argStr(m_openSockets.size())); });
 
     // Registered before the dial: a connect that fails inside connectTo() (an
     // unusable bind address does) is torn down on the spot, and an entry added
@@ -368,9 +369,9 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
         const Server* cserver = sender->currentServer();
         if (cserver) {
             logInfo(QStringLiteral("Connected to %1 (%2), sending login request (obfuscating=%3 encReady=%4)")
-                       .arg(cserver->name(), Endpoint(sender->sessionAddress(), cserver->port()).toString())
-                       .arg(sender->isObfuscating())
-                       .arg(sender->isEncryptionLayerReady()));
+                       .arg(argStr(cserver->name()), argStr(Endpoint(sender->sessionAddress(), cserver->port()).toString()),
+                            argStr(sender->isObfuscating()),
+                            argStr(sender->isEncryptionLayerReady())));
 
         }
 
@@ -490,8 +491,8 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
 
     if (const ServerFailure& failure = sender->lastFailure(); failure.isSet()) {
         logServerVerbose([&]() -> QString { return QStringLiteral("[%1] failure: phase=%2 reason=%3")
-                             .arg(cserver ? cserver->name() : QStringLiteral("?"))
-                             .arg(failure.phaseName(), failure.reasonName()); });
+                             .arg(argStr(cserver ? cserver->name() : QStringLiteral("?")),
+                                  argStr(failure.phaseName()), argStr(failure.reasonName())); });
     }
 
     switch (sender->connectionState()) {
@@ -509,9 +510,9 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
     case ServerConnState::ServerDead:
         if (cserver) {
             logInfo(QStringLiteral("Server %1 (%2) is dead (obfuscating=%3 encReady=%4)")
-                        .arg(cserver->name(), Endpoint(sender->sessionAddress(), cserver->port()).toString())
-                        .arg(sender->isObfuscating())
-                        .arg(sender->isEncryptionLayerReady()));
+                        .arg(argStr(cserver->name()), argStr(Endpoint(sender->sessionAddress(), cserver->port()).toString()),
+                             argStr(sender->isObfuscating()),
+                             argStr(sender->isEncryptionLayerReady())));
         }
         if (listServer && otherFamily.isNull())
             countFailure(listServer);
@@ -721,7 +722,7 @@ void ServerConnect::countFailure(Server* listServer)
     // Static servers are the user's own list: they only accumulate.
     if (listServer->noteFailure(thePrefs.deadServerRetries())) {
         logInfo(QStringLiteral("Disabling dead server %1 (failed %2 times)")
-                    .arg(listServer->name()).arg(listServer->failedCount()));
+                    .arg(argStr(listServer->name()), argStr(listServer->failedCount())));
     }
     m_serverList.notifyServerUpdated(listServer);
 }
@@ -1171,8 +1172,8 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     packet->opcode = OP_LOGINREQUEST;
 
     logServerVerbose([&]() -> QString { return QStringLiteral(">>> Sending OP_LoginRequest (clientID=%1 port=%2 nick=%3 caps=0x%4)")
-                         .arg(m_clientID).arg(m_config.listenPort).arg(m_config.userNick)
-                         .arg(srvCaps, 0, 16); });
+                         .arg(argStr(m_clientID), argStr(m_config.listenPort), argStr(m_config.userNick),
+                              argFmt(srvCaps, 0, 16)); });
     // forceImmediateSend=true: write the login to the socket NOW rather than
     // deferring via QTimer::singleShot(0).  After a DH handshake the login
     // must reach the server in the same event-loop iteration, otherwise
@@ -1189,11 +1190,11 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
                                     uint32 serverReportedIP)
 {
     logServerVerbose([&]() -> QString { return QStringLiteral("onLoginReceived: clientID=%1 (%2) tcpFlags=0x%3 serverReportedIP=%4 smartIdState=%5")
-                         .arg(clientID)
-                         .arg(eMule::isLowID(clientID) ? QStringLiteral("LowID") : QStringLiteral("HighID"))
-                         .arg(tcpFlags, 0, 16)
-                         .arg(Address::fromNetworkOrder(serverReportedIP).toString())
-                         .arg(m_smartIdState); });
+                         .arg(argStr(clientID),
+                              argStr(eMule::isLowID(clientID) ? QStringLiteral("LowID") : QStringLiteral("HighID")),
+                              argFmt(tcpFlags, 0, 16),
+                              argStr(Address::fromNetworkOrder(serverReportedIP).toString()),
+                              argStr(m_smartIdState)); });
 
     // #14: the socket applied the server's capability flags only to its throwaway
     // copy; push them (including the obfuscation bit the IDCHANGE handler OR-ed in
@@ -1562,7 +1563,7 @@ bool ServerConnect::requestHighIdRecheck(const QString& why, bool portChanged)
     if (m_lastRecheckMs >= 0 && now - m_lastRecheckMs < interval) {
         logServerVerbose([&]() -> QString {
             return QStringLiteral("HighID recheck (%1) skipped: last one %2 s ago")
-                .arg(why).arg((now - m_lastRecheckMs) / 1000);
+                .arg(argStr(why), argStr((now - m_lastRecheckMs) / 1000));
         });
         return false;
     }
@@ -1574,7 +1575,7 @@ bool ServerConnect::requestHighIdRecheck(const QString& why, bool portChanged)
         auto packet = std::make_unique<Packet>(data);
         packet->opcode = OP_RECHECKFIREWALL;
         logInfo(QStringLiteral("HighID recheck (%1): asking %2 to test port %3 again")
-                    .arg(why, entry->name()).arg(loginTcpPort()));
+                    .arg(argStr(why), argStr(entry->name()), argStr(loginTcpPort())));
         if (!sendPacket(std::move(packet)))
             return false;
         m_recheckAnswerTimer.start(kRecheckAnswerTimeoutMs);
@@ -1934,6 +1935,23 @@ ServerSocket* ServerConnect::createServerSocket(bool manualSingleConnect)
             theApp.clientList->serverCallbackFailed();
     });
 
+    // A refused OP_IPV6_CALLBACK_REQUEST (ed2k-server#62) or OP_CALLBACKREQUEST (#63).
+    // Reasons 1-3 answer only the IPv6 request: they are about us, not the peer, and hold
+    // until the next ident: stop asking this server till then. The source itself goes on
+    // to its next route at once.
+    connect(socket, &ServerSocket::callbackRefused, this,
+            [this, socket](uint32 targetID, uint8 reason) {
+                if (socket != m_connectedSocket)
+                    return;
+                if (reason == IPV6CB_REFUSED_NOT_OFFERED || reason == IPV6CB_REFUSED_REQUESTER_HIGHID
+                    || reason == IPV6CB_REFUSED_UNVERIFIED) {
+                    if (Server* live = socket->currentServer())
+                        live->setIPv6CallbackOffered(false);
+                }
+                if (theApp.clientList)
+                    theApp.clientList->serverCallbackRefused(targetID, reason);
+            });
+
     connect(socket, &ServerSocket::callbackRequested, this,
             [](uint32 clientIP, uint16 clientPort, const uint8* cryptData, uint32 cryptSize) {
                 if (!theApp.clientList)
@@ -1971,10 +1989,11 @@ ServerSocket* ServerConnect::createServerSocket(bool manualSingleConnect)
                 client->tryToConnect();
             });
 
-    // IPv6 LowID callback (S4): the server relays the requester's public IPv6 endpoint;
-    // we connect back over IPv6 exactly as the classic 0x35 handler does over IPv4.
+    // IPv6 LowID callback (ed2k-server#62): we opted in, and the server relays the
+    // dialled-back IPv6 endpoint of a LowID requester; we connect back over IPv6 exactly as
+    // the classic 0x35 handler does over IPv4, crypt trailer included.
     connect(socket, &ServerSocket::callbackRequestedIPv6, this,
-            [](const Endpoint& requester) {
+            [](const Endpoint& requester, const uint8* cryptData, uint32 cryptSize) {
                 if (!theApp.clientList)
                     return;
                 const Address& addr = requester.address();
@@ -1987,6 +2006,11 @@ ServerSocket* ServerConnect::createServerSocket(bool manualSingleConnect)
                 client->setUserAddress(addr);
                 client->setUserIPv6(addr);
                 client->setOpenIPv6(true);
+                // <options 1><user hash 16>, as in 0x35: the hash keys the obfuscation
+                if (cryptData && cryptSize >= 17) {
+                    client->setUserHash(cryptData + 1);
+                    client->setConnectOptions(cryptData[0], true, false);
+                }
                 theApp.clientList->addClient(client);
                 client->tryToConnect();
             });

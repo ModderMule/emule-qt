@@ -9,6 +9,7 @@
 #include "prefs/Preferences.h"
 #include "utils/BadgeIcons.h"
 #include "utils/Clipboard.h"
+#include "utils/ArgStr.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -197,7 +198,7 @@ QString Ed3kRoomTab::keyOfShown(const QString& shown) const
 QString Ed3kRoomTab::modMarkHtml()
 {
     return QStringLiteral("<img src=\"%1\" width=\"%2\" height=\"%2\" title=\"%3\"> ")
-        .arg(QString::fromLatin1(kModMarkUrl)).arg(kModMarkSize).arg(tr("Moderator"));
+        .arg(QString::fromLatin1(kModMarkUrl), argStr(kModMarkSize), tr("Moderator"));
 }
 
 QString Ed3kRoomTab::shownName(const QString& nick, const QString& key)

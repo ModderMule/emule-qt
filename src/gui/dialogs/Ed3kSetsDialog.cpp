@@ -14,6 +14,7 @@
 #include "utils/Log.h"
 #include "utils/StringUtils.h"
 #include "utils/ModalHost.h"
+#include "utils/ArgStr.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -682,10 +683,10 @@ void Ed3kSetsDialog::onSetChanged()
                          .arg(count("removed"));
         if (!mounts.isEmpty())
             lines << tr("A new version of the mounted folder(s) %1 is waiting: %2 added, %3 changed, %4 removed.")
-                         .arg(mounts.join(QStringLiteral(", ")))
-                         .arg(count("added"))
-                         .arg(count("changed"))
-                         .arg(count("removed"));
+                         .arg(argStr(mounts.join(QStringLiteral(", "))),
+                              argStr(count("added")),
+                              argStr(count("changed")),
+                              argStr(count("removed")));
         lines << paidLines(paidOf(s));
         const qsizetype parts = s.value(QStringLiteral("parts")).toArray().size();
         if (parts > 0)
@@ -917,10 +918,10 @@ void Ed3kSetsDialog::fillPartsMenu()
     menu->addSeparator();
     for (const auto& [author, sum] : byAuthor)
         menu->addAction(tr("From %1 (parts: %2, files: %3, %4)")
-                            .arg(author.left(8))
-                            .arg(sum.parts)
-                            .arg(sum.files)
-                            .arg(formatByteSize(sum.size)),
+                            .arg(argStr(author.left(8)),
+                                 argStr(sum.parts),
+                                 argStr(sum.files),
+                                 argStr(formatByteSize(sum.size))),
                         this, [this, a = author] { downloadParts(a); });
 }
 

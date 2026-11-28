@@ -8,6 +8,7 @@
 #include "net/LocalIPv6.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QNetworkInterface>
 
@@ -115,7 +116,7 @@ void probePin(Resolution& r)
         const bool v4 = r.literal.protocol() == QAbstractSocket::IPv4Protocol;
         if (!(v4 ? p.v4 : p.v6)) {
             const QString why = QStringLiteral("cannot pin a socket to interface %1 (error %2)")
-                                    .arg(r.name).arg(v4 ? p.v4Error : p.v6Error);
+                                    .arg(argStr(r.name), argStr(v4 ? p.v4Error : p.v6Error));
             r = Resolution{.selector = r.selector};
             block(r, why);
         }
@@ -123,7 +124,7 @@ void probePin(Resolution& r)
     }
     if (!p.v4 && !p.v6) {
         const QString why = QStringLiteral("cannot pin a socket to interface %1 (IPv4 error %2, "
-                                           "IPv6 error %3)").arg(r.name).arg(p.v4Error).arg(p.v6Error);
+                                           "IPv6 error %3)").arg(argStr(r.name), argStr(p.v4Error), argStr(p.v6Error));
         r = Resolution{.selector = r.selector};
         block(r, why);
         return;
@@ -148,22 +149,22 @@ void report(const Resolution& r)
         break;
     case State::Bound:
         if (r.literal.isNull())
-            logInfo(QStringLiteral("Network interface: bound to %1 (index %2)").arg(r.name).arg(r.index));
+            logInfo(QStringLiteral("Network interface: bound to %1 (index %2)").arg(argStr(r.name), argStr(r.index)));
         else
             logInfo(QStringLiteral("Network interface: bound to %1 on %2 (index %3)")
-                        .arg(r.literal.toString(), r.name).arg(r.index));
+                        .arg(argStr(r.literal.toString()), argStr(r.name), argStr(r.index)));
         if (r.literal.protocol() == QAbstractSocket::IPv6Protocol)
             logWarning(QStringLiteral("Bound to IPv6 address %1: IPv4-only servers and peers "
                                       "are unreachable").arg(r.literal.toString()));
         if (!r.pin.dual)
             logWarning(QStringLiteral("Network interface %1 refuses the IPv4 pin on dual-stack "
-                                      "sockets (error %2): IPv4 only").arg(r.name).arg(r.pin.dualError));
+                                      "sockets (error %2): IPv4 only").arg(argStr(r.name), argStr(r.pin.dualError)));
         else if (!r.pin.v6)
             logWarning(QStringLiteral("Network interface %1 refuses the IPv6 pin (error %2): "
-                                      "IPv4 only").arg(r.name).arg(r.pin.v6Error));
+                                      "IPv4 only").arg(argStr(r.name), argStr(r.pin.v6Error)));
         if (!r.pin.v4)
             logWarning(QStringLiteral("Network interface %1 refuses the IPv4 pin (error %2): "
-                                      "IPv6 only").arg(r.name).arg(r.pin.v4Error));
+                                      "IPv6 only").arg(argStr(r.name), argStr(r.pin.v4Error)));
         if (r.noInternetRoute)
             logWarning(QStringLiteral("Network interface %1 has no default route (split-tunnel "
                                       "VPN?): servers and peers outside its subnets are "

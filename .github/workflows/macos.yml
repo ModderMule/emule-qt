@@ -30,11 +30,11 @@ env:
   # ed3k: packmule is the private ModderMule/packmule; without the secret
   # (forks, 3rd party) it is skipped and EMULE_ED3K turns itself off
   HAS_PACKMULE_TOKEN: ${{ secrets.PACKMULE_TOKEN != '' }}
-  # Oldest macOS the app runs on; 13.0 is the floor of the Qt 6.10 binaries.
+  # Oldest macOS the app runs on; 14.4 is the floor of the Qt 6.12 binaries.
   # Read by CMake, clang, scripts/build-macos-deps.sh and, as a hard check, by
   # scripts/bundle-macos.sh.  Unset, everything is built for the runner's own
   # macOS -- v0.5.6 needed macOS 26 that way.
-  MACOSX_DEPLOYMENT_TARGET: "13.0"
+  MACOSX_DEPLOYMENT_TARGET: "14.4"
   BUILD_ARCH: arm64
   PROTOC_VERSION: "36.2"
   PROTOC_SHA256: 83d0dc80672f53486f54299bca6177159f9cad1fd54d4d3143eeea53c4423e1b
@@ -88,7 +88,7 @@ jobs:
       - name: Install Qt 6
         uses: jurplel/install-qt-action@v4
         with:
-          version: "6.10.3"
+          version: "6.12.1"
           arch: clang_64
           modules: qthttpserver qtwebsockets qtmultimedia qtgrpc   # qtgrpc ships QtProtobuf
           cache: true

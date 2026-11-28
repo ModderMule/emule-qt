@@ -6701,6 +6701,8 @@ bool Preferences::load(const QString& filePath)
                     entry.maxAgeDays = node["maxAgeDays"].as<int>(0);
                     entry.intervalMinutes = node["intervalMinutes"].as<int>(30);
                     entry.grabExisting = node["grabExisting"].as<bool>(false);
+                    entry.network = indexerFeedNetworkFromString(
+                        QString::fromStdString(node["network"].as<std::string>("auto")));
                     // Not clamped against categoryCount() here: that would make
                     // a feed's destination depend on the order this function
                     // reads its blocks in. SetCategories is what keeps it right.
@@ -8194,6 +8196,10 @@ QByteArray Preferences::encode() const
                     // key as a query parameter.
                     out << YAML::Key << "urlEnc" << YAML::Value
                         << aesEncryptToBase64(feed.url, encKey).toStdString();
+                }
+                if (feed.network != IndexerFeedNetwork::Auto) {
+                    out << YAML::Key << "network" << YAML::Value
+                        << indexerFeedNetworkToString(feed.network).toStdString();
                 }
             } else {
                 if (!feed.query.isEmpty())

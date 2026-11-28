@@ -2,6 +2,7 @@
 /// @brief One-shot IPC client for CLI commands to a running daemon.
 
 #include "CliIpcClient.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 
@@ -58,7 +59,7 @@ void CliIpcClient::sendCommand(const QString& host, uint16_t port,
     connect(m_socket, &QTcpSocket::errorOccurred, this,
             [this, host, port](QAbstractSocket::SocketError) {
         fail(QStringLiteral("Cannot connect to emulecored at %1:%2. Is the daemon running?")
-                 .arg(host).arg(port));
+                 .arg(argStr(host), argStr(port)));
     });
 
     m_socket->connectToHost(host, port);

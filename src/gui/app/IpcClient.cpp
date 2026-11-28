@@ -9,6 +9,7 @@
 #include "app/AppConfig.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCborArray>
 #include <QCoreApplication>
@@ -661,7 +662,7 @@ int IpcClient::sendRequest(IpcMessage msg, ResponseCallback callback)
 
     if (thePrefs.enableIpcLog())
         emit ipcLogMessage(
-            QStringLiteral("%1 [seq=%2]").arg(ipcMsgTypeName(tagged.type())).arg(seqId),
+            QStringLiteral("%1 [seq=%2]").arg(argStr(ipcMsgTypeName(tagged.type())), argStr(seqId)),
             /*outgoing=*/true);
 
     return seqId;
@@ -1376,7 +1377,7 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
 {
     if (thePrefs.enableIpcLog())
         emit ipcLogMessage(
-            QStringLiteral("%1 [seq=%2]").arg(ipcMsgTypeName(msg.type())).arg(msg.seqId()),
+            QStringLiteral("%1 [seq=%2]").arg(argStr(ipcMsgTypeName(msg.type())), argStr(msg.seqId())),
             /*outgoing=*/false);
     if (m_waitingOnBusyCore) {
         // it answers again: the next timeout is judged afresh

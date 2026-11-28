@@ -43,6 +43,7 @@
 #include "kademlia/KadSearch.h"
 #include "server/ServerConnect.h"
 #include "server/Server.h"
+#include "utils/ArgStr.h"
 
 
 #include <QBuffer>
@@ -827,7 +828,7 @@ bool PartFile::checkSizeAgainstHashset()
     const auto size = static_cast<uint64>(fileSize());
     logWarning(QStringLiteral("Wrong size for \"%1\": %2 bytes, but its hashset is for a file "
                               "of %3 to %4 bytes — looking the real size up")
-                   .arg(fileName()).arg(size).arg(size + 1).arg(size + PARTSIZE - 1));
+                   .arg(argStr(fileName()), argStr(size), argStr(size + 1), argStr(size + PARTSIZE - 1)));
 
     // Hold: frees the Kad target for the size probe, and nothing carries the bad size
     if (kadFileSearchID()) {
@@ -887,7 +888,7 @@ void PartFile::applyCorrectedSize(uint64 realSize, const QString& from)
     emit m_partNotifier.statusChanged(status());
 
     logStatusInfo(QStringLiteral("Size of \"%1\" corrected from %2 to %3 bytes (from %4)")
-                      .arg(fileName()).arg(oldSize).arg(realSize).arg(from));
+                      .arg(argStr(fileName()), argStr(oldSize), argStr(realSize), argStr(from)));
 }
 
 void PartFile::failSizeLookup(const QString& serverReason, const QString& kadReason)
@@ -1522,7 +1523,7 @@ void PartFile::applyRehashResult(const QByteArray& partOk)
     m_fileOp = PartFileOp::None;
 
     logInfo(QStringLiteral("Rehash finished: %1 — %2/%3 parts intact")
-                .arg(fileName()).arg(good).arg(parts));
+                .arg(argStr(fileName()), argStr(good), argStr(parts)));
 
     // Stamps m_tLastModified from the .part we just read, so the next load agrees
     // with it and does not rehash again.
@@ -1581,7 +1582,7 @@ QByteArray PartFile::verifyPartData(
             data = file.read(static_cast<qint64>(len));
         }
         if (static_cast<uint64>(data.size()) != len) {
-            logWarning(QStringLiteral("Rehash: short read in %1 at part %2").arg(partPath).arg(part));
+            logWarning(QStringLiteral("Rehash: short read in %1 at part %2").arg(argStr(partPath), argStr(part)));
             break;   // the rest stays unread
         }
         readOnce.readUpTo(static_cast<qint64>(start + len));
@@ -1757,9 +1758,9 @@ void PartFile::resumeFile(bool quiet)
 
     if (!quiet)
         logInfo(QStringLiteral("Download resumed: %1 — status=%2 gaps=%3")
-                    .arg(fileName())
-                    .arg(static_cast<int>(status()))
-                    .arg(m_gapList.size()));
+                    .arg(argStr(fileName()),
+                         argStr(static_cast<int>(status())),
+                         argStr(m_gapList.size())));
 
     // If we had a completion error but no gaps, retry completion
     if (m_completionError && m_gapList.empty()) {
@@ -1785,8 +1786,8 @@ void PartFile::stopFile(bool cancel)
     removeAllSources(true);
 
     logInfo(QStringLiteral("Download %1: %2")
-                .arg(cancel ? QStringLiteral("cancelled") : QStringLiteral("stopped"))
-                .arg(fileName()));
+                .arg(argStr(cancel ? QStringLiteral("cancelled") : QStringLiteral("stopped")),
+                     argStr(fileName())));
 
     // Flush any buffered data
     if (!m_bufferedData.empty())
@@ -2799,7 +2800,7 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
         const uint64 fs = static_cast<uint64>(fileSize());
         if (fs > 0 && partFileLen < fs && !isPureGap(partFileLen, fs - 1)) {
             logWarning(QStringLiteral("PartFile::loadPartFile: .part file truncated (%1 < %2), adding gap for tail")
-                           .arg(partFileLen).arg(fs));
+                           .arg(argStr(partFileLen), argStr(fs)));
             addGap(partFileLen, fs - 1);
         }
     }
@@ -3580,7 +3581,7 @@ void PartFile::checkMajorityName()
     renameTo(name);
     m_fakeVerdictAt = 0;   // judged by the new name next time
     logStatusInfo(QStringLiteral("Download renamed: \"%1\" to \"%2\" (the name %3 of %4 sources use)")
-                      .arg(oldName, name).arg(top->second).arg(named));
+                      .arg(argStr(oldName), argStr(name), argStr(top->second), argStr(named)));
 }
 
 std::map<QString, int> PartFile::sourceNameCounts(bool withKadNotes) const
@@ -3799,7 +3800,7 @@ QString FileMoveThread::uniqueDestination(const QString& path,
 
     QString candidate;
     do {
-        candidate = QStringLiteral("%1%2(%3)%4").arg(dir, stem).arg(++count).arg(ext);
+        candidate = QStringLiteral("%1%2(%3)%4").arg(argStr(dir), argStr(stem), argStr(++count), argStr(ext));
     } while (exists(candidate));
     return candidate;
 }
@@ -4419,8 +4420,8 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
     const qint64 dataSize = data.length() - data.position();
     if (thePrefs.wantsSourceExchangeLog())
         logDebug([&]() -> QString { return QStringLiteral("SXRecv: Client source response; SX2=%1, Ver=%2, Count=%3, File=\"%4\"")
-                     .arg(isSX2 ? QStringLiteral("Yes") : QStringLiteral("No"))
-                     .arg(clientSXVersion).arg(srcCount).arg(fileName()); });
+                     .arg(argStr(isSX2 ? QStringLiteral("Yes") : QStringLiteral("No")),
+                          argStr(clientSXVersion), argStr(srcCount), argStr(fileName())); });
 
     // Byte size of one source record for a given SX version.
     const auto recordSize = [](uint8 v) -> qint64 {
@@ -4600,7 +4601,7 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
                                     && userId == sender->connectAddress().toNetworkUint32();
             if (fromSender && thePrefs.wantsSourceExchangeLog())
                 logDebug([&]() -> QString { return QStringLiteral("SXRecv: buddy offer from %1, Kad port %2")
-                             .arg(sender->userName()).arg(buddyOfferPort); });
+                             .arg(argStr(sender->userName()), argStr(buddyOfferPort)); });
             // Claimed over this link (OP_BUDDYCLAIM); see docs/protocol/extxs-buddy-route.md
             if (fromSender && theApp.clientList)
                 buddyClaimStarted |= theApp.clientList->takeBuddyOffer(*sender, buddyOfferPort);
@@ -4809,10 +4810,10 @@ void PartFile::logKadSourceSearchSkipped(uint64 curTick, const QString& reason)
     m_lastKadSkipLogTime = curTick;
 
     kad::logKad(QStringLiteral("Kad: no source search for %1 — %2 (sources=%3 searchId=%4)")
-                    .arg(fileName())
-                    .arg(reason)
-                    .arg(sourceCount())
-                    .arg(kadFileSearchID()));
+                    .arg(argStr(fileName()),
+                         argStr(reason),
+                         argStr(sourceCount()),
+                         argStr(kadFileSearchID())));
 }
 
 // ===========================================================================

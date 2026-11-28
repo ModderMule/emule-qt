@@ -6,6 +6,7 @@
 #include "utils/ColorUtils.h"
 #include "utils/CountryFlags.h"
 #include "utils/StringUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QCborMap>
 #include <QColor>
@@ -34,7 +35,7 @@ QString addressSortKey(const QString& ip, uint16_t port)
             padded << QStringLiteral("%1").arg(octet.toUInt(), 3, 10, QLatin1Char('0'));
         host = padded.join(QLatin1Char('.'));
     }
-    return QStringLiteral("%1:%2").arg(host).arg(port, 5, 10, QLatin1Char('0'));
+    return QStringLiteral("%1:%2").arg(argStr(host), argFmt(port, 5, 10, QLatin1Char('0')));
 }
 
 /// Strength order, which the wire value is not — it is 0 Normal, 1 High, 2 Low.

@@ -22,6 +22,7 @@
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QTimer>
@@ -159,9 +160,9 @@ SearchDispatch dispatchEd2kSearch(SearchList& list, uint32 searchID, SearchType 
         pkt->prot = OP_EDONKEYPROT;
         std::memcpy(pkt->pBuffer, payload.constData(), static_cast<size_t>(payload.size()));
         logServerVerbose([&]() -> QString { return QStringLiteral(">>> TCP server search: expr=\"%1\" -> %2 (%3 byte payload)")
-                             .arg(params.expression)
-                             .arg(current ? current->name() : QStringLiteral("connected server"))
-                             .arg(payload.size()); });
+                             .arg(argStr(params.expression),
+                                  argStr(current ? current->name() : QStringLiteral("connected server")),
+                                  argStr(payload.size())); });
         localRequestSent = theApp.serverConnect->sendPacket(std::move(pkt));
     }
 
@@ -246,7 +247,7 @@ void startBlendedMetaSearches(uint32 searchID, const SearchParams& params)
         auto request = buildMetaSearchRequest(params, type);
         if (!request) {
             logServerVerbose([&]() -> QString { return QStringLiteral("Blended %1 search %2 skipped: %3")
-                                 .arg(metaNetworkName(type)).arg(searchID).arg(request.error()); });
+                                 .arg(argStr(metaNetworkName(type)), argStr(searchID), argStr(request.error())); });
             continue;
         }
         auto candidates = metaSearchCandidates(type);

@@ -774,7 +774,7 @@ void OptionsDialog::setupSidebar()
     static constexpr PageDef kUsenetPages[] = {
         {PageUsenet,        QT_TR_NOOP("Usenet"),              QStyle::SP_DriveNetIcon,           "Usenet.ico"},
         {PageIndexers,      QT_TR_NOOP("Indexers"),            QStyle::SP_FileDialogContentsView, "UsenetSearch.ico"},
-        {PageFeeds,         QT_TR_NOOP("Feeds"),               QStyle::SP_BrowserReload,          "SearchEdit.ico"},
+        {PageFeeds,         QT_TR_NOOP("Indexers/RSS"),        QStyle::SP_BrowserReload,          "SearchEdit.ico"},
     };
     static constexpr PageDef kBitTorrentPages[] = {
         {PageBitTorrent,    QT_TR_NOOP("BitTorrent"),    QStyle::SP_DriveNetIcon,           "Torrent.ico"},
@@ -5389,6 +5389,16 @@ QWidget* OptionsDialog::createFeedsPage()
            "with the key hidden."));
     form->addRow(tr("Feed URL:"), m_feedUrlEdit);
 
+    m_feedNetworkCombo = new QComboBox(details);
+    m_feedNetworkCombo->addItem(tr("Detect per release"), QStringLiteral("auto"));
+    m_feedNetworkCombo->addItem(tr("Usenet (NZB)"), QStringLiteral("usenet"));
+    m_feedNetworkCombo->addItem(tr("BitTorrent"), QStringLiteral("bittorrent"));
+    m_feedNetworkCombo->setToolTip(
+        tr("Where this feed's releases are queued. Detection reads magnet links, "
+           ".torrent links and the enclosure type; pick BitTorrent for a tracker "
+           "feed that gives none of these."));
+    form->addRow(tr("Network:"), m_feedNetworkCombo);
+
     m_feedAcceptEdit = new QLineEdit(details);
     m_feedAcceptEdit->setToolTip(
         tr("Only queue releases whose name matches this pattern. Empty accepts "
@@ -5476,6 +5486,7 @@ QWidget* OptionsDialog::createFeedsPage()
         const bool have = m_currentFeed >= 0 && m_currentFeed < m_feeds.size();
         const bool isUrl = index == 1;
         m_feedUrlEdit->setEnabled(have && isUrl);
+        m_feedNetworkCombo->setEnabled(have && isUrl);
         m_feedQueryEdit->setEnabled(have && !isUrl);
         m_feedCategoriesEdit->setEnabled(have && !isUrl);
         m_feedIndexersEdit->setEnabled(have && !isUrl);
@@ -5494,6 +5505,8 @@ QWidget* OptionsDialog::createFeedsPage()
     for (QCheckBox* check : {m_feedEnabledCheck, m_feedGrabExistingCheck})
         connect(check, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_feedDownloadCategoryCombo, &QComboBox::currentIndexChanged, this,
+            &OptionsDialog::markDirty);
+    connect(m_feedNetworkCombo, &QComboBox::currentIndexChanged, this,
             &OptionsDialog::markDirty);
 
     loadDownloadCategories();
@@ -5735,6 +5748,7 @@ void OptionsDialog::populateFeedDetails(int index)
     const QSignalBlocker b13(m_feedEnabledCheck);
     const QSignalBlocker b14(m_feedGrabExistingCheck);
     const QSignalBlocker b15(m_feedDownloadCategoryCombo);
+    const QSignalBlocker b16(m_feedNetworkCombo);
 
     m_feedNameEdit->setText(feed.value(QStringLiteral("name")).toString());
     const bool isUrl = feed.value(QStringLiteral("kind")).toString() == QLatin1String("url");
@@ -5754,6 +5768,9 @@ void OptionsDialog::populateFeedDetails(int index)
     // Arrives redacted, and is sent back only when the user retypes it — the
     // same round-trip rule the indexer API key uses, because it *is* one.
     m_feedUrlEdit->setText(feed.value(QStringLiteral("displayUrl")).toString());
+    const int netRow = m_feedNetworkCombo->findData(
+        feed.value(QStringLiteral("network")).toString(QStringLiteral("auto")));
+    m_feedNetworkCombo->setCurrentIndex(netRow >= 0 ? netRow : 0);
     m_feedAcceptEdit->setText(feed.value(QStringLiteral("accept")).toString());
     m_feedRejectEdit->setText(feed.value(QStringLiteral("reject")).toString());
     m_feedMinSizeSpin->setValue(
@@ -5777,6 +5794,7 @@ void OptionsDialog::populateFeedDetails(int index)
     // The kind decides which half of the form applies — but with nothing
     // selected neither does, so `have` gates both.
     m_feedUrlEdit->setEnabled(have && isUrl);
+    m_feedNetworkCombo->setEnabled(have && isUrl);
     m_feedQueryEdit->setEnabled(have && !isUrl);
     m_feedCategoriesEdit->setEnabled(have && !isUrl);
     m_feedIndexersEdit->setEnabled(have && !isUrl);
@@ -5848,6 +5866,7 @@ void OptionsDialog::applyFeedDetails()
         feed.remove(QStringLiteral("url"));
     }
 
+    feed.insert(QStringLiteral("network"), m_feedNetworkCombo->currentData().toString());
     feed.insert(QStringLiteral("accept"), m_feedAcceptEdit->text());
     feed.insert(QStringLiteral("reject"), m_feedRejectEdit->text());
     feed.insert(QStringLiteral("minSize"),

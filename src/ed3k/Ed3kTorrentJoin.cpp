@@ -2,6 +2,7 @@
 /// @brief A torrent joined with ed3k — implementation.
 
 #include "Ed3kTorrentJoin.h"
+#include "utils/ArgStr.h"
 
 #ifdef EMULE_HAVE_BITTORRENT
 
@@ -36,6 +37,8 @@ namespace {
 // constexpr std::uint32_t kRelSet = 1;
 /// reads and events handled in one go; a guard, the core gives few
 constexpr int kMaxPerCall = 1 << 16;
+/// sources kept per join while its check runs
+constexpr std::size_t kMaxHeldSources = 256;
 // was: a local constant; now the base's kSetManifest (the same -1)
 // /// member index of a manifest fetched into memory
 // constexpr int kManifest = -1;
@@ -124,6 +127,8 @@ struct Ed3kTorrentJoin::Join {
     /// complete members whose file is gone from disk since the last summary line
     int missing = 0;
     QString firstMissing;
+    /// #264: sources found before libtorrent's check, asked once it is done (member, source)
+    std::vector<std::pair<int, ffi::Source>> held;
 };
 
 Ed3kTorrentJoin::Ed3kTorrentJoin(Ed3kSession& session, bt::BtSession& bt, const QString& configDir, QObject* parent)
@@ -279,6 +284,12 @@ void Ed3kTorrentJoin::addSource(const QString& id, int index, const ffi::Source&
     const auto m = member(id, index);
     if (!m || !m->root)
         return;
+    if (!m_bt.filesChecked(id)) {
+        // no download open before the check: the base would drop it
+        if (Join* j = findJoin(id); j && j->held.size() < kMaxHeldSources)
+            j->held.emplace_back(index, source);
+        return;
+    }
     startDownloads(id);
     Ed3kJoinBase::addSource(*m->root, source);
 }
@@ -377,6 +388,8 @@ void Ed3kTorrentJoin::onTorrentChecked(const QString& id)
     j->have = m_bt.havePieces(id);
     if (j->torrent.info() && j->torrent.info()->manifest)
         startDownloads(id);
+    for (const auto& [index, source] : std::exchange(j->held, {}))
+        addSource(id, index, source);
     pumpSession();
 }
 
@@ -618,7 +631,7 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
     const auto info = j->torrent.info();
     if (!info || info->members != j->memberFile.size()) {
         logWarning(QStringLiteral("\"%1\": %2 member(s), %3 file(s): no join")
-                       .arg(name(id)).arg(info ? info->members : 0).arg(j->memberFile.size()));
+                       .arg(argStr(name(id)), argStr(info ? info->members : 0), argStr(j->memberFile.size())));
         m_noJoin.insert(id);
         return nullptr;
     }
@@ -629,9 +642,9 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
     updateJudging(*raw);
     m_bt.attachJoin(id, raw->sink);
     logInfo(QStringLiteral("\"%1\" joined (%2 member(s), %3)")
-                .arg(name(id))
-                .arg(raw->members.size())
-                .arg(link ? QStringLiteral("from its ed3k link") : QStringLiteral("torrent alone")));
+                .arg(argStr(name(id)),
+                     argStr(raw->members.size()),
+                     argStr(link ? QStringLiteral("from its ed3k link") : QStringLiteral("torrent alone"))));
 
     // members complete but not hashed before the restart (unreadable then): hashed again
     for (std::size_t m = 0; m < raw->members.size(); ++m)
@@ -662,7 +675,7 @@ void Ed3kTorrentJoin::passCreatedPieces(const QString& id)
     j->have.fill(true, pieces);
     for (int p = 0; p < pieces; ++p) {
         if (auto ok = j->torrent.pieceResult(std::uint64_t(p), true); !ok) {
-            logWarning(QStringLiteral("\"%1\": piece %2 not taken (error %3)").arg(name(id)).arg(p).arg(errorName(ok.error())));
+            logWarning(QStringLiteral("\"%1\": piece %2 not taken (error %3)").arg(argStr(name(id)), argStr(p), argStr(errorName(ok.error()))));
             return;
         }
     }
@@ -1116,7 +1129,7 @@ void Ed3kTorrentJoin::onClaimFalse(const QString& id, const ffi::tev::ClaimFalse
         j->members[m].received.clear();
     }
     logWarning(QStringLiteral("false claim %1 for \"%2\", %3 publisher(s) banned")
-                   .arg(hexOf(ev.manifest.bytes), name(id)).arg(ev.publishers.size()));
+                   .arg(argStr(hexOf(ev.manifest.bytes)), argStr(name(id)), argStr(ev.publishers.size())));
     reportProblem(id, -1, tr("ed3k: a false set was claimed for \"%1\" and is ignored; the torrent goes on").arg(name(id)));
     // the search's blame, then its next set; none left: searched again
     if (!refuseSet(id, ev.manifest) && !j->link && !setSearching(id))

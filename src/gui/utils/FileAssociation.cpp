@@ -5,6 +5,7 @@
 
 #include "app/AppConfig.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -589,8 +590,8 @@ bool applyFileTypes(FileTypes types, QString& error, bool /*setDefault*/)
         if (status != noErr) {
             failed << label(t);
             logWarning(QStringLiteral("Cannot set the default app of %1 to %2 (OSStatus %3)")
-                           .arg(label(t), next)
-                           .arg(status));
+                           .arg(argStr(label(t)), argStr(next),
+                                argStr(status)));
         }
     }
     if (!failed.isEmpty()) {

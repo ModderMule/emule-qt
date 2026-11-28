@@ -24,6 +24,7 @@
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 namespace eMule::natt {
 
@@ -452,8 +453,8 @@ quic::QuicNatEndpoint* AppNatEnv::quic() const
     };
     m_quic->onCaps = [](const Endpoint& peer, const quic::Caps& caps, bool ack) {
         logDebug([&]() -> QString { return QStringLiteral("NAT-T: caps%1 from %2 options 0x%3")
-                     .arg(ack ? QStringLiteral(" ack") : QString(), peer.toString())
-                     .arg(caps.options, 2, 16, QLatin1Char('0')); });
+                     .arg(argStr(ack ? QStringLiteral(" ack") : QString()), argStr(peer.toString()),
+                          argFmt(caps.options, 2, 16, QLatin1Char('0'))); });
     };
     return m_quic.get();
 }

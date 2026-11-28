@@ -42,18 +42,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxkbcommon-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Qt 6.10.2 via aqtinstall (qtgrpc ships QtProtobuf; protoc comes from apt)
+# Install Qt 6.12.1 via aqtinstall (qtgrpc ships QtProtobuf; protoc comes from apt)
 RUN python3 -m venv /opt/aqt-venv \
     && /opt/aqt-venv/bin/pip install aqtinstall \
-    && /opt/aqt-venv/bin/aqt install-qt linux desktop 6.10.2 linux_gcc_64 \
+    && /opt/aqt-venv/bin/aqt install-qt linux desktop 6.12.1 linux_gcc_64 \
         -m qtmultimedia qthttpserver qtwebsockets qtgrpc \
         --base https://ftp.fau.de/qtproject/ \
         --outputdir /opt/Qt \
     && rm -rf /opt/aqt-venv
 
-ENV CMAKE_PREFIX_PATH=/opt/Qt/6.10.2/gcc_64
-ENV PATH="/opt/Qt/6.10.2/gcc_64/bin:${PATH}"
-ENV LD_LIBRARY_PATH=/opt/Qt/6.10.2/gcc_64/lib
+ENV CMAKE_PREFIX_PATH=/opt/Qt/6.12.1/gcc_64
+ENV PATH="/opt/Qt/6.12.1/gcc_64/bin:${PATH}"
+ENV LD_LIBRARY_PATH=/opt/Qt/6.12.1/gcc_64/lib
 
 # Copy source and build only the daemon target
 WORKDIR /src
@@ -95,11 +95,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Qt shared libs from builder
-COPY --from=builder /opt/Qt/6.10.2/gcc_64/lib /opt/qt/lib
+COPY --from=builder /opt/Qt/6.12.1/gcc_64/lib /opt/qt/lib
 ENV LD_LIBRARY_PATH=/opt/qt/lib
 
 # TLS backend only — the rest of the plugin tree is GUI/multimedia
-COPY --from=builder /opt/Qt/6.10.2/gcc_64/plugins/tls /opt/qt/plugins/tls
+COPY --from=builder /opt/Qt/6.12.1/gcc_64/plugins/tls /opt/qt/plugins/tls
 ENV QT_PLUGIN_PATH=/opt/qt/plugins
 
 # Copy daemon binary

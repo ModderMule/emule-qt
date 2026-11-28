@@ -720,6 +720,7 @@ private:
     QLineEdit* m_feedCategoriesEdit = nullptr;
     QLineEdit* m_feedIndexersEdit = nullptr;
     QLineEdit* m_feedUrlEdit = nullptr;
+    QComboBox* m_feedNetworkCombo = nullptr;
     QLineEdit* m_feedAcceptEdit = nullptr;
     QLineEdit* m_feedRejectEdit = nullptr;
     QSpinBox* m_feedMinSizeSpin = nullptr;

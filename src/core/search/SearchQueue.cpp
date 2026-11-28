@@ -6,6 +6,7 @@
 
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 
@@ -395,13 +396,13 @@ void SearchQueue::setState(Entry& entry, SearchRunState state, const QString& er
     entry.status.reason.clear();
     entry.status.error = error;
     logServerVerbose([&]() -> QString { return QStringLiteral("Search %1 \"%2\": %3%4")
-                         .arg(entry.status.searchID)
-                         .arg(entry.params.expression)
-                         .arg(state == SearchRunState::Running ? QStringLiteral("running")
+                         .arg(argStr(entry.status.searchID),
+                              argStr(entry.params.expression),
+                              argStr(state == SearchRunState::Running ? QStringLiteral("running")
                               : state == SearchRunState::Finished ? QStringLiteral("finished")
                               : state == SearchRunState::Failed ? QStringLiteral("failed")
-                              : QStringLiteral("queued"))
-                         .arg(error.isEmpty() ? QString() : QStringLiteral(" — ") + error); });
+                              : QStringLiteral("queued")),
+                              argStr(error.isEmpty() ? QString() : QStringLiteral(" — ") + error)); });
     emit stateChanged(entry.status);
 }
 

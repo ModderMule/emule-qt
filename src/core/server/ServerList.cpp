@@ -16,6 +16,7 @@
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -481,8 +482,8 @@ int ServerList::removeDeadServers()
         if (!srv->isDisabled() || srv->isStaticMember())
             continue;
         logInfo(QStringLiteral("Removing dead server %1 (%2, failed %3 times)%4")
-                    .arg(srv->name(), srv->addressWithPort()).arg(srv->failedCount())
-                    .arg(days > 0 ? QStringLiteral(", blocked for %1 days").arg(days) : QString()));
+                    .arg(argStr(srv->name()), argStr(srv->addressWithPort()), argStr(srv->failedCount()),
+                         argStr(days > 0 ? QStringLiteral(", blocked for %1 days").arg(days) : QString())));
         if (days > 0)
             m_deadServers.block(*srv, now);
         removeServer(srv);
@@ -1021,14 +1022,14 @@ void ServerList::serverStats()
     if (statPingCounts(theApp.serverConnect->isConnected(), lastKad, now)) {
         if (target->noteFailure(maxRetries)) {
             logInfo(QStringLiteral("Disabling dead server %1 (%2 failed stat pings)")
-                        .arg(target->name()).arg(target->failedCount()));
+                        .arg(argStr(target->name()), argStr(target->failedCount())));
         }
         emit serverUpdated(target);
     }
 
     logDebug([&]() -> QString { return QStringLiteral("ServerList: OP_GLOBSERVSTATREQ -> %1 (%2) challenge=0x%3")
-                 .arg(target->name(), target->addressWithPort())
-                 .arg(challenge, 8, 16, QLatin1Char('0')); });
+                 .arg(argStr(target->name()), argStr(target->addressWithPort()),
+                      argFmt(challenge, 8, 16, QLatin1Char('0'))); });
 
     theApp.serverConnect->sendUDPPacket(std::move(packet), *target,
                                         static_cast<uint16>(target->port() + 4));
@@ -1089,9 +1090,9 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
     if (challenge != server->challenge()) {
         logDebug([&]() -> QString { return QStringLiteral("ServerList: OP_GLOBSERVSTATRES challenge mismatch from %1 "
                                 "(got 0x%2, expected 0x%3)")
-                     .arg(server->name())
-                     .arg(challenge, 8, 16, QLatin1Char('0'))
-                     .arg(server->challenge(), 8, 16, QLatin1Char('0')); });
+                     .arg(argStr(server->name()),
+                          argFmt(challenge, 8, 16, QLatin1Char('0')),
+                          argFmt(server->challenge(), 8, 16, QLatin1Char('0'))); });
         return;
     }
 
@@ -1147,8 +1148,8 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
         } else if (size > 40) {
             logDebug([&]() -> QString { return QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 has %2 extra bytes "
                                     "(vendor extension, ignored)")
-                         .arg(server->name())
-                         .arg(size - 40); });
+                         .arg(argStr(server->name()),
+                              argStr(size - 40)); });
         }
 
         // setServerKeyUDP() stamps our current public IP itself, as MFC does.
@@ -1174,12 +1175,12 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
 
     logDebug([&]() -> QString { return QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 — users=%2 files=%3 "
                             "ping=%4ms udpFlags=0x%5 udpKey=0x%6")
-                 .arg(server->name())
-                 .arg(server->users())
-                 .arg(server->files())
-                 .arg(server->ping())
-                 .arg(udpFlags, 8, 16, QLatin1Char('0'))
-                 .arg(server->serverKeyUDPRaw(), 8, 16, QLatin1Char('0')); });
+                 .arg(argStr(server->name()),
+                      argStr(server->users()),
+                      argStr(server->files()),
+                      argStr(server->ping()),
+                      argFmt(udpFlags, 8, 16, QLatin1Char('0')),
+                      argFmt(server->serverKeyUDPRaw(), 8, 16, QLatin1Char('0'))); });
 
     emit serverUpdated(server);
 
@@ -1518,10 +1519,10 @@ void ServerList::sendCryptPing(Server& target)
 
     const bool listed = findByIPTcp(target.ipAddress(), target.port()) == &target;
     logDebug([&]() -> QString { return QStringLiteral("ServerList: obfuscated crypt-ping -> %1%2 challenge=0x%3 pad=%4")
-                 .arg(listed ? target.name() + QLatin1Char(' ') : QStringLiteral("unlisted "),
-                      target.addressWithPort())
-                 .arg(challenge, 8, 16, QLatin1Char('0'))
-                 .arg(padding); });
+                 .arg(argStr(listed ? target.name() + QLatin1Char(' ') : QStringLiteral("unlisted ")),
+                      argStr(target.addressWithPort()),
+                      argFmt(challenge, 8, 16, QLatin1Char('0')),
+                      argStr(padding)); });
 
     theApp.serverConnect->sendRawUDPPacket(
         target, static_cast<uint16>(target.port() + 12), raw.data(), rawLen);

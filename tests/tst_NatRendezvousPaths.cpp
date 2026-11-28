@@ -191,6 +191,7 @@ private slots:
     void kad_requestEnvelopeAndPunches();
     void kad_endpointHint();
     void kad_buddyRelay_sendsHint();
+    void kad_servedRefresh_hintsAgainWhenMoved();
     void kad_rendezvousFromBuddy();
     void kad_envelopeCarriesUdp6Block();
     void kad_rendezvousUdp6Block();
@@ -1448,6 +1449,54 @@ void tst_NatRendezvousPaths::kad_buddyRelay_sendsHint()
     std::memset(e + 16, 1, 16);
     e[49] = CONNECT_OPT_NATT_ENDPOINT_HINT;
     kad->onBuddyRelay(requester, e, 73, served);
+    QVERIFY(f.env->udp.empty());
+}
+
+// A refresh from the served node soon after a hint corrects the port, once per move.
+void tst_NatRendezvousPaths::kad_servedRefresh_hintsAgainWhenMoved()
+{
+    HubFixture f;
+    auto* kad = dynamic_cast<KadBuddyNatPath*>(f.hub->path(PathKind::KadBuddy));
+    QVERIFY(kad);
+    KadBuddyNatPath::ServedPeer served;
+    served.hash.fill(0x55);
+    served.udp = Endpoint(kPeerIP, kPeerUdp);
+
+    QByteArray env(73, '\0');
+    auto* e = reinterpret_cast<uint8*>(env.data());
+    std::memset(e, 0xB0, 16);
+    e[32] = OP_RENDEZVOUS;
+    e[49] = CONNECT_OPT_NATT_ENDPOINT_HINT;
+    std::memset(e + 50, 0xF0, 16);
+    const Endpoint requester(Address::fromString(QStringLiteral("1.0.0.1")), 6000);
+    kad->onBuddyRelay(requester, e, 73, served);
+    f.env->udp.clear();
+
+    // same port: nothing; other client: nothing
+    kad->onServedRefresh(served);
+    KadBuddyNatPath::ServedPeer other = served;
+    other.hash.fill(0x66);
+    other.udp = Endpoint(kPeerIP, 40001);
+    kad->onServedRefresh(other);
+    QVERIFY(f.env->udp.empty());
+
+    // moved: a second hint with the new port, the rest unchanged
+    KadBuddyNatPath::ServedPeer moved = served;
+    moved.udp = Endpoint(kPeerIP, 40000);
+    kad->onServedRefresh(moved);
+    auto hints = f.env->udpWith(OP_EMULEPROT, OP_NATT_ENDPOINT_HINT);
+    QCOMPARE(hints.size(), size_t{1});
+    QCOMPARE(hints[0].to, requester);
+    QCOMPARE(hints[0].payload.mid(17, 16), QByteArray(16, char(0xB0)));
+    QCOMPARE(peekUInt16(bytes(hints[0].payload) + 53), uint16{40000});
+    kad->onServedRefresh(moved);
+    QCOMPARE(f.env->udpWith(OP_EMULEPROT, OP_NATT_ENDPOINT_HINT).size(), size_t{1});
+
+    // too late: kept only kRehintMs
+    f.env->udp.clear();
+    f.advance(KadBuddyNatPath::kRehintMs + 1);
+    moved.udp = Endpoint(kPeerIP, 40002);
+    kad->onServedRefresh(moved);
     QVERIFY(f.env->udp.empty());
 }
 

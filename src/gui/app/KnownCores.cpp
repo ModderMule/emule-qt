@@ -7,6 +7,7 @@
 
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QFile>
 #include <QJsonArray>
@@ -63,8 +64,8 @@ void KnownCores::remove(const QString& hostPort)
 QString KnownCores::key(const QString& host, quint16 port)
 {
     const bool v6 = host.contains(QLatin1Char(':')) && !host.startsWith(QLatin1Char('['));
-    return v6 ? QStringLiteral("[%1]:%2").arg(host).arg(port)
-              : QStringLiteral("%1:%2").arg(host).arg(port);
+    return v6 ? QStringLiteral("[%1]:%2").arg(argStr(host), argStr(port))
+              : QStringLiteral("%1:%2").arg(argStr(host), argStr(port));
 }
 
 // ---------------------------------------------------------------------------

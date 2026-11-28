@@ -10,6 +10,7 @@
 #include "IpcProtocol.h"
 #include "utils/IpcFeedback.h"
 #include "utils/Clipboard.h"
+#include "utils/ArgStr.h"
 
 #include <QApplication>
 #include <QCborMap>
@@ -393,8 +394,8 @@ void IPFilterDialog::copySelected()
         if (!r)
             continue;
         lines << QStringLiteral("%1 - %2  Hits=%3  %4")
-                     .arg(r->startText, -15).arg(r->endText, -15)
-                     .arg(QString::number(r->hits), -5).arg(r->desc);
+                     .arg(argFmt(r->startText, -15), argFmt(r->endText, -15),
+                          argFmt(QString::number(r->hits), -5), argStr(r->desc));
     }
     if (lines.isEmpty())
         return;

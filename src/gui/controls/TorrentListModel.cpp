@@ -8,6 +8,7 @@
 #include "utils/ShareRatio.h"
 #include "utils/StringUtils.h"
 #include "app/SkinIcons.h"
+#include "utils/ArgStr.h"
 
 #include <QColor>
 #include <QCoreApplication>
@@ -645,7 +646,7 @@ QString TorrentListModel::statusText(const TorrentRow& r) const
     if (r.state == TorrentState::Error && !r.error.isEmpty())
         return QStringLiteral("%1 — %2").arg(name, r.error);
     if (r.state == TorrentState::Queued && r.queuePosition >= 0)
-        return tr("%1 (#%2)").arg(name).arg(r.queuePosition + 1);
+        return tr("%1 (#%2)").arg(argStr(name), argStr(r.queuePosition + 1));
     return name;
 }
 

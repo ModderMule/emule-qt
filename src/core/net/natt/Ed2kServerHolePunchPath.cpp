@@ -13,6 +13,7 @@
 #include "server/Server.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <QMessageAuthenticationCode>
 
@@ -283,8 +284,8 @@ void Ed2kServerHolePunchPath::onInfo(const uint8* data, uint32 size)
         }
     }
     log(QStringLiteral("0x61 peer %1 tcp %2 id %3 role %4%5")
-            .arg(udp.toString()).arg(tcpPort).arg(peerID).arg(role)
-            .arg(extended ? QStringLiteral(" crypt 0x%1").arg(peerCrypt, 0, 16) : QString()));
+            .arg(argStr(udp.toString()), argStr(tcpPort), argStr(peerID), argStr(role),
+                 argStr(extended ? QStringLiteral(" crypt 0x%1").arg(peerCrypt, 0, 16) : QString())));
 
     const Server* server = env().currentServer();
     PeerInfo peer;
@@ -376,7 +377,7 @@ void Ed2kServerHolePunchPath::onCallbackNotice(const uint8* data, uint32 size)
     if (!foreign && peer.clientID == ourID())
         return;
     log(QStringLiteral("0x37: id %1 at %2 flags 0x%3")
-            .arg(peer.clientID).arg(n->udp.toString()).arg(n->flags, 2, 16, QLatin1Char('0')));
+            .arg(argStr(peer.clientID), argStr(n->udp.toString()), argFmt(n->flags, 2, 16, QLatin1Char('0'))));
     if (foreign) {
         // Logged in elsewhere: no hash, and crypt bits only when it sent them.
         peer.kadEndpoint = n->udp;   // keys the attempt by address (NatRendezvous::peerKey)

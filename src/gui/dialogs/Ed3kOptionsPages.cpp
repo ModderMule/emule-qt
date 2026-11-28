@@ -29,6 +29,7 @@
 #include "prefs/Preferences.h"
 #include "utils/StringUtils.h"
 #include "IpcMessage.h"
+#include "utils/ArgStr.h"
 
 #include <QCborArray>
 #include <QCheckBox>
@@ -1067,8 +1068,8 @@ void Ed3kOptionsPages::applyStatus(const QCborMap& st)
             lines << (c.value(QStringLiteral("mature")).toBool() ? tr("Mature: the receipts you sign mint credits.")
                                                                  : tr("Not mature yet: the receipts you sign mint nothing."));
         lines << tr("Receipts signed: %1, received: %2")
-                     .arg(c.value(QStringLiteral("receiptsSigned")).toInteger())
-                     .arg(c.value(QStringLiteral("receiptsTaken")).toInteger());
+                     .arg(argStr(c.value(QStringLiteral("receiptsSigned")).toInteger()),
+                          argStr(c.value(QStringLiteral("receiptsTaken")).toInteger()));
         const QString rate = c.value(QStringLiteral("stakeRate")).toString();
         if (!rate.isEmpty()) {
             const double perCredit = uint256Value(rate) / 1e18;
@@ -1745,8 +1746,8 @@ void Ed3kOptionsPages::applyHosterStatus(const QCborMap& h)
     case 1: text = tr("Looking for Java..."); break;
     case 2:
         text = tr("Java %1 (%2): %3")
-                   .arg(j.value(QStringLiteral("version")).toInteger())
-                   .arg(j.value(QStringLiteral("vendor")).toString(), j.value(QStringLiteral("path")).toString());
+                   .arg(argStr(j.value(QStringLiteral("version")).toInteger()),
+                        argStr(j.value(QStringLiteral("vendor")).toString()), argStr(j.value(QStringLiteral("path")).toString()));
         break;
     case 3: text = tr("No Java 17 or newer found."); break;
     case 4: text = tr("Downloading Java... %1%").arg(j.value(QStringLiteral("progress")).toInteger()); break;
@@ -2489,7 +2490,7 @@ QString Ed3kOptionsPages::accountText(const AccountList& list, const QCborMap& c
     if (!list.debrid)
         return text;
     if (working >= 0)
-        return tr("%1, %2 of %n hoster(s) usable", nullptr, hosts).arg(text).arg(working);
+        return tr("%1, %2 of %n hoster(s) usable", nullptr, hosts).arg(argStr(text), argStr(working));
     return tr("%1, %n hoster(s)", nullptr, hosts).arg(text);
 }
 

@@ -1,6 +1,7 @@
 #include "app/ConfigBackup.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -93,9 +94,9 @@ std::expected<ConfigBackupResult, QString> run(const QString& configDir, const Q
     if (out.files == 0)
         return std::unexpected(QStringLiteral("nothing copied into %1").arg(QDir::toNativeSeparators(folder)));
     logInfo(QStringLiteral("Config backed up to %1 (%2 files%3)")
-                .arg(QDir::toNativeSeparators(folder))
-                .arg(out.files)
-                .arg(out.failed ? QStringLiteral(", %1 failed").arg(out.failed) : QString()));
+                .arg(argStr(QDir::toNativeSeparators(folder)),
+                     argStr(out.files),
+                     argStr(out.failed ? QStringLiteral(", %1 failed").arg(out.failed) : QString())));
     return out;
 }
 

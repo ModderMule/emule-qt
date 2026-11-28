@@ -1,4 +1,5 @@
 #include "Ed3kJdResolver.h"
+#include "utils/ArgStr.h"
 
 #ifdef EMULE_HAVE_HOSTER_JD
 
@@ -916,8 +917,8 @@ bool Ed3kJdResolver::ensureStarted()
     m_connectTimer.start();
     m_progressLogged.clear();
     logHosterDebug([&]() -> QString { return QStringLiteral("hoster: resolver starting: %1, plugins %2, listening on 127.0.0.1:%3")
-                       .arg(m_config.java, m_revision.isEmpty() ? QStringLiteral("?") : QStringLiteral("r") + m_revision)
-                       .arg(m_server->serverPort()); });
+                       .arg(argStr(m_config.java), argStr(m_revision.isEmpty() ? QStringLiteral("?") : QStringLiteral("r") + m_revision),
+                            argStr(m_server->serverPort())); });
     m_stopping = false;
     request({{QStringLiteral("op"), QStringLiteral("hello")}}, false);
     if (!m_config.proxy.isEmpty())
@@ -986,9 +987,9 @@ void Ed3kJdResolver::onFinished(int exitCode, bool crashed, bool stopped)
 {
     const bool expected = m_stopping || stopped;
     logHosterDebug([&]() -> QString { return QStringLiteral("hoster: resolver exited, code %1%2, after %3 s")
-                       .arg(exitCode)
-                       .arg(crashed ? QStringLiteral(" (crashed)") : QString())
-                       .arg(m_sidecar.uptimeMs() / 1000); });
+                       .arg(argStr(exitCode),
+                            argStr(crashed ? QStringLiteral(" (crashed)") : QString()),
+                            argStr(m_sidecar.uptimeMs() / 1000)); });
     closeChannel();
     m_stopping = false;
     if (!expected)
@@ -1041,14 +1042,14 @@ void Ed3kJdResolver::handleLine(const QByteArray& line)
         m_deep = o.value(QStringLiteral("deep")).toBool();
         m_debrid = o.value(QStringLiteral("debrid")).toBool();
         logHosterDebug([&]() -> QString { return QStringLiteral("hoster: <- hello, protocol %1, JD r%2, %3 hosters, %4 decrypters")
-                           .arg(proto)
-                           .arg(o.value(QStringLiteral("jdRevision")).toString())
-                           .arg(o.value(QStringLiteral("hosts")).toInt())
-                           .arg(o.value(QStringLiteral("crawlers")).toInt()); });
+                           .arg(argStr(proto),
+                                argStr(o.value(QStringLiteral("jdRevision")).toString()),
+                                argStr(o.value(QStringLiteral("hosts")).toInt()),
+                                argStr(o.value(QStringLiteral("crawlers")).toInt())); });
         m_description = tr("JDownloader r%1, %2 hosters, %3 decrypters")
-                            .arg(o.value(QStringLiteral("jdRevision")).toString())
-                            .arg(o.value(QStringLiteral("hosts")).toInt())
-                            .arg(o.value(QStringLiteral("crawlers")).toInt());
+                            .arg(argStr(o.value(QStringLiteral("jdRevision")).toString()),
+                                 argStr(o.value(QStringLiteral("hosts")).toInt()),
+                                 argStr(o.value(QStringLiteral("crawlers")).toInt()));
         emit stateChanged();
         return;
     }
@@ -1071,7 +1072,7 @@ void Ed3kJdResolver::handleLine(const QByteArray& line)
         return;
     if (id != 0 && !m_pending.contains(id)) {
         logHosterDebug([&]() -> QString { return QStringLiteral("hoster: <- %1 for task %2, not open any more, dropped")
-                           .arg(o.value(QStringLiteral("ev")).toString()).arg(id); });
+                           .arg(argStr(o.value(QStringLiteral("ev")).toString()), argStr(id)); });
         return;
     }
     logEvent(id, o.value(QStringLiteral("ev")).toString(), ev);
@@ -1255,11 +1256,11 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
     switch (e.kind) {
     case K::Matched:
     case K::Sites:
-        d = e.host.isEmpty() ? QStringLiteral("no plugin") : QStringLiteral("%1, %2 site(s)").arg(e.host).arg(e.sites.size());
+        d = e.host.isEmpty() ? QStringLiteral("no plugin") : QStringLiteral("%1, %2 site(s)").arg(argStr(e.host), argStr(e.sites.size()));
         break;
     case K::Found:
-        d = QStringLiteral("'%1', %2 B%3").arg(e.name).arg(e.size)
-                .arg(e.hashType.isEmpty() ? QString() : QStringLiteral(", ") + e.hashType);
+        d = QStringLiteral("'%1', %2 B%3").arg(argStr(e.name), argStr(e.size),
+                     argStr(e.hashType.isEmpty() ? QString() : QStringLiteral(", ") + e.hashType));
         break;
     case K::Folder:
         d = QStringLiteral("%1 link(s)").arg(e.count);
@@ -1276,16 +1277,16 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
         d = QStringLiteral("%1 s, %2").arg(e.seconds).arg(e.text);
         break;
     case K::Puzzle:
-        d = QStringLiteral("puzzle %1 of %2, %3 s to answer").arg(e.puzzle).arg(e.host).arg(e.timeoutS);
+        d = QStringLiteral("puzzle %1 of %2, %3 s to answer").arg(argStr(e.puzzle), argStr(e.host), argStr(e.timeoutS));
         break;
     case K::Login:
-        d = QStringLiteral("browser login at %1, %2 s").arg(e.host).arg(e.timeoutS);
+        d = QStringLiteral("browser login at %1, %2 s").arg(argStr(e.host), argStr(e.timeoutS));
         break;
     case K::Code:
         d = QStringLiteral("confirmation code, %1 s").arg(e.timeoutS);   // the site's words stay out
         break;
     case K::Done:
-        d = QStringLiteral("'%1', %2 B").arg(e.name).arg(e.size);
+        d = QStringLiteral("'%1', %2 B").arg(argStr(e.name), argStr(e.size));
         break;
     case K::NeedsUser:
     case K::Status:
@@ -1295,12 +1296,12 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
         d = e.text.isEmpty() ? e.code : QStringLiteral("%1: %2").arg(e.code, e.text);
         break;
     case K::Account:
-        d = QStringLiteral("valid %1, premium %2%3%4%5").arg(e.valid ? QStringLiteral("yes") : QStringLiteral("no"), e.premium ? QStringLiteral("yes") : QStringLiteral("no"))
-                .arg(e.expires ? QStringLiteral(", expires ") + QDateTime::fromSecsSinceEpoch(e.expires).toString(Qt::ISODate) : QString())
-                .arg(e.trafficLeft >= 0 ? QStringLiteral(", %1 B traffic left").arg(e.trafficLeft) : QString())
-                .arg(e.maxDownloads > 0    ? QStringLiteral(", %1 downloads at once").arg(e.maxDownloads)
+        d = QStringLiteral("valid %1, premium %2%3%4%5").arg(argStr(e.valid ? QStringLiteral("yes") : QStringLiteral("no")), argStr(e.premium ? QStringLiteral("yes") : QStringLiteral("no")),
+                     argStr(e.expires ? QStringLiteral(", expires ") + QDateTime::fromSecsSinceEpoch(e.expires).toString(Qt::ISODate) : QString()),
+                     argStr(e.trafficLeft >= 0 ? QStringLiteral(", %1 B traffic left").arg(e.trafficLeft) : QString()),
+                     argStr(e.maxDownloads > 0    ? QStringLiteral(", %1 downloads at once").arg(e.maxDownloads)
                      : e.maxDownloads < 0 ? QStringLiteral(", downloads at once unlimited")
-                                          : QString());
+                                          : QString()));
         if (e.multi)
             d += QStringLiteral(", multi-hoster for %1 hosts").arg(e.hosts.size());
         if (!e.valid && !e.text.isEmpty())
@@ -1309,7 +1310,7 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
     case K::Solvers: {
         QStringList parts;
         for (const SolverAccountState& a : e.solvers)
-            parts << (a.valid ? QStringLiteral("%1 %2 %3").arg(a.host).arg(a.balance).arg(a.currency).trimmed()
+            parts << (a.valid ? QStringLiteral("%1 %2 %3").arg(argStr(a.host), argStr(a.balance), argStr(a.currency)).trimmed()
                               : QStringLiteral("%1 %2").arg(a.host, a.code));
         d = parts.join(QStringLiteral(", "));
         break;
@@ -1321,13 +1322,13 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
         d = QStringLiteral("%1 hoster(s)").arg(e.accountHosts.size());
         break;
     case K::Icon:
-        d = QStringLiteral("%1, %2 B").arg(e.host).arg(e.image.size());
+        d = QStringLiteral("%1, %2 B").arg(argStr(e.host), argStr(e.image.size()));
         break;
     case K::Gone:
     case K::Cancelled:
         break;
     }
-    logHosterDebug([&]() -> QString { return QStringLiteral("hoster: <- task %1 %2%3").arg(id).arg(ev, d.isEmpty() ? QString() : QStringLiteral(": ") + d); });
+    logHosterDebug([&]() -> QString { return QStringLiteral("hoster: <- task %1 %2%3").arg(argStr(id), argStr(ev), argStr(d.isEmpty() ? QString() : QStringLiteral(": ") + d)); });
 }
 
 } // namespace eMule::ed3k

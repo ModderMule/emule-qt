@@ -10,14 +10,14 @@ project(eMuleQt
 # Qt 6 discovery — hint paths for local Qt installations
 # ---------------------------------------------------------------------------
 if(WIN32)
-    foreach(_qt_ver 6.10.2 6.10.1 6.10.0 6.9.0 6.8.0)
+    foreach(_qt_ver 6.12.1 6.10.2 6.10.1 6.10.0 6.9.0 6.8.0)
         list(APPEND _qt_hints "C:/Qt/${_qt_ver}/msvc2022_64")
         list(APPEND _qt_hints "$ENV{USERPROFILE}/Qt/${_qt_ver}/msvc2022_64")
     endforeach()
 elseif(APPLE)
-    list(APPEND _qt_hints "$ENV{HOME}/Qt/6.10.2/macos")
+    list(APPEND _qt_hints "$ENV{HOME}/Qt/6.12.1/macos")
 else()
-    list(APPEND _qt_hints "$ENV{HOME}/Qt/6.10.2/gcc_64")
+    list(APPEND _qt_hints "$ENV{HOME}/Qt/6.12.1/gcc_64")
 endif()
 foreach(_hint IN LISTS _qt_hints)
     if(EXISTS "${_hint}")

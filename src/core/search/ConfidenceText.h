@@ -10,6 +10,8 @@
 #include <QString>
 #include <QStringList>
 
+#include "utils/ArgStr.h"
+
 namespace eMule {
 
 /// Worst first; -1 for a row nothing was judged on (sorts before everything).
@@ -66,7 +68,7 @@ namespace eMule {
     if (confidenceRank(id) < 0)
         return {};
     QStringList lines{QCoreApplication::translate("eMule::ConfidenceText", "%1 (fake score %2 of 100)")
-                          .arg(confidenceText(id, score)).arg(score)};
+                          .arg(argStr(confidenceText(id, score)), argStr(score))};
     for (const QString& reason : reasons)
         lines.push_back(QStringLiteral("• ") + fakeReasonText(reason));
     return lines.join(QLatin1Char('\n'));

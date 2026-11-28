@@ -7,6 +7,7 @@
 #include "controls/LogTextView.h"
 #include "prefs/Preferences.h"
 #include "utils/MediaSniff.h"
+#include "utils/ArgStr.h"
 
 #include <QAudioOutput>
 #include <QBuffer>
@@ -97,7 +98,7 @@ QString Ed3kRoomMediaView::html(const Ref& m)
         m_log->document()->addResource(QTextDocument::ImageResource, urlOf(it.ref.root), it.frame);
     loadIfReady(it);
     const QString url = urlOf(it.ref.root).toString();
-    return QStringLiteral("<br><a href=\"%1\"><img src=\"%1\" width=\"%2\" height=\"%3\"></a>").arg(url).arg(it.box.width()).arg(it.box.height());
+    return QStringLiteral("<br><a href=\"%1\"><img src=\"%1\" width=\"%2\" height=\"%3\"></a>").arg(argStr(url), argStr(it.box.width()), argStr(it.box.height()));
 }
 
 bool Ed3kRoomMediaView::setState(const QString& root, int state)

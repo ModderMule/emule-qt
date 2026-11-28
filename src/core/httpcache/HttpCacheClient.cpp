@@ -11,6 +11,7 @@
 #include "net/EMSocket.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QTimer>
@@ -85,9 +86,9 @@ bool HttpCacheClient::beginFetch(const HttpCacheOffer& offer, PartFile* file,
     file->addSource(this);
 
     logDebug(QStringLiteral("HTTP Cache: fetching part %1 of %2 from %3")
-                .arg(m_offer.partIndex)
-                .arg(file->fileName())
-                .arg(QUrl(m_offer.url).host()));
+                .arg(argStr(m_offer.partIndex),
+                     argStr(file->fileName()),
+                     argStr(QUrl(m_offer.url).host())));
 
     return tryToConnect();
 }

@@ -8,6 +8,7 @@
 #include "Ed3kStore.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QFile>
@@ -144,7 +145,7 @@ ffi::Result<std::uint32_t> Ed3kFilters::follow(const QString& link, const QStrin
     auto id = e->filterFollow(m_session.now(), std::string_view(l.constData(), std::size_t(l.size())),
                               std::string_view(t.constData(), std::size_t(t.size())));
     if (id)
-        logEd3k(QStringLiteral("ed3k: filter list %1 followed (%2)").arg(*id).arg(label));
+        logEd3k(QStringLiteral("ed3k: filter list %1 followed (%2)").arg(argStr(*id), argStr(label)));
     pumpSession();
     emit filtersChanged();
     return id;
@@ -173,7 +174,7 @@ ffi::Result<std::uint32_t> Ed3kFilters::openFile(const QString& label, const QBy
     const QByteArray t = label.trimmed().toUtf8();
     auto id = e->filterOpen(m_session.now(), std::string_view(t.constData(), std::size_t(t.size())), spanOf(file));
     if (id)
-        logEd3k(QStringLiteral("ed3k: filter list file opened by hand as %1 (%2)").arg(*id).arg(label));
+        logEd3k(QStringLiteral("ed3k: filter list file opened by hand as %1 (%2)").arg(argStr(*id), argStr(label)));
     pumpSession();
     emit filtersChanged();
     return id;
@@ -289,7 +290,7 @@ ffi::Result<> Ed3kFilters::showAnyway(const ffi::Root& root, bool on)
     std::copy_n(root.bytes.begin(), id.size(), id.begin());
     auto ok = e->filterShowAnyway(m_session.now(), ffi::FilterSubject::File, id, on);
     if (ok)
-        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: filter: %1 shown anyway: %2").arg(hexOf(id)).arg(on); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: filter: %1 shown anyway: %2").arg(argStr(hexOf(id)), argStr(on)); });
     pumpSession();
     emit filtersChanged();
     return ok;
@@ -430,7 +431,7 @@ void Ed3kFilters::onFetch(const ffi::event::FilterFetch& f)
 {
     // the core picked the list files (§2); the base finds sources and fetches into memory
     if (f.size == 0 || f.size > kListFileMax) {
-        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: filter list file %1 of %2 B not fetched").arg(textOf(f.name)).arg(f.size); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: filter list file %1 of %2 B not fetched").arg(argStr(textOf(f.name)), argStr(f.size)); });
         return;
     }
     if (!m_started || downloading(f.root))
@@ -479,7 +480,7 @@ void Ed3kFilters::saveOwn() const
     if (!m_pubId.isEmpty())
         out += QStringLiteral("publish\t%1\t%2\n").arg(QString::fromLatin1(m_pubId.toHex()), field(m_pubTitle));
     for (const Own& o : m_own)
-        out += QStringLiteral("%1\t%2\t%3\t%4\n").arg(int(o.subject)).arg(hexOf(o.id)).arg(int(o.verdict)).arg(field(o.reason));
+        out += QStringLiteral("%1\t%2\t%3\t%4\n").arg(argStr(int(o.subject)), argStr(hexOf(o.id)), argStr(int(o.verdict)), argStr(field(o.reason)));
     const QByteArray data = out.toUtf8();
     QDir().mkpath(stateDir(m_configDir));
     writeBlobLater(localPath(kOwnFile), spanOf(data));

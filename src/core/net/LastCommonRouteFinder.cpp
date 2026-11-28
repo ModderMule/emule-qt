@@ -6,6 +6,7 @@
 #include "net/Pinger.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <QElapsedTimer>
 
@@ -42,8 +43,8 @@ static QString describePing(uint32 address, uint8 ttl, bool useUdp, const PingSt
     else
         what = QStringLiteral("status %1 from %2").arg(ps.status).arg(ipstr(ps.destinationAddress));
     return QStringLiteral("USS: %1 ping %2 TTL %3: %4, %5 ms")
-        .arg(useUdp ? QStringLiteral("UDP") : QStringLiteral("ICMP"), ipstr(address))
-        .arg(ttl).arg(what).arg(ps.delay, 0, 'f', 1);
+        .arg(argStr(useUdp ? QStringLiteral("UDP") : QStringLiteral("ICMP")), argStr(ipstr(address)),
+             argStr(ttl), argStr(what), argFmt(ps.delay, 0, 'f', 1));
 }
 
 // ---------------------------------------------------------------------------
@@ -511,7 +512,7 @@ void LastCommonRouteFinder::run()
                         logUssVerbose([&]() -> QString {
                             return QStringLiteral("USS: Try #%1: %2 of %3 hosts, asking the server "
                                                   "and client lists again")
-                                .arg(tries).arg(m_hostsToTraceRoute.size()).arg(kHostsToTrace);
+                                .arg(argStr(tries), argStr(m_hostsToTraceRoute.size()), argStr(kHostsToTrace));
                         });
                 }
                 if (!keepGoing())

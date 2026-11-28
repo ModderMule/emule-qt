@@ -131,7 +131,8 @@ enum class ConnectingState : uint8 {
     ServerCallback,
     Preconditions,
     NatRendezvous,      // LowID<->LowID: waiting for the NAT rendezvous (net/natt)
-    Ed3kHint            // derived user hash: ed3k tried first, eD2K after (ed3k §14.2)
+    Ed3kHint,           // derived user hash: ed3k tried first, eD2K after (ed3k §14.2)
+    ServerIPv6Callback  // OP_IPV6_CALLBACK_REQUEST sent: the peer dials our IPv6 (ed2k-server#62)
 };
 
 /// ed3k for a download source with a derived user hash (ed3k Protocol.md §14.2, §14.4).

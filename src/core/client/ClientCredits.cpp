@@ -9,6 +9,7 @@
 #include "app/AppContext.h"
 #include "utils/SafeFile.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 // Legacy RSA_* on purpose: OpenSSL 3's EVP layer rejects 384-bit keys
 #define OPENSSL_SUPPRESS_DEPRECATED
@@ -512,7 +513,7 @@ ClientCreditsList::KeyFileInfo ClientCreditsList::inspectKeyFile(const QString& 
     info.bits = rsa ? RSA_bits(rsa) : 0;
     if (info.bits != RSAKEYSIZE) {
         info.error = QStringLiteral("Key in %1 has %2 bits, expected %3")
-                         .arg(keyPath).arg(info.bits).arg(RSAKEYSIZE);
+                         .arg(argStr(keyPath), argStr(info.bits), argStr(RSAKEYSIZE));
         return info;
     }
 

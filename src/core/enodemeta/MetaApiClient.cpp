@@ -9,6 +9,7 @@
 #include "enodemeta/MetaIdentity.h"
 #include "utils/Log.h"
 #include "utils/Types.h"
+#include "utils/ArgStr.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -61,7 +62,7 @@ QString MetaEndpoint::origin() const
 {
     const QUrl url(baseUrl);
     const int defPort = url.scheme() == u"https" ? 443 : 80;
-    return QStringLiteral("%1://%2:%3").arg(url.scheme(), url.host().toLower()).arg(url.port(defPort));
+    return QStringLiteral("%1://%2:%3").arg(argStr(url.scheme()), argStr(url.host().toLower()), argStr(url.port(defPort)));
 }
 
 // ---------------------------------------------------------------------------

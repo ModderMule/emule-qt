@@ -2,6 +2,7 @@
 /// @brief Non-inline implementations for Address and Endpoint.
 
 #include "net/Address.h"
+#include "utils/ArgStr.h"
 #include "utils/OtherFunctions.h"   // the uint32 isGoodIP the IPv4 branch delegates to
 
 #ifdef Q_OS_WIN
@@ -475,8 +476,8 @@ std::optional<HostPort> parseHostPort(QStringView text, uint16 defaultPort)
 QString formatHostPort(QStringView host, uint16 port)
 {
     if (host.contains(u':'))
-        return QStringLiteral("[%1]:%2").arg(host).arg(port);
-    return QStringLiteral("%1:%2").arg(host).arg(port);
+        return QStringLiteral("[%1]:%2").arg(argStr(host), argStr(port));
+    return QStringLiteral("%1:%2").arg(argStr(host), argStr(port));
 }
 
 // ============================================================================

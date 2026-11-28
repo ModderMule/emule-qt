@@ -9,6 +9,7 @@
 #include "utils/BackgroundFileWriter.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -295,7 +296,7 @@ ffi::Result<> Ed3kCredit::claimStake(std::uint64_t id)
         emit stakeChanged();
         changed(true);
     } else {
-        logEd3kWarning(QStringLiteral("ed3k: stake: claim %1 refused (error %2)").arg(id).arg(int(ok.error())));
+        logEd3kWarning(QStringLiteral("ed3k: stake: claim %1 refused (error %2)").arg(argStr(id), argStr(int(ok.error()))));
     }
     m_session.pump();
     return ok;
@@ -356,7 +357,7 @@ void Ed3kCredit::onEventPolled(const ffi::Event& ev, bool* handled)
         m_status.lastTxRevert = t->revert;
         m_status.lastTx = t->tx ? hexOf(*t->tx) : QString();
         logEd3k(QStringLiteral("ed3k: credit transaction %1: state %2 (revert %3) %4")
-                    .arg(t->what).arg(t->state).arg(t->revert).arg(m_status.lastTx));
+                    .arg(argStr(t->what), argStr(t->state), argStr(t->revert), argStr(m_status.lastTx)));
         if (t->what == ED3K_CREDIT_TX_BURN_FOR_STAKE || t->what == ED3K_CREDIT_TX_CLAIM_STAKE) {
             // // a claim that did not go through can be sent again (the tx names no claim id)
             // if (CLAIM_STAKE && (REVERTED || FAILED)) { every Claiming → Waiting; save; stakeChanged }
@@ -372,7 +373,7 @@ void Ed3kCredit::onEventPolled(const ffi::Event& ev, bool* handled)
         changed(true);
     } else if (const auto* w = std::get_if<e::CreditWrongChain>(&ev)) {
         logEd3kWarning(QStringLiteral("ed3k: credit ledger endpoint %1 is on chain %2, not %3; not used again")
-                           .arg(w->endpoint).arg(w->chainId).arg(m_prefs.chainId));
+                           .arg(argStr(w->endpoint), argStr(w->chainId), argStr(m_prefs.chainId)));
         if (std::ranges::find(m_status.wrongChain, w->endpoint) == m_status.wrongChain.end())
             m_status.wrongChain.push_back(w->endpoint);
         changed(true);
@@ -455,8 +456,8 @@ void Ed3kCredit::apply()
     const auto endpoints = std::uint32_t(m_endpoints);
     // §7.3: quorum of different operators; never above what there is
     const std::uint32_t quorum = endpoints == 0 ? 0 : std::clamp<std::uint32_t>(m_prefs.quorum, 1, endpoints);
-    const QString as = QStringLiteral("%1/%2/%3/%4/%5").arg(m_prefs.chainId).arg(m_prefs.contract.toLower())
-                           .arg(endpoints).arg(quorum).arg(m_address);
+    const QString as = QStringLiteral("%1/%2/%3/%4/%5").arg(argStr(m_prefs.chainId), argStr(m_prefs.contract.toLower()),
+                                argStr(endpoints), argStr(quorum), argStr(m_address));
     if (m_configured && as == m_configuredAs) {
         wipe(std::span<std::uint8_t>{*key});
         return;
@@ -478,7 +479,7 @@ void Ed3kCredit::apply()
                                : QString();
     m_status.wrongChain.clear();
     logEd3k(QStringLiteral("ed3k: credits on (chain %1, %2 ledger endpoint(s), quorum %3)")
-                .arg(m_prefs.chainId).arg(endpoints).arg(quorum));
+                .arg(argStr(m_prefs.chainId), argStr(endpoints), argStr(quorum)));
     applyMarket();
     if (endpoints > 0)
         (void)engine->creditStakeParams(m_session.now());
@@ -614,7 +615,7 @@ void Ed3kCredit::onStakeEvent(const ffi::Event& ev)
     namespace e = ffi::event;
     if (const auto* sb = std::get_if<e::CreditStakeBurned>(&ev)) {
         logEd3k(QStringLiteral("ed3k: stake: burn mined, claim %1 for %2 ready at %3")
-                    .arg(sb->id).arg(addressText(sb->to)).arg(sb->readyAt));
+                    .arg(argStr(sb->id), argStr(addressText(sb->to)), argStr(sb->readyAt)));
         // the burn's hash (batch 12 #10): in the event, else the one its CreditTx named before
         m_fresh.insert(sb->id);   // an own burn of this run: claimable at once
         const QString burnTx = std::ranges::any_of(sb->tx, [](std::uint8_t b) { return b != 0; }) ? hexOf(sb->tx) : m_burnTx;
@@ -624,7 +625,7 @@ void Ed3kCredit::onStakeEvent(const ffi::Event& ev)
             m_status.claims.push_back(StakeClaim{sb->id, sb->to, sb->amount, sb->readyAt, ClaimState::Waiting, burnTx, {}, false});
         m_burnTx.clear();
     } else if (const auto* sc = std::get_if<e::CreditStakeClaimed>(&ev)) {
-        logEd3k(QStringLiteral("ed3k: stake: claim %1 paid to %2").arg(sc->id).arg(addressText(sc->to)));
+        logEd3k(QStringLiteral("ed3k: stake: claim %1 paid to %2").arg(argStr(sc->id), argStr(addressText(sc->to))));
         if (StakeClaim* c = claim(sc->id)) {
             c->state = ClaimState::Paid;
             c->amount = sc->amount;
@@ -662,7 +663,7 @@ void Ed3kCredit::onStakeEvent(const ffi::Event& ev)
                 c->reclaim = false;
                 QTimer::singleShot(0, this, [this, id = r->id] {
                     if (auto ok = claimStake(id); !ok)
-                        logEd3kWarning(QStringLiteral("ed3k: stake: claim %1 not sent again (error %2)").arg(id).arg(int(ok.error())));
+                        logEd3kWarning(QStringLiteral("ed3k: stake: claim %1 not sent again (error %2)").arg(argStr(id), argStr(int(ok.error()))));
                     else
                         logEd3k(QStringLiteral("ed3k: stake: claim %1 sent again (unpaid after a restart)").arg(id));
                 });
@@ -848,8 +849,8 @@ void Ed3kCredit::updateAuto()
     if (!m_auto.update(m_prefs, running, m_status.overdrawn, QDateTime::currentMSecsSinceEpoch()))
         return;
     logEd3k(QStringLiteral("ed3k: credits: highspeed download %1, about %2 credits left")
-                .arg(m_auto.active ? QStringLiteral("started") : QStringLiteral("stopped"))
-                .arg(QString::number(double(m_auto.estimated()) / double(AutoBid::kMicro), 'f', 1)));
+                .arg(argStr(m_auto.active ? QStringLiteral("started") : QStringLiteral("stopped")),
+                     QString::number(double(m_auto.estimated()) / double(AutoBid::kMicro), 'f', 1)));
     // a lower bid goes at once (§4.1); a raise at most once per 10 min per uploader
     applyMarket();
     changed(true);

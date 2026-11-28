@@ -16,6 +16,7 @@
 #include "utils/SafeFile.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <QRegularExpression>
 
@@ -312,8 +313,8 @@ SearchList::TcpSearchAnswer SearchList::processSearchAnswer(const uint8* packet,
             moreResults = data.readUInt8() != 0;
     } catch (const FileException& ex) {
         logDebug(QStringLiteral("Malformed search answer from %1 — kept %2 of %3 result(s): %4")
-                       .arg(server.toString()).arg(parsed).arg(resultCount)
-                       .arg(QString::fromUtf8(ex.what())));
+                       .arg(argStr(server.toString()), argStr(parsed), argStr(resultCount),
+                            QString::fromUtf8(ex.what())));
     }
     if (moreResults) {
         logDebug(QStringLiteral("Server returned only part of the matches — more results "
@@ -321,7 +322,7 @@ SearchList::TcpSearchAnswer SearchList::processSearchAnswer(const uint8* packet,
     }
 
     logServerVerbose([&]() -> QString { return QStringLiteral("TCP search answer from %1 — parsed %2 result(s), moreResults=%3")
-                         .arg(server.toString()).arg(parsed).arg(moreResults); });
+                         .arg(argStr(server.toString()), argStr(parsed), argStr(moreResults)); });
 
     emit tabHeaderUpdated(m_currentEd2kSearchID);
     return {moreResults, parsed, foundFiles(m_currentEd2kSearchID) - filesBefore};
@@ -446,7 +447,7 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
     } while (data.position() < data.length());
 
     logServerVerbose([&]() -> QString { return QStringLiteral("UDP search answer from %1 — parsed %2 result(s)")
-                         .arg(server.toString()).arg(parsedResults); });
+                         .arg(argStr(server.toString()), argStr(parsedResults)); });
 
     emit tabHeaderUpdated(m_currentEd2kSearchID);
 }
@@ -521,7 +522,7 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
         if (!entry->capLogged) {
             entry->capLogged = true;
             logDebug([&]() -> QString { return QStringLiteral("Search #%1 reached %2 distinct files — further new files ignored")
-                         .arg(searchID).arg(cap); });
+                         .arg(argStr(searchID), argStr(cap)); });
         }
         return;
     }

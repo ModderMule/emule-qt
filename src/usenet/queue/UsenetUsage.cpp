@@ -2,6 +2,7 @@
 
 #include "queue/UsenetQueueStore.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -79,9 +80,9 @@ void UsenetUsageTracker::load()
         // Only a *newer* file is refused, so a key added later needs no bump.
         if (root["version"] && root["version"].as<int>(0) > kUsageVersion) {
             logUsenetWarning(QStringLiteral("Usenet: %1 is version %2, newer than %3 — ignoring")
-                           .arg(path)
-                           .arg(root["version"].as<int>(0))
-                           .arg(kUsageVersion));
+                           .arg(argStr(path),
+                                argStr(root["version"].as<int>(0)),
+                                argStr(kUsageVersion)));
             return;
         }
 

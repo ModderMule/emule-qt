@@ -5,6 +5,7 @@
 #include "nntp/NntpSocket.h"
 #include "queue/ArticleWriter.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <algorithm>
 #include <utility>
@@ -367,10 +368,10 @@ void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)
             && !result.serverKey.isEmpty()) {
             if (const int cap = m_pool->limitConnections(result.serverKey); cap >= 0) {
                 logUsenetWarning(QStringLiteral("Usenet: %1 is at its connection limit; worker %2 holds at %3 for %4 s")
-                               .arg(result.serverKey)
-                               .arg(m_index)
-                               .arg(cap)
-                               .arg(m_pool->retryInterval()));
+                               .arg(argStr(result.serverKey),
+                                    argStr(m_index),
+                                    argStr(cap),
+                                    argStr(m_pool->retryInterval())));
             }
         }
     }

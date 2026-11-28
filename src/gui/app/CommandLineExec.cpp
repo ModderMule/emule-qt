@@ -13,6 +13,7 @@
 #include "dialogs/OptionsDialog.h"
 #include "panels/IrcPanel.h"
 #include "panels/KadPanel.h"
+#include "panels/SearchPanel.h"
 #include "panels/TransferPanel.h"
 #ifdef EMULE_HAVE_BITTORRENT
 #include "panels/TorrentPanel.h"
@@ -48,6 +49,8 @@ void CommandLineExec::parse(QApplication& app)
     m_parser.addOption(m_optionsOption);
     m_parser.addOption(m_clientDetailsOption);
     m_parser.addOption(m_networkInfoOption);
+    m_parser.addOption(m_searchOption);
+    m_parser.addOption(m_searchMethodOption);
     m_parser.addOption(m_configOption);
     m_parser.addOption(m_logLevelOption);   // read early by consoleLogLevelFromArgs
     m_parser.addOption(m_newInstanceOption);
@@ -73,6 +76,19 @@ void CommandLineExec::parse(QApplication& app)
     m_screenshotDelay = m_parser.value(m_delayOption).toInt();
     m_clientDetailsHash = m_parser.value(m_clientDetailsOption);
     m_networkInfo = m_parser.isSet(m_networkInfoOption);
+    m_searchTerms = m_parser.value(m_searchOption);
+    if (m_parser.isSet(m_searchMethodOption)) {
+        // SearchType values
+        static const std::pair<QString, int> methodNames[] = {
+            {QStringLiteral("automatic"), 0}, {QStringLiteral("server"), 1},
+            {QStringLiteral("global"), 2},    {QStringLiteral("kad"), 3},
+            {QStringLiteral("ed3k"), 9},
+        };
+        const QString name = m_parser.value(m_searchMethodOption).toLower();
+        for (const auto& [key, value] : methodNames)
+            if (name == key)
+                m_searchMethod = value;
+    }
     m_positionalArgs = m_parser.positionalArguments();
 
     // Parse --tab
@@ -216,6 +232,24 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
         else if (ipc)
             QObject::connect(ipc, &IpcClient::connected, &mainWindow, open,
                              Qt::SingleShotConnection);
+    }
+    if (!m_searchTerms.isEmpty() && mainWindow.searchPanel()) {
+        // after connect, plus a moment for the state sync; same path as the Start button
+        IpcClient* ipc = mainWindow.ipcClient();
+        SearchPanel* panel = mainWindow.searchPanel();
+        const QString terms = m_searchTerms;
+        const int method = m_searchMethod;
+        auto start = [panel, terms, method] {
+            QTimer::singleShot(2000, panel, [panel, terms, method] {
+                if (method >= 0)
+                    panel->selectMethod(method);
+                panel->startSearchFromExternal(terms);
+            });
+        };
+        if (ipc && ipc->isConnected())
+            start();
+        else if (ipc)
+            QObject::connect(ipc, &IpcClient::connected, panel, start, Qt::SingleShotConnection);
     }
     if (m_screenshotMode) {
         const QString path = m_screenshotPath;

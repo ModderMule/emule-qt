@@ -51,6 +51,10 @@ private slots:
     void aFeedWithNoEnabledIndexerDoesNotPoll();
     void aUrlFeedPollsItsOwnAddress();
     void aUrlFeedNeverPrintsItsKey();
+    void aTrackerRssFeedQueuesTorrents();
+    void aHintlessFeedForcedToBitTorrentQueuesTorrents();
+    void aHintlessAutoFeedSniffsTheFetchedTorrent();
+    void aFeedForcedToUsenetIgnoresTorrentHints();
     void checkingEveryFeedStillPollsOneAtATime();
     void removingAFeedMidPollIsSurvivable();
 
@@ -680,6 +684,132 @@ void tst_IndexerFeedPoller::aUrlFeedPollsItsOwnAddress()
 
     QCOMPARE(sink.titles.size(), 1);
     QCOMPARE(sink.titles.first(), QStringLiteral("from-url"));
+}
+
+namespace {
+
+/// A plain tracker RSS (no torznab attrs). @p torrentHint adds a bittorrent
+/// enclosure type; without it the links say nothing about the payload.
+QByteArray trackerFeed(const QString& host, bool torrentHint)
+{
+    QByteArray out = R"(<?xml version="1.0"?><rss version="2.0"><channel>)";
+    out += "<item><title>Show.S01E01</title><guid>t1</guid>";
+    if (torrentHint)
+        out += QStringLiteral(R"(<enclosure url="%1/get/1" length="10" type="application/x-bittorrent"/>)")
+                   .arg(host).toUtf8();
+    else
+        out += QStringLiteral(R"(<link>%1/get/1</link>)").arg(host).toUtf8();
+    out += "</item></channel></rss>";
+    return out;
+}
+
+IndexerFeed urlFeed(const QString& name, const QString& url, IndexerFeedNetwork network)
+{
+    IndexerFeed feed;
+    feed.name = name;
+    feed.kind = IndexerFeedKind::Url;
+    feed.url = url;
+    feed.network = network;
+    feed.grabExisting = true;
+    feed.intervalMinutes = IndexerFeed::kMinIntervalMinutes;
+    return feed;
+}
+
+} // namespace
+
+void tst_IndexerFeedPoller::aTrackerRssFeedQueuesTorrents()
+{
+    QString host;
+    FakeIndexerServer server([&host](const QUrl& url) {
+        if (url.path().startsWith(QStringLiteral("/get/")))
+            return qMakePair(200, QByteArray("d4:infod4:name1:xee"));
+        return qMakePair(200, trackerFeed(host, /*torrentHint*/ true));
+    });
+    host = server.urlFor(QString());
+    thePrefs.setIndexers({});
+    thePrefs.setIndexerFeeds({urlFeed(QStringLiteral("Tracker"),
+                                      server.urlFor(QStringLiteral("/rss")),
+                                      IndexerFeedNetwork::Auto)});
+
+    SinkLog sink;
+    IndexerFeedList feeds;
+    feeds.setNzbSink(sink.install());
+    feeds.applyPreferences();
+    pollAndWait(feeds, QStringLiteral("Tracker"));
+
+    QCOMPARE(sink.titles, QStringList{QStringLiteral("Show.S01E01")});
+    QCOMPARE(sink.torrents, QList<bool>{true});
+    QVERIFY(sink.payloads.first().startsWith("d4:info"));
+}
+
+void tst_IndexerFeedPoller::aHintlessFeedForcedToBitTorrentQueuesTorrents()
+{
+    // body is not bencoded either: only the override can say torrent
+    QString host;
+    FakeIndexerServer server([&host](const QUrl& url) {
+        if (url.path().startsWith(QStringLiteral("/get/")))
+            return qMakePair(200, QByteArray("opaque"));
+        return qMakePair(200, trackerFeed(host, /*torrentHint*/ false));
+    });
+    host = server.urlFor(QString());
+    thePrefs.setIndexers({});
+    thePrefs.setIndexerFeeds({urlFeed(QStringLiteral("Forced"),
+                                      server.urlFor(QStringLiteral("/rss")),
+                                      IndexerFeedNetwork::BitTorrent)});
+
+    SinkLog sink;
+    IndexerFeedList feeds;
+    feeds.setNzbSink(sink.install());
+    feeds.applyPreferences();
+    pollAndWait(feeds, QStringLiteral("Forced"));
+
+    QCOMPARE(sink.torrents, QList<bool>{true});
+}
+
+void tst_IndexerFeedPoller::aHintlessAutoFeedSniffsTheFetchedTorrent()
+{
+    QString host;
+    FakeIndexerServer server([&host](const QUrl& url) {
+        if (url.path().startsWith(QStringLiteral("/get/")))
+            return qMakePair(200, QByteArray("d8:announce3:x:14:infod4:name1:xee"));
+        return qMakePair(200, trackerFeed(host, /*torrentHint*/ false));
+    });
+    host = server.urlFor(QString());
+    thePrefs.setIndexers({});
+    thePrefs.setIndexerFeeds({urlFeed(QStringLiteral("Sniffed"),
+                                      server.urlFor(QStringLiteral("/rss")),
+                                      IndexerFeedNetwork::Auto)});
+
+    SinkLog sink;
+    IndexerFeedList feeds;
+    feeds.setNzbSink(sink.install());
+    feeds.applyPreferences();
+    pollAndWait(feeds, QStringLiteral("Sniffed"));
+
+    QCOMPARE(sink.torrents, QList<bool>{true});
+}
+
+void tst_IndexerFeedPoller::aFeedForcedToUsenetIgnoresTorrentHints()
+{
+    QString host;
+    FakeIndexerServer server([&host](const QUrl& url) {
+        if (url.path().startsWith(QStringLiteral("/get/")))
+            return qMakePair(200, anNzb());
+        return qMakePair(200, trackerFeed(host, /*torrentHint*/ true));
+    });
+    host = server.urlFor(QString());
+    thePrefs.setIndexers({});
+    thePrefs.setIndexerFeeds({urlFeed(QStringLiteral("Nzbs"),
+                                      server.urlFor(QStringLiteral("/rss")),
+                                      IndexerFeedNetwork::Usenet)});
+
+    SinkLog sink;
+    IndexerFeedList feeds;
+    feeds.setNzbSink(sink.install());
+    feeds.applyPreferences();
+    pollAndWait(feeds, QStringLiteral("Nzbs"));
+
+    QCOMPARE(sink.torrents, QList<bool>{false});
 }
 
 void tst_IndexerFeedPoller::aUrlFeedNeverPrintsItsKey()

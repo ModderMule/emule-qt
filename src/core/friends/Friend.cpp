@@ -13,6 +13,7 @@
 #include "utils/Log.h"
 #include "utils/TimeUtils.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 
 namespace eMule {
@@ -275,8 +276,8 @@ void Friend::findKadID()
         return;
 
     logDebug([&]() -> QString { return QStringLiteral("Searching Kad ID for friend %1 by address %2")
-                 .arg(m_name.isEmpty() ? QStringLiteral("(unknown)") : m_name)
-                 .arg(ipstr(client->connectAddress())); });
+                 .arg(argStr(m_name.isEmpty() ? QStringLiteral("(unknown)") : m_name),
+                      argStr(ipstr(client->connectAddress()))); });
     kad->findNodeIDByIP(*this, client->connectAddress().toUint32(),
                         client->userPort(), client->kadPort());
 }
@@ -323,8 +324,8 @@ void Friend::kadSearchIPByNodeIDResult(kad::KadClientSearchResult status, uint32
         // The same address that just failed is no news.
         if (client->connectAddress() != found || client->userPort() != port) {
             logDebug([&]() -> QString { return QStringLiteral("Kad found friend %1 at %2:%3")
-                         .arg(m_name.isEmpty() ? QStringLiteral("(unknown)") : m_name)
-                         .arg(ipstr(found)).arg(port); });
+                         .arg(argStr(m_name.isEmpty() ? QStringLiteral("(unknown)") : m_name),
+                              argStr(ipstr(found)), argStr(port)); });
             reportProgress(ChatConnectProgress::FoundInKad);
 
             m_lastUsedAddress = found;

@@ -20,6 +20,7 @@
 #include "stats/Statistics.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QNetworkProxy>
 #include <QUrl>
@@ -392,7 +393,7 @@ void URLClient::onSocketConnected(int errorCode)
     if (errorCode == 0) {
         connectionEstablished();
     } else {
-        logDebug([&]() -> QString { return QStringLiteral("URLClient: connection failed to %1 error: %2").arg(m_urlHost).arg(errorCode); });
+        logDebug([&]() -> QString { return QStringLiteral("URLClient: connection failed to %1 error: %2").arg(argStr(m_urlHost), argStr(errorCode)); });
         disconnected(QStringLiteral("Connection failed"));
     }
 }

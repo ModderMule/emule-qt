@@ -54,6 +54,9 @@ private slots:
     void serverIdent_ed3kTagNamesTheIndexNode();
     void serverIdent_offerFilesV1AllOrNothing();
     void serverIdent_offerFilesV1FirstAdvertisementBinds();
+    void serverIdent_ipv6CallbackOfferOptsIn_data();
+    void serverIdent_ipv6CallbackOfferOptsIn();
+    void ipv6Callback_failAndRequestedForms();
 };
 
 /// Helper: write raw ED2K packet bytes to a socket.
@@ -965,6 +968,130 @@ void tst_ServerSocket::serverIdent_offerFilesV1FirstAdvertisementBinds()
     const auto late = offerV1AfterIdents({{}, offerV1Tags(100, 750)});
     QVERIFY(late.has_value());
     QCOMPARE(late->batchMax, 100u);
+}
+
+// ---------------------------------------------------------------------------
+// IPv6 LowID callback (ed2k-server#62, eNode-go#2)
+// ---------------------------------------------------------------------------
+
+namespace {
+/// Connected client socket and the fake server's end of it.
+struct IdentRig {
+    QTcpServer server;
+    ServerSocket client;
+    QTcpSocket* serverSide = nullptr;
+
+    bool open()
+    {
+        if (!server.listen(QHostAddress::LocalHost, 0))
+            return false;
+        Server srv(htonl(0x7F000001), server.serverPort());
+        client.connectTo(srv);
+        if (!server.waitForNewConnection(5000))
+            return false;
+        serverSide = server.nextPendingConnection();
+        return serverSide && client.waitForConnected(5000);
+    }
+};
+} // namespace
+
+void tst_ServerSocket::serverIdent_ipv6CallbackOfferOptsIn_data()
+{
+    QTest::addColumn<int>("tagValue");   // -1: no ST_IPV6_CALLBACK tag
+    QTest::addColumn<bool>("offered");
+    QTest::newRow("bit 0 offers, opt in") << 1 << true;
+    QTest::newRow("other bits only") << 2 << false;
+    QTest::newRow("no tag") << -1 << false;
+}
+
+// ST_IPV6_CALLBACK bit 0 marks the server's copy and answers with OP_IPV6_CALLBACK_OPTIN
+// <0x01>; without it nothing is sent and the copy says not offered.
+void tst_ServerSocket::serverIdent_ipv6CallbackOfferOptsIn()
+{
+    QFETCH(int, tagValue);
+    QFETCH(bool, offered);
+
+    IdentRig rig;
+    QVERIFY(rig.open());
+    QSignalSpy identSpy(&rig.client, &ServerSocket::serverIdentReceived);
+
+    SafeMemFile data;
+    const uint8 hash[16] = {};
+    data.writeHash16(hash);
+    data.writeUInt32(htonl(0x0A010203));
+    data.writeUInt16(4661);
+    data.writeUInt32(tagValue < 0 ? 0 : 1);
+    if (tagValue >= 0)
+        Tag(static_cast<uint8>(ST_IPV6_CALLBACK), static_cast<uint32>(tagValue)).writeTagToFile(data);
+    const QByteArray payload = data.takeBuffer();
+    writeRawPacket(rig.serverSide, OP_EDONKEYPROT, OP_SERVERIDENT, payload.constData(),
+                   static_cast<uint32>(payload.size()));
+
+    QTRY_COMPARE_WITH_TIMEOUT(identSpy.count(), 1, 3000);
+    QVERIFY(rig.client.currentServer());
+    QCOMPARE(rig.client.currentServer()->ipv6CallbackOffered(), offered);
+
+    // <prot E3><len 2 LE as uint32><opcode 0x65><features 0x01>
+    const QByteArray optIn = QByteArray::fromHex("e3020000006501");
+    QByteArray sent;
+    QTest::qWait(300);
+    while (rig.serverSide->bytesAvailable() > 0 || rig.serverSide->waitForReadyRead(100))
+        sent += rig.serverSide->readAll();
+    qDebug() << "input: ST_IPV6_CALLBACK" << tagValue << "output: offered"
+             << rig.client.currentServer()->ipv6CallbackOffered() << "sent" << sent.toHex(' ');
+    QCOMPARE(sent.contains(optIn), offered);
+
+    rig.serverSide->close();
+    rig.client.close();
+}
+
+// The 5-byte OP_CALLBACK_FAIL names the target and the reason; the empty one stays the
+// classic failure. OP_CALLBACKREQUESTED_IPV6 hands the 17-byte crypt trailer on.
+void tst_ServerSocket::ipv6Callback_failAndRequestedForms()
+{
+    IdentRig rig;
+    QVERIFY(rig.open());
+
+    int classic = 0;
+    QList<std::pair<uint32, uint8>> refused;
+    QList<std::pair<Endpoint, uint32>> requested;
+    QByteArray trailer;
+    connect(&rig.client, &ServerSocket::callbackFailed, this, [&] { ++classic; });
+    connect(&rig.client, &ServerSocket::callbackRefused, this,
+            [&](uint32 id, uint8 reason) { refused.append({id, reason}); });
+    connect(&rig.client, &ServerSocket::callbackRequestedIPv6, this,
+            [&](const Endpoint& ep, const uint8* crypt, uint32 size) {
+                requested.append({ep, size});
+                if (crypt)
+                    trailer = QByteArray(reinterpret_cast<const char*>(crypt), static_cast<qsizetype>(size));
+            });
+
+    writeRawPacket(rig.serverSide, OP_EDONKEYPROT, OP_CALLBACK_FAIL, nullptr, 0);
+    const char fail[5] = {0x56, 0x34, 0x12, 0x00, IPV6CB_REFUSED_NOT_OPTED_IN};
+    writeRawPacket(rig.serverSide, OP_EDONKEYPROT, OP_CALLBACK_FAIL, fail, 5);
+
+    const Address v6 = Address::fromString(QStringLiteral("2001:db8::1234"));
+    QByteArray cb(reinterpret_cast<const char*>(v6.ipv6Bytes().data()), 16);
+    cb += QByteArray::fromHex("3612");                       // port 4662, LE
+    writeRawPacket(rig.serverSide, OP_EDONKEYPROT, OP_CALLBACKREQUESTED_IPV6, cb.constData(), 18);
+    const QByteArray crypt = QByteArray(1, '\x03') + QByteArray(16, '\xab');
+    cb += crypt;                                              // crypt options + user hash
+    writeRawPacket(rig.serverSide, OP_EDONKEYPROT, OP_CALLBACKREQUESTED_IPV6, cb.constData(), 35);
+
+    QTRY_COMPARE_WITH_TIMEOUT(requested.size(), 2, 3000);
+    qDebug() << "input: empty 0x36, 5-byte 0x36, 18- and 35-byte 0x26; output: classic" << classic
+             << "refused" << refused.size() << "trailer" << trailer.toHex(' ');
+    QCOMPARE(classic, 1);
+    QCOMPARE(refused.size(), 1);
+    QCOMPARE(refused.at(0).first, 0x123456u);
+    QCOMPARE(refused.at(0).second, uint8{IPV6CB_REFUSED_NOT_OPTED_IN});
+    QCOMPARE(requested.at(0).first, Endpoint(v6, 4662));
+    QCOMPARE(requested.at(0).second, 0u);
+    QCOMPARE(requested.at(1).second, 17u);
+    QCOMPARE(trailer, crypt);
+
+    rig.serverSide->close();
+    rig.client.close();
 }
 
 #include "tst_ServerSocket.moc"

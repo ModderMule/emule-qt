@@ -1,6 +1,7 @@
 #include "utils/SidecarProcess.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QTimer>
 
@@ -65,7 +66,7 @@ void joinSidecarJob(qint64 pid)
                    : nullptr;
     if (!h || !::AssignProcessToJobObject(job, h))
         logWarning(QStringLiteral("Sidecar %1 not bound to the core's lifetime (error %2)")
-                       .arg(pid).arg(::GetLastError()));
+                       .arg(argStr(pid), argStr(::GetLastError())));
     if (h)
         ::CloseHandle(h);
 }

@@ -7,6 +7,7 @@
 #include "Ed3kSets.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QHttpHeaders>
@@ -225,9 +226,9 @@ QString Ed3kSiteServer::originUrl(const ffi::Key32& key, const QByteArray& id, c
     if (!p.startsWith(QLatin1Char('/')))
         p.prepend(QLatin1Char('/'));
     return QStringLiteral("http://%1:%2%3")
-        .arg(QString::fromStdString(*host))
-        .arg(m_port)
-        .arg(QString::fromLatin1(QUrl::toPercentEncoding(p, "/")));
+        .arg(argStr(QString::fromStdString(*host)),
+             argStr(m_port),
+             QString::fromLatin1(QUrl::toPercentEncoding(p, "/")));
 }
 
 void Ed3kSiteServer::setFetchingSince(const ffi::Key32& key, const QByteArray& id, qint64 secs)

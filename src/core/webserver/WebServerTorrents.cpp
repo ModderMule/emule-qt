@@ -4,6 +4,7 @@
 ///        EMULE_HAVE_BITTORRENT the table gains nothing and the routes do not exist.
 
 #include "webserver/WebServer.h"
+#include "utils/ArgStr.h"
 
 #ifdef EMULE_HAVE_BITTORRENT
 
@@ -566,8 +567,8 @@ void WebServer::addTorrentOperations()
         op.handler = [withTorrent, this](const Call& c) {
             return withTorrent(c, [&c, this](const QString& id, const QCborMap&) -> Result {
                 return apiPreviewLink(c, s("/api/v1/torrents/%1/%2/preview")
-                                             .arg(QString::fromLatin1(QUrl::toPercentEncoding(id, ":")))
-                                             .arg(c.integer(L("fileIndex"))));
+                                             .arg(QString::fromLatin1(QUrl::toPercentEncoding(id, ":")),
+                                                  argStr(c.integer(L("fileIndex")))));
             });
         };
         add(op);

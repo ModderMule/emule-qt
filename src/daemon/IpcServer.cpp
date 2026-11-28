@@ -7,6 +7,7 @@
 
 #include "net/ListenConflict.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QSslSocket>
 
@@ -221,10 +222,10 @@ void IpcServer::notifyCategoriesChanged()
 void IpcServer::onSocketReady(QSslSocket* socket, bool isLocal)
 {
     logInfo(QStringLiteral("IPC client connected from %1:%2%3%4")
-                .arg(socket->peerAddress().toString())
-                .arg(socket->peerPort())
-                .arg(isLocal ? QString() : QStringLiteral(" (remote)"))
-                .arg(socket->isEncrypted() ? QStringLiteral(", TLS") : QString()));
+                .arg(argStr(socket->peerAddress().toString()),
+                     argStr(socket->peerPort()),
+                     argStr(isLocal ? QString() : QStringLiteral(" (remote)")),
+                     argStr(socket->isEncrypted() ? QStringLiteral(", TLS") : QString())));
     addClient(socket, isLocal);
 }
 

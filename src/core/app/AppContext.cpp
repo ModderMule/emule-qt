@@ -14,6 +14,7 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QStringList>
 #include <algorithm>
@@ -266,9 +267,9 @@ void AppContext::recordServerObservedIP(const Address& candidate, const Address&
     const std::size_t bestCount = recomputeServerCorroboratedIP();
     const std::size_t threshold = serverConfirmThreshold();
     logDebug([&]() -> QString { return QStringLiteral("Public IPv4: server %1 observes us at %2 (%3/%4 distinct servers)")
-                 .arg(who, candidate.toString())
-                 .arg(m_ipv4ServerVotes.voterCount(candidate))
-                 .arg(threshold); });
+                 .arg(argStr(who), argStr(candidate.toString()),
+                      argStr(m_ipv4ServerVotes.voterCount(candidate)),
+                      argStr(threshold)); });
 
     // Note once per candidate when a server's view disagrees with the address we are
     // actually using. This is the CGNAT / multi-homed-egress signal: on such a host no
@@ -455,10 +456,10 @@ std::size_t AppContext::recomputeServerCorroboratedIP()
         if (after != before) {
             logInfo(QStringLiteral("Public IPv4: now %1 (source: server-corroborated, "
                                    "%2 server(s))%3")
-                        .arg(after != 0 ? ipstr(after) : QStringLiteral("unknown"))
-                        .arg(out.bestCount)
-                        .arg(before != 0 ? QStringLiteral(", was %1").arg(ipstr(before))
-                                         : QString()));
+                        .arg(argStr(after != 0 ? ipstr(after) : QStringLiteral("unknown")),
+                             argStr(out.bestCount),
+                             argStr(before != 0 ? QStringLiteral(", was %1").arg(ipstr(before))
+                                         : QString())));
             // Every server UDP key is stamped with the address it was issued for, so a
             // change to the effective one kills them all. Same path Kad uses.
             onEffectivePublicIPChanged(after);

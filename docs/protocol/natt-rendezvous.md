@@ -267,21 +267,54 @@ The compatibility target's dialect, adopted unchanged (`natt-transports-emuleai.
   `<buddy id 16><zero 16><0xA0><our hash 16><opts | 0x20><file hash 16><our ip 4><udp port 2><hint 1>[<block>]`
   Always the full 73 bytes; IP and port are zeros when we don't know our public IPv4 (was 66
   bytes until 2026-11-27). Hint is 2 (QUIC) while the QUIC transport runs, else 0.
-- Extension block (emule-qt#265, proposed to eMuleAI in eMuleAI#172, aMule will carry it):
+- Extension block (emule-qt#265, proposed to eMuleAI in eMuleAI#172, aMule buddies carry it
+  since amule-org/amule#2649):
   `<type 1><len 1><value len>` repeated to the end of the body. Unknown type: skip by length.
-  A length past the end voids the whole block. It follows the hint byte, so eMuleAI (reads up
-  to the hint) and older eMule Qt targets (read up to the endpoint) ignore it.
+  An element running past the end, or a lone byte at the end, voids the whole block. It
+  follows the hint byte, so eMuleAI (reads up to the hint) and older eMule Qt targets (read up
+  to the endpoint) ignore it.
 
   | Type | Value | Meaning |
   | --- | --- | --- |
   | `0x01` | `<ipv6 16><udp port 2>` (port LE) | requester's IPv6 UDP endpoint. Sent while we have a confident public IPv6; port is the bound UDP port (ToDo: NAT66-mapped port). A longer value is read for its first 18 bytes |
 
-  Type values are proposed in eMuleAI#172 as the one shared table.
+  Type values are proposed in eMuleAI#172 as the one shared table. New types go there first,
+  mentioning aMule: an aMule buddy drops every type it does not know.
+- Readers: both eMule Qt and aMule take the first `0x01` with a good global IPv6 and a nonzero
+  port, reading the first 18 bytes of a longer value.
+- aMule as buddy (`857acc9b6`): forwards only the checked `0x01`, rewritten as one 18-byte
+  element after the tail. As target and requester aMule ignores the block (its NAT-T has no
+  IPv6 UDP socket yet). eMule Qt as buddy forwards the block verbatim; the target checks it.
 - Buddy (we serve one): the existing relay forwards it as a stock `OP_REASKCALLBACKTCP`. When
   the envelope has the zero hash, `0xA0` and option `0x20`, we also send the requester
   `OP_NATT_ENDPOINT_HINT` (`0xAA`, 56 bytes:
   `<ver 1><target hash 16><buddy id 16><file hash 16><ip 4><port 2><opts 1>`) and one
-  `OP_HOLEPUNCH`. The port is the served client's Kad port (ToDo: a per-client observed port).
+  `OP_HOLEPUNCH`. Endpoint = served client's outside UDP endpoint (below); its Kad port
+  only while none is known.
+- Served client's UDP endpoint (emule-qt#281, shared with aMule). Measured behind a home
+  router and a mobile carrier: one outside port for every destination, kept across 150 s
+  idle, inside port *not* kept. So the hello's Kad port is wrong there; the source of the
+  served node's UDP packets is right.
+  - Buddy keeps per client (never per IP) the source of the latest Kad packet from the
+    served node: the `0x51` (`KADEMLIA_FINDBUDDY_REQ`) it accepted, then each refresh. The
+    hello no longer overwrites it (`UpDownClient::servedUdpPort`).
+  - Refresh = the served node repeats its `0x51` unchanged (buddy ID, user hash, TCP port,
+    opts) from the client UDP socket, obfuscated to the buddy's Kad ID with the buddy's
+    receiver key. No new opcode.
+  - Buddy takes a repeat as refresh only with a valid receiver key (proves the IP), the same
+    user hash, and the IP of the first `0x51` (TCP IP for a client that claimed over TCP).
+    Then it updates the port, answers nothing (no `0x52`), and checks no slot or firewall
+    rule. Anything else goes the normal claim path; a buddy that does not know refreshes
+    refuses it there ("already a known client" / own buddy), harmless.
+  - When: with every `OP_BUDDYPING` (first one at link start, then 10 min), and on demand
+    when our buddy relays a `0xA0` to us, at most every 30 s. No 60 s keepalive: the
+    mappings measured outlived 150 s idle, and the on-demand refresh covers a moved one.
+  - Buddy does not hold the hint for the refresh: it sends `0xAA` at once with the port it
+    has. A refresh that moves the port within 3 s of a hint sends one more `0xAA` (same
+    target, buddy ID, file) with the new port. The requester treats it like the first one:
+    one more endpoint to punch, the freshest.
+  - No Kad ID or receiver key for the buddy (not in the routing table or buddy store): no
+    refresh sent; the hint falls back to the first `0x51` source.
 - Target: `processReaskCallbackTCP` sees the zero file hash, reads the embedded opcode and
   starts a target attempt at the endpoint the buddy saw. The self-reported tail is used only
   when that endpoint is not a good public address.

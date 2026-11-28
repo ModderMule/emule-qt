@@ -8,6 +8,7 @@
 #include "Ed3kSession.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QHostAddress>
 #include <QUrl>
@@ -163,8 +164,8 @@ void Ed3kChain::apply()
     }
     if (!m_prefs.forwarder.isEmpty() && !forwarder)
         logEd3kWarning(QStringLiteral("ed3k: the chaintube forwarder is no address; none used"));
-    const QString as = QStringLiteral("%1/%2/%3/%4/%5/%6").arg(m_prefs.chainId).arg(m_prefs.content.toLower(),
-        m_prefs.comment.toLower(), m_prefs.vote.toLower(), forwarder ? m_prefs.forwarder.toLower() : QString()).arg(providers);
+    const QString as = QStringLiteral("%1/%2/%3/%4/%5/%6").arg(argStr(m_prefs.chainId), argStr(m_prefs.content.toLower()),
+        argStr(m_prefs.comment.toLower()), argStr(m_prefs.vote.toLower()), argStr(forwarder ? m_prefs.forwarder.toLower() : QString()), argStr(providers));
     if (m_configured && as == m_configuredAs)
         return;
     const auto ok = engine->chainConfigure(m_prefs.chainId, *content, *comment, *vote, providers,
@@ -180,7 +181,7 @@ void Ed3kChain::apply()
     m_configured = true;
     m_configuredAs = as;
     m_problem = providers == 0 ? QStringLiteral("no chaintube RPC endpoints: reads off") : QString();
-    logEd3k(QStringLiteral("ed3k: chaintube chain %1 configured (%2 provider(s) per read)").arg(m_prefs.chainId).arg(providers));
+    logEd3k(QStringLiteral("ed3k: chaintube chain %1 configured (%2 provider(s) per read)").arg(argStr(m_prefs.chainId), argStr(providers)));
     // ruling #8: with one remote endpoint the §4.3 SHOULD can't be met; said once
     if (singleRemote(m_endpoints) && !m_toldSingle) {
         m_toldSingle = true;

@@ -3,6 +3,7 @@
 /// @brief Owner-only access for secret files — implementation.
 
 #include "utils/OwnerOnly.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QFile>
@@ -91,7 +92,7 @@ bool makeOwnerOnly(const QString& path, QString* error)
                                             DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, nullptr,
                                             nullptr, acl, nullptr);
     if (err != ERROR_SUCCESS)
-        return fail(error, QStringLiteral("owner-only DACL of %1 not set (error %2)").arg(path).arg(err));
+        return fail(error, QStringLiteral("owner-only DACL of %1 not set (error %2)").arg(argStr(path), argStr(err)));
     return true;
 #else
     // made 0600 already (open(2), QSaveFile); one copied in is mended
@@ -168,7 +169,7 @@ bool writeOwnerOnly(const QString& path, QByteArrayView data, QString* error)
         || !SetSecurityDescriptorControl(&sd, SE_DACL_PROTECTED, SE_DACL_PROTECTED))
         return fail(error, QStringLiteral("security descriptor not made (error %1)").arg(GetLastError()));
     SECURITY_ATTRIBUTES sa{sizeof(sa), &sd, FALSE};
-    const QString tmp = QStringLiteral("%1.%2.tmp").arg(path).arg(QRandomGenerator::global()->generate(), 8, 16, QLatin1Char('0'));
+    const QString tmp = QStringLiteral("%1.%2.tmp").arg(argStr(path), argFmt(QRandomGenerator::global()->generate(), 8, 16, QLatin1Char('0')));
     const std::wstring nativeTmp = QDir::toNativeSeparators(tmp).toStdWString();
     const std::wstring native = QDir::toNativeSeparators(path).toStdWString();
     HANDLE h = CreateFileW(nativeTmp.c_str(), GENERIC_WRITE, 0, &sa, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -187,7 +188,7 @@ bool writeOwnerOnly(const QString& path, QByteArrayView data, QString* error)
     if (ok && !MoveFileExW(nativeTmp.c_str(), native.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         const DWORD moveErr = GetLastError();
         DeleteFileW(nativeTmp.c_str());
-        return fail(error, QStringLiteral("%1 not replaced (error %2)").arg(path).arg(moveErr));
+        return fail(error, QStringLiteral("%1 not replaced (error %2)").arg(argStr(path), argStr(moveErr)));
     }
     if (!ok) {
         DeleteFileW(nativeTmp.c_str());

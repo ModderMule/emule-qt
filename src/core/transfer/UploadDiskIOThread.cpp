@@ -14,6 +14,7 @@
 #include "utils/Log.h"
 #include "utils/PathUtils.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QElapsedTimer>
@@ -718,10 +719,10 @@ void UploadDiskIOThread::logStuckReads()
         ++m_slowReadWarnings;
         logWarning(QStringLiteral("Upload: disk read waiting for %1 s on drive %2: %3. %4 more reads wait "
                                   "behind it; other drives go on")
-                       .arg(s.ms / 1000)
-                       .arg(s.drive.isEmpty() ? QStringLiteral("(unknown)") : s.drive,
-                            QDir::toNativeSeparators(s.path))
-                       .arg(s.waiting));
+                       .arg(argStr(s.ms / 1000),
+                            argStr(s.drive.isEmpty() ? QStringLiteral("(unknown)") : s.drive),
+                            argStr(QDir::toNativeSeparators(s.path)),
+                            argStr(s.waiting)));
     }
 }
 
@@ -749,12 +750,12 @@ void UploadDiskIOThread::noteReadTime(Lane& lane, const BlockReadRequest& req, u
     lane.slowNotLogged = 0;
     ++m_slowReadWarnings;
     logWarning(QStringLiteral("Upload: slow disk read, %1 ms for %2 KB of %3 on drive %4, %5 reads waiting%6")
-                   .arg(ms)
-                   .arg((req.endOffset - req.startOffset) / 1024)
-                   .arg(QDir::toNativeSeparators(req.filePath),
-                        lane.drive.isEmpty() ? QStringLiteral("(unknown)") : lane.drive)
-                   .arg(waiting)
-                   .arg(more));
+                   .arg(argStr(ms),
+                        argStr((req.endOffset - req.startOffset) / 1024),
+                        argStr(QDir::toNativeSeparators(req.filePath)),
+                        argStr(lane.drive.isEmpty() ? QStringLiteral("(unknown)") : lane.drive),
+                        argStr(waiting),
+                        argStr(more)));
 }
 
 bool UploadDiskIOThread::readUncached(const BlockReadRequest& req, QByteArray& data)

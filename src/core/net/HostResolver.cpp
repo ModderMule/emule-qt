@@ -6,6 +6,7 @@
 
 #include "net/DohResolver.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QHostInfo>
@@ -275,9 +276,9 @@ void HostResolver::lookupDone(const QString& host, const QList<QHostAddress>& fo
         error = failure.isEmpty() ? QStringLiteral("no address records") : failure;
 
     logDebug([&]() -> QString { return QStringLiteral("HostResolver: %1 -> %2 address(es)%3")
-                 .arg(host)
-                 .arg(addresses.size())
-                 .arg(error.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(error)); });
+                 .arg(argStr(host),
+                      argStr(addresses.size()),
+                      argStr(error.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(error))); });
 
     cacheResult(host, addresses, error);
     completeHost(host, addresses, error);

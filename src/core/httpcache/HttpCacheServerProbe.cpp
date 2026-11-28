@@ -7,6 +7,7 @@
 
 #include "net/HttpDefaults.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -71,7 +72,7 @@ HttpCacheServerInfo evaluate(QNetworkReply* reply, bool tooBig)
     }
     if (info.httpStatus != 200) {
         info.error = QObject::tr("%1 answered HTTP %2 — this is not an HTTP Cache server.")
-                         .arg(reply->url().host()).arg(info.httpStatus);
+                         .arg(argStr(reply->url().host()), argStr(info.httpStatus));
         return info;
     }
 
@@ -105,9 +106,9 @@ HttpCacheServerInfo evaluate(QNetworkReply* reply, bool tooBig)
     }
     if (info.version != HttpCacheServerProbe::kSupportedVersion) {
         info.error = QObject::tr("%1 speaks HTTP Cache version %2; this client understands %3.")
-                         .arg(reply->url().host())
-                         .arg(info.version)
-                         .arg(HttpCacheServerProbe::kSupportedVersion);
+                         .arg(argStr(reply->url().host()),
+                              argStr(info.version),
+                              argStr(HttpCacheServerProbe::kSupportedVersion));
         return info;
     }
 

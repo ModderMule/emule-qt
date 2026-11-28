@@ -2,9 +2,10 @@
 # Build qDonkey (libs/qDonkey) and run it on a simulator, paired with the local core.
 # Usage: scripts/qdonkey-run.sh [android|ios] [--no-build] [--log] [--fresh]
 #   android     Android emulator, AVD $QDONKEY_AVD (default qDonkey_API_37); default target
-#   ios         iOS simulator: ToDo, Qt 6.10.2 has no arm64 simulator slices (libs/qDonkey/docs/mobile-builds.md)
+#   ios         iOS simulator $QDONKEY_SIM (default: first available iPhone); needs the
+#               ios_simulator_arm64 kit (Qt 6.12+)
 #   --no-build  install the last build
-#   --log       follow the app's logcat after start (Ctrl-C ends it)
+#   --log       follow the app's log after start (Ctrl-C ends it)
 #   --fresh     clear the app's data first (profiles, pins, settings)
 # The core: a running one on ipc.port is used; else build/src/daemon/emulecored is started and
 # killed again when this script ends. Config: $EMULE_CONFIG (default ~/eMuleQt/Config).
@@ -24,12 +25,12 @@ for a in "$@"; do
         --no-build) BUILD=false ;;
         --log) LOG=true ;;
         --fresh) FRESH=true ;;
-        -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
         *) echo "unknown argument: $a" >&2; exit 2 ;;
     esac
 done
 
-QT_VER=${QT_VER:-6.10.2}
+QT_VER=${QT_VER:-6.12.1}
 QT_DIR=${QT_DIR:-$HOME/Qt/$QT_VER}
 NINJA=${NINJA:-$HOME/Qt/Tools/Ninja/ninja}
 CONFIG=${EMULE_CONFIG:-$HOME/eMuleQt/Config}
@@ -78,22 +79,71 @@ else
     nc -z 127.0.0.1 "$IPC_PORT" || { echo "core not listening on $IPC_PORT" >&2; exit 1; }
 fi
 
+# a build dir configured with another Qt kit: start over
+fresh_build_dir() {
+    if [ -f "$1/CMakeCache.txt" ] && ! grep -q "$QT_DIR/" "$1/CMakeCache.txt"; then
+        echo "Removing $1 (configured for another Qt)"
+        rm -rf "$1"
+    fi
+}
+
 # --- iOS --------------------------------------------------------------------------------------
 if [ "$TARGET" = ios ]; then
-    # ToDo: build-ios-sim (-G Xcode -DCMAKE_OSX_SYSROOT=iphonesimulator), xcrun simctl boot/install,
-    # then `xcrun simctl openurl booted "qdonkey://pair?h=127.0.0.1&p=$IPC_PORT&t=..."` (the simulator
-    # shares the Mac's loopback). Blocked until a Qt kit with arm64 simulator slices is installed.
-    if ! lipo -info "$QT_DIR/ios/lib/QtCore.framework/QtCore" 2>/dev/null | grep -q arm64; then
-        echo "Qt $QT_VER iOS kit missing" >&2; exit 1
+    KIT="$QT_DIR/ios_simulator_arm64"
+    [ -x "$KIT/bin/qt-cmake" ] || { echo "no Qt $QT_VER ios_simulator_arm64 kit (MaintenanceTool)" >&2; exit 1; }
+    BUILD_DIR="$QD/build-ios-sim"
+    BUNDLE_ID=org.emule-qt.qdonkey
+    APP="$BUILD_DIR/Release-iphonesimulator/qDonkey.app"
+    if $BUILD; then
+        fresh_build_dir "$BUILD_DIR"
+        # cmake again each run: Xcode links the file list of the last configure
+        "$KIT/bin/qt-cmake" -S "$QD" -B "$BUILD_DIR" -G Xcode \
+            -DQT_HOST_PATH="$QT_DIR/macos" -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=18.0 >/dev/null
+        xcodebuild -project "$BUILD_DIR/qDonkey.xcodeproj" -scheme qdonkey -configuration Release \
+            -sdk iphonesimulator -arch arm64 CODE_SIGNING_ALLOWED=NO -quiet build
     fi
-    echo "iOS simulator run not available yet: Qt $QT_VER has x86_64-only simulator slices and the" >&2
-    echo "iOS 27 simulator runs arm64 only (libs/qDonkey/docs/mobile-builds.md)." >&2
-    exit 1
+    [ -d "$APP" ] || { echo "no app at $APP (run without --no-build)" >&2; exit 1; }
+
+    # simulator: a booted one, else $QDONKEY_SIM or the first available iPhone
+    SIM=$(xcrun simctl list devices booted | awk -F'[()]' '/iPhone/ { print $2; exit }')
+    if [ -z "$SIM" ]; then
+        if [ -n "${QDONKEY_SIM:-}" ]; then
+            SIM=$QDONKEY_SIM
+        else
+            SIM=$(xcrun simctl list devices available | awk -F'[()]' '/iPhone/ { print $2; exit }')
+        fi
+        [ -n "$SIM" ] || { echo "no iPhone simulator (Xcode > Settings > Components)" >&2; exit 1; }
+        echo "Booting simulator $SIM"
+        xcrun simctl boot "$SIM" 2>/dev/null || true
+    fi
+    # the window: Xcode 27 shows simulators in DeviceHub (replaces Simulator.app)
+    open -a DeviceHub 2>/dev/null || open -a Simulator 2>/dev/null \
+        || echo "no DeviceHub/Simulator app found: running headless"
+    xcrun simctl bootstatus "$SIM" -b >/dev/null
+    echo "Simulator $SIM booted"
+
+    $FRESH && xcrun simctl uninstall "$SIM" "$BUNDLE_ID" 2>/dev/null || true
+    xcrun simctl terminate "$SIM" "$BUNDLE_ID" 2>/dev/null || true
+    xcrun simctl install "$SIM" "$APP"
+
+    # pair link as launch argument (main.cpp): openurl asks "Open in qDonkey?" first, which needs
+    # a click in the window. The simulator shares the Mac's loopback.
+    xcrun simctl launch "$SIM" "$BUNDLE_ID" "qdonkey://pair?h=127.0.0.1&p=$IPC_PORT&t=$TOKEN" >/dev/null
+    echo "qDonkey started on $SIM, paired with 127.0.0.1:$IPC_PORT"
+
+    if $LOG; then
+        xcrun simctl spawn "$SIM" log stream --level debug --predicate 'process == "qDonkey"'
+    elif [ -n "$CORE_PID" ]; then
+        echo "Core runs until Ctrl-C"
+        wait "$CORE_PID"
+    fi
+    exit 0
 fi
 
 # --- Android ----------------------------------------------------------------------------------
 SDK=${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}
-NDK=${ANDROID_NDK_ROOT:-$SDK/ndk/27.2.12479018}
+NDK=${ANDROID_NDK_ROOT:-$SDK/ndk/30.0.16248370}
 export JAVA_HOME=${JAVA_HOME:-/Library/Java/JavaVirtualMachines/jdk-22.jdk/Contents/Home}
 ADB="$SDK/platform-tools/adb"
 BT="$SDK/build-tools/36.1.0"
@@ -104,6 +154,7 @@ APK_UNSIGNED="$BUILD_DIR/android-build/build/outputs/apk/release/android-build-r
 APK="$BUILD_DIR/qdonkey.apk"
 
 if $BUILD; then
+    fresh_build_dir "$BUILD_DIR"
     if [ ! -f "$BUILD_DIR/build.ninja" ]; then
         "$QT_DIR/android_arm64_v8a/bin/qt-cmake" -S "$QD" -B "$BUILD_DIR" -G Ninja \
             -DCMAKE_MAKE_PROGRAM="$NINJA" -DCMAKE_BUILD_TYPE=Release \

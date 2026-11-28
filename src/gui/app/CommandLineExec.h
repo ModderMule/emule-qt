@@ -131,6 +131,16 @@ private:
         QStringLiteral("network-info"),
         QStringLiteral("Open Network Info once the core is connected (with --screenshot).")};
 
+    QCommandLineOption m_searchOption{
+        QStringLiteral("search"),
+        QStringLiteral("Start a search for <terms> once the core is connected (with --screenshot)."),
+        QStringLiteral("terms")};
+
+    QCommandLineOption m_searchMethodOption{
+        QStringLiteral("search-method"),
+        QStringLiteral("Method for --search (automatic, kad, server, global, ed3k; default: last used)."),
+        QStringLiteral("name")};
+
     QCommandLineOption m_logLevelOption{
         QStringLiteral("log-level"),
         QStringLiteral("Console output: 0 silent, 1 errors and server/status lines, 2 also the "
@@ -180,6 +190,8 @@ private:
     int m_optionsPage = -1;
     QString m_clientDetailsHash;
     bool m_networkInfo = false;
+    QString m_searchTerms;
+    int m_searchMethod = -1;
     MainWindow::Tab m_activeTab = MainWindow::TabKad;
     bool m_hasTab = false;
     bool m_hasSubtab = false;

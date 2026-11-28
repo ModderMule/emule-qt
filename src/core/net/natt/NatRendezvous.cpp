@@ -17,6 +17,7 @@
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <algorithm>
 #include <cstring>
@@ -147,7 +148,7 @@ QString NatRendezvous::peerKey(const PeerInfo& peer)
     // A foreign requester (ID 0, no hash) is known by its address alone.
     if (peer.clientID == 0 && !peer.kadEndpoint.address().isNull())
         return QStringLiteral("ep:%1").arg(peer.kadEndpoint.address().toString());
-    return QStringLiteral("id:%1:%2").arg(peer.serverAddress.toString()).arg(peer.clientID);
+    return QStringLiteral("id:%1:%2").arg(argStr(peer.serverAddress.toString()), argStr(peer.clientID));
 }
 
 // ---------------------------------------------------------------------------
@@ -239,7 +240,7 @@ bool NatRendezvous::start(const PeerInfo& peer)
         if (!p->request(*a))
             continue;
         logDebug([&]() -> QString { return QStringLiteral("NAT-T: rendezvous #%1 via %2 for %3")
-                     .arg(a->id).arg(QLatin1StringView(pathName(a->path)), peerKey(peer)); });
+                     .arg(argStr(a->id), QLatin1StringView(pathName(a->path)), argStr(peerKey(peer))); });
         m_attempts.push_back(std::move(a));
         return true;
     }
@@ -333,8 +334,8 @@ Attempt* NatRendezvous::acceptNotice(PathKind kind, const PeerInfo& peer, const 
     Attempt* raw = a.get();
     m_attempts.push_back(std::move(a));
     logDebug([&]() -> QString { return QStringLiteral("NAT-T: %1 notice #%2: %3 at %4")
-                 .arg(QLatin1StringView(pathName(kind))).arg(raw->id)
-                 .arg(peerKey(peer), peerUdp.toString()); });
+                 .arg(QLatin1StringView(pathName(kind)), argStr(raw->id),
+                      argStr(peerKey(peer)), argStr(peerUdp.toString())); });
     endpointKnown(*raw, peerUdp, peerTcpPort);
     return raw;
 }
@@ -367,7 +368,7 @@ void NatRendezvous::endpointKnown(Attempt& a, const Endpoint& udp, uint16 tcpPor
     if (!a.endpointReported) {
         a.endpointReported = true;
         logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 peer endpoint %2 (%3)")
-                     .arg(a.id).arg(udp.toString(), QLatin1StringView(pathName(a.path))); });
+                     .arg(argStr(a.id), argStr(udp.toString()), QLatin1StringView(pathName(a.path))); });
         emit peerEndpointReady(a.peer.hash, udp, a.role);
     }
 }
@@ -380,7 +381,7 @@ void NatRendezvous::addPeerUdp6(Attempt& a, const Endpoint& udp6)
         return;
     a.peerUdp6 = udp6;
     logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 peer IPv6 endpoint %2")
-                 .arg(a.id).arg(udp6.toString()); });
+                 .arg(argStr(a.id), argStr(udp6.toString())); });
     m_env->sendPeerUdp(std::make_unique<Packet>(OP_HOLEPUNCH, 0, OP_EMULEPROT), udp6,
                        peerCryptHash(a, true));
     if (!a.peerHandoffSeen)
@@ -396,7 +397,7 @@ void NatRendezvous::fail(Attempt& a, const QString& why)
     a.finished = true;
     a.state = Attempt::State::Failed;
     logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 %2 failed: %3")
-                 .arg(a.id).arg(peerKey(a.peer), why); });
+                 .arg(argStr(a.id), argStr(peerKey(a.peer)), argStr(why)); });
     const uint64 now = m_env->now();
     remember(m_recentDone, a, now);
     if (a.role == Role::Requester) {
@@ -420,7 +421,7 @@ void NatRendezvous::finish(Attempt& a, bool connected)
         return;
     a.finished = true;
     remember(m_recentDone, a, m_env->now());
-    logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 %2 connected").arg(a.id).arg(peerKey(a.peer)); });
+    logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 %2 connected").arg(argStr(a.id), argStr(peerKey(a.peer))); });
     emit attemptFinished(a.id, connected);
 }
 
@@ -648,7 +649,7 @@ void NatRendezvous::dialQuic(Attempt& a)
 {
     a.quicDialed = true;
     a.state = Attempt::State::Dialed;
-    logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 QUIC dialing %2").arg(a.id).arg(a.quicEndpoint().toString()); });
+    logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 QUIC dialing %2").arg(argStr(a.id), argStr(a.quicEndpoint().toString())); });
     m_env->dialPeerQuic(a);
 }
 
@@ -657,7 +658,7 @@ void NatRendezvous::dial(Attempt& a)
     a.dialed = true;
     a.state = Attempt::State::Dialed;
     logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 dialing [%2]:%3")
-                 .arg(a.id).arg(a.peerIPv6.toString()).arg(a.peerTcpPort); });
+                 .arg(argStr(a.id), argStr(a.peerIPv6.toString()), argStr(a.peerTcpPort)); });
     m_env->dialPeer(a, a.peerIPv6);
 }
 
@@ -718,7 +719,7 @@ void NatRendezvous::handleUndecodable(const Endpoint& from)
     const uint8* crypt = peerCryptHash(*a, false);
     if (!crypt) {
         logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 undecodable datagram from %2, no hash for an echo")
-                     .arg(a->id).arg(from.toString()); });
+                     .arg(argStr(a->id), argStr(from.toString())); });
         return;
     }
     auto packet = std::make_unique<Packet>(OP_NATT_ADDR_ECHO, kAddrEchoSize, OP_EMULEPROT);
@@ -727,7 +728,7 @@ void NatRendezvous::handleUndecodable(const Endpoint& from)
     pokeUInt16(out + 4, from.port());
     m_env->sendPeerUdp(std::move(packet), from, crypt);
     logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 undecodable datagram, echoed %2")
-                 .arg(a->id).arg(from.toString()); });
+                 .arg(argStr(a->id), argStr(from.toString())); });
 }
 
 void NatRendezvous::handleBuddyRelay(const Endpoint& requester, const uint8* data, uint32 size,
@@ -737,6 +738,14 @@ void NatRendezvous::handleBuddyRelay(const Endpoint& requester, const uint8* dat
         return;
     if (auto* kad = dynamic_cast<KadBuddyNatPath*>(path(PathKind::KadBuddy)))
         kad->onBuddyRelay(requester, data, size, KadBuddyNatPath::ServedPeer::fromClient(served));
+}
+
+void NatRendezvous::handleServedRefresh(const UpDownClient& served)
+{
+    if (!m_env->enabled())
+        return;
+    if (auto* kad = dynamic_cast<KadBuddyNatPath*>(path(PathKind::KadBuddy)))
+        kad->onServedRefresh(KadBuddyNatPath::ServedPeer::fromClient(served));
 }
 
 bool NatRendezvous::handleRendezvousFromBuddy(const Endpoint& requester, const uint8* data, uint32 size)
@@ -763,7 +772,7 @@ void NatRendezvous::handleHolePunch(const Endpoint& from)
     // The datagram's source is the mapping that actually works.
     if (sameHost(a->peerUdp, from.address()) && a->peerUdp.port() != from.port()) {
         logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 peer port %2 -> %3")
-                     .arg(a->id).arg(a->peerUdp.port()).arg(from.port()); });
+                     .arg(argStr(a->id), argStr(a->peerUdp.port()), argStr(from.port())); });
         a->peerUdp = from;
         if (m_env->quicAvailable())
             m_env->armQuic(*a);
@@ -888,8 +897,8 @@ bool NatRendezvous::tryNextPath(Attempt& a, const QString& why)
         if (!p->request(a))
             continue;
         logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 %2: %3, trying %4")
-                     .arg(a.id)
-                     .arg(QLatin1StringView(pathName(previous)), why, QLatin1StringView(pathName(a.path))); });
+                     .arg(argStr(a.id),
+                          QLatin1StringView(pathName(previous)), argStr(why), QLatin1StringView(pathName(a.path))); });
         return true;
     }
     return false;
@@ -910,8 +919,8 @@ void NatRendezvous::handleAddrEcho(const uint8* data, uint32 size, const Endpoin
     const bool other = ip != Address::fromNetworkOrder(m_env->ourPublicIPv4());
     m_env->setPeerKeyIPv4(from.address(), other ? ip : Address{}, true);
     logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 peer %2 sees our UDP on %3%4")
-                 .arg(a->id).arg(from.toString(), ip.toString(),
-                                 other ? QStringLiteral(", keying with it") : QString()); });
+                 .arg(argStr(a->id), argStr(from.toString()), argStr(ip.toString()),
+                                 argStr(other ? QStringLiteral(", keying with it") : QString())); });
     // What we sent so far was undecodable: again with the new key
     sendPunch(*a);
     if (!a->peerHandoffSeen)

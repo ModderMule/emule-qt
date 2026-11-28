@@ -19,6 +19,7 @@
 
 #include "IpcMessage.h"
 #include "app/SkinIcons.h"
+#include "utils/ArgStr.h"
 
 #include <QApplication>
 #include <QBuffer>
@@ -1156,9 +1157,9 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         const qint64 total = good + bad;
         const double okPct = good > 0 ? 100.0 * static_cast<double>(good) / static_cast<double>(total) : 0.0;
         const double failPct = bad > 0 ? 100.0 - okPct : 0.0;
-        parent->setText(0, QStringLiteral("%1: %2").arg(title).arg(total));
-        okItem->setText(0, QStringLiteral("%1: %2 (%3%)").arg(okText).arg(good).arg(okPct, 0, 'f', decimals));
-        failItem->setText(0, QStringLiteral("%1: %2 (%3%)").arg(failText).arg(bad).arg(failPct, 0, 'f', decimals));
+        parent->setText(0, QStringLiteral("%1: %2").arg(argStr(title), argStr(total)));
+        okItem->setText(0, QStringLiteral("%1: %2 (%3%)").arg(argStr(okText), argStr(good), argFmt(okPct, 0, 'f', decimals)));
+        failItem->setText(0, QStringLiteral("%1: %2 (%3%)").arg(argStr(failText), argStr(bad), argFmt(failPct, 0, 'f', decimals)));
     };
     const QString upOkText = tr("Total successful upload sessions");
     const QString upFailText = tr("Total failed upload sessions");
@@ -1281,9 +1282,9 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         for (std::size_t i = 0; i < m_itemDownSources.size(); ++i) {
             const qint64 n = sources.at(static_cast<qsizetype>(i)).toInteger();
             m_itemDownSources[i]->setText(0, i < labels.size()
-                ? QStringLiteral("%1: %2").arg(labels[i]).arg(n)
-                : QStringLiteral("%1: %2 %3").arg(networks[i - labels.size()]).arg(n)
-                      .arg(formatPercent(n, found)));
+                ? QStringLiteral("%1: %2").arg(argStr(labels[i]), argStr(n))
+                : QStringLiteral("%1: %2 %3").arg(argStr(networks[i - labels.size()]), argStr(n),
+                           argStr(formatPercent(n, found))));
         }
         const qint64 deadGlobal = cborInt(stats, QLatin1StringView("downDeadSourcesGlobal"));
         const qint64 deadFiles = cborInt(stats, QLatin1StringView("downDeadSourcesPerFile"));
@@ -1500,7 +1501,7 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     {
         const qint64 lowID = cborInt(stats, QLatin1StringView("lowIDClients"));
         m_itemLowIDClients->setText(0,
-            tr("Low ID: %1 %2").arg(lowID).arg(formatPercent(lowID, knownClients)));
+            tr("Low ID: %1 %2").arg(argStr(lowID), argStr(formatPercent(lowID, knownClients))));
     }
     {
         // MFC StatisticsDlg.cpp:1985-1986, 2266-2283, 2308; counted in ClientList.cpp:112-144
@@ -1629,7 +1630,7 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
 
                     const double verPct = 100.0 * verCount / static_cast<double>(count);
                     auto* verItem = new QTreeWidgetItem(verParent,
-                        {QStringLiteral("%1: %2 (%3%)").arg(label).arg(verCount).arg(verPct, 0, 'f', 1)});
+                        {QStringLiteral("%1: %2 (%3%)").arg(argStr(label), argStr(verCount), argFmt(verPct, 0, 'f', 1))});
                     const QString verKey = name + QLatin1Char('/') + label;
                     verItem->setData(0, Qt::UserRole, verKey);
 
@@ -1650,7 +1651,7 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
 
                         const double modPct = 100.0 * modCount / static_cast<double>(verCount);
                         new QTreeWidgetItem(verItem,
-                            {QStringLiteral("%1: %2 (%3%)").arg(modName).arg(modCount).arg(modPct, 0, 'f', 1)});
+                            {QStringLiteral("%1: %2 (%3%)").arg(argStr(modName), argStr(modCount), argFmt(modPct, 0, 'f', 1))});
                     }
                 }
             }
@@ -1667,9 +1668,9 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         const qint64 lowID = cborInt(stats, QLatin1StringView("srvLowIDUsers"));
         m_itemSrvWorking->setText(0, tr("Working Servers: %1").arg(shortN(QLatin1StringView("srvWorking"))));
         m_itemSrvWorkUsers->setText(0, tr("Users on Working Servers: %1; Low ID: %2 (%3%)")
-            .arg(formatShortNumber(workUsers), formatShortNumber(lowID))
-            .arg(workUsers > 0 ? 100.0 * static_cast<double>(lowID) / static_cast<double>(workUsers) : 0.0,
-                 0, 'f', 1));
+            .arg(argStr(formatShortNumber(workUsers)), argStr(formatShortNumber(lowID)),
+                 argFmt(workUsers > 0 ? 100.0 * static_cast<double>(lowID) / static_cast<double>(workUsers) : 0.0,
+                 0, 'f', 1)));
         m_itemSrvWorkFiles->setText(0,
             tr("Files on Working Servers: %1").arg(shortN(QLatin1StringView("srvFiles"))));
         m_itemSrvOccupation->setText(0, tr("Server Occupation: %1%")
@@ -1988,11 +1989,11 @@ void StatisticsPanel::applyEd3kStatus(const QCborMap& st)
                               : c.value(QStringLiteral("overdrawn")).toBool() ? tr("Overdrawn")
                               : c.value(QStringLiteral("mature")).toBool()    ? tr("Mature")
                                                                               : tr("Not mature")),
-        tr("Receipts Signed: %1 (%2)").arg(c.value(QStringLiteral("receiptsSigned")).toInteger())
-            .arg(formatByteSize(c.value(QStringLiteral("kibSigned")).toInteger() * 1024)),
-        tr("Receipts Received: %1 (%2), priority turns given: %3").arg(c.value(QStringLiteral("receiptsTaken")).toInteger())
-            .arg(formatByteSize(c.value(QStringLiteral("kibTaken")).toInteger() * 1024))
-            .arg(c.value(QStringLiteral("slotHints")).toInteger()),
+        tr("Receipts Signed: %1 (%2)").arg(argStr(c.value(QStringLiteral("receiptsSigned")).toInteger()),
+                 argStr(formatByteSize(c.value(QStringLiteral("kibSigned")).toInteger() * 1024))),
+        tr("Receipts Received: %1 (%2), priority turns given: %3").arg(argStr(c.value(QStringLiteral("receiptsTaken")).toInteger()),
+                 argStr(formatByteSize(c.value(QStringLiteral("kibTaken")).toInteger() * 1024)),
+                 argStr(c.value(QStringLiteral("slotHints")).toInteger())),
         tr("Stake: %1, claims waiting: %2")
             .arg(rate.isEmpty() ? tr("n/a") : perCredit > 0 ? tr("%1 E3S per credit").arg(QLocale().toString(perCredit, 'g', 6)) : tr("burning off"))
             .arg(c.value(QStringLiteral("claims")).toArray().size()),
@@ -2390,7 +2391,7 @@ QString StatisticsPanel::itemsExportHtml(QTreeWidgetItem* parent, int level, int
         if (hasChildren) {
             line += QStringLiteral("<a href=\"javascript:togglevisible('%1')\">"
                                    "<img id=\"I%1\" src=\"%2\" align=\"middle\">&nbsp;</a>")
-                        .arg(id).arg(item->isExpanded() ? visible : hidden);
+                        .arg(argStr(id), argStr(item->isExpanded() ? visible : hidden));
         } else {
             line += QStringLiteral("<img src=\"%1\" align=\"middle\">&nbsp;").arg(space);
         }
@@ -3034,7 +3035,7 @@ void StatisticsPanel::updateKadVersions(const QCborArray& versions, qint64 conta
                                            .arg(QLatin1StringView(release))
                                      : tr("Version %1").arg(version);
         rows.append({QString::number(version),
-                     tr("%1: %2 %3").arg(name).arg(count).arg(formatPercent(count, contacts)), {}});
+                     tr("%1: %2 %3").arg(argStr(name), argStr(count), argStr(formatPercent(count, contacts))), {}});
     }
     syncKeyedChildren(m_itemKadVersions, rows);
 }
@@ -3055,7 +3056,7 @@ void StatisticsPanel::updateCountryRows(QTreeWidgetItem* parent, const QCborArra
         const qint64 nodes = entry.at(1).toInteger();
         const QString name = cc.isEmpty() ? tr("Unknown") : CountryFlags::tooltip(cc);
         rows.append({cc.isEmpty() ? QStringLiteral("-") : cc,
-                     tr("%1: ≈%2 %3").arg(name).arg(nodes).arg(formatPercent(nodes, total)),
+                     tr("%1: ≈%2 %3").arg(argStr(name), argStr(nodes), argStr(formatPercent(nodes, total))),
                      CountryFlags::showFlags() ? CountryFlags::flag(cc) : QIcon()});
     }
     syncKeyedChildren(parent, rows);

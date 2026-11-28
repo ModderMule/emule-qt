@@ -74,6 +74,7 @@
 #include "transfer/UploadQueueStore.h"
 #include "portmap/PortMapper.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QHostAddress>
 
@@ -1837,11 +1838,11 @@ void CoreSession::initPortMapper()
                     && mapping.request.purpose == PortMapPurpose::Ed2kTcp && theApp.reachabilityWatch)
                     theApp.reachabilityWatch->onMappedPortChanged(mapping.externalPort);
                 const QString line = QStringLiteral("Port mapping: %1 port %2 -> external %3 (%4, %5s lease)")
-                                         .arg(portMapPurposeName(mapping.request.purpose))
-                                         .arg(mapping.request.internalPort)
-                                         .arg(mapping.externalPort)
-                                         .arg(portMapMethodName(mapping.method))
-                                         .arg(mapping.lifetimeSecs);
+                                         .arg(argStr(portMapPurposeName(mapping.request.purpose)),
+                                              argStr(mapping.request.internalPort),
+                                              argStr(mapping.externalPort),
+                                              argStr(portMapMethodName(mapping.method)),
+                                              argStr(mapping.lifetimeSecs));
                 // every renewal emits it again: only a new mapping is a main-log line
                 const QString key = QStringLiteral("%1/%2").arg(static_cast<int>(mapping.request.purpose))
                                         .arg(static_cast<int>(mapping.request.family));

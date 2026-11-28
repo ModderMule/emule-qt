@@ -3,6 +3,7 @@
 #include "Ed3kJoinBase.h"
 #include "Ed3kSession.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -78,8 +79,8 @@ bool Ed3kLocalScan::start(const QStringList& folders, const Wanted& extra)
                 return;
             self->m_running = false;
             logEd3k(QStringLiteral("ed3k: folder scan done: %1 file(s), %2 hashed, %3 found%4")
-                        .arg(r.files).arg(r.hashed).arg(r.matched)
-                        .arg(r.cancelled ? QStringLiteral(" (cancelled)") : QString()));
+                        .arg(argStr(r.files), argStr(r.hashed), argStr(r.matched),
+                             argStr(r.cancelled ? QStringLiteral(" (cancelled)") : QString())));
             emit self->finished(r);
         }, Qt::QueuedConnection);
     });

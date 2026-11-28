@@ -12,6 +12,7 @@
 #include "utils/FileRelocate.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDataStream>
 #include <QDir>
@@ -212,7 +213,7 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
     forgetBlobWrites(metPathOf(e));   // a queued save lands after the remove otherwise
     QFile::remove(metPathOf(e));
     auto [it, inserted] = m_entries.emplace(spec.root, std::move(e));
-    logInfo(QStringLiteral("download of \"%1\" (%2 B) added as %3").arg(name).arg(spec.size).arg(hexOf(spec.root.bytes)));
+    logInfo(QStringLiteral("download of \"%1\" (%2 B) added as %3").arg(argStr(name), argStr(spec.size), argStr(hexOf(spec.root.bytes))));
     if (it->second.info.state == Ed3kDownloadInfo::State::Downloading)
         openEntry(it->second);
     saveNow();
@@ -1181,7 +1182,7 @@ void Ed3kDownloads::scanTempDirs()
         e->id = m_nextId++;
         const ffi::Root root = e->info.root;
         logInfo(QStringLiteral("download of \"%1\" taken up from %2 (%3 of %4 B)")
-                    .arg(e->info.name, metPath).arg(e->info.done).arg(e->info.size));
+                    .arg(argStr(e->info.name), argStr(metPath), argStr(e->info.done), argStr(e->info.size)));
         auto [it, inserted] = m_entries.emplace(root, std::move(*e));
         emit added(root);
         markChanged();

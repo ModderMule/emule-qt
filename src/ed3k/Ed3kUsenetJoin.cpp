@@ -11,6 +11,7 @@
 #include "queue/UsenetQueueItem.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -444,7 +445,7 @@ void Ed3kUsenetJoin::onArticleDecoded(const QString& itemId, int fileIndex, qint
     if (!reads) {
         if (reads.error() != ffi::Error::Stale)
             logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: article %1 of file %2 not taken (error %3)")
-                             .arg(partNumber).arg(fileIndex).arg(errorName(reads.error())); });
+                             .arg(argStr(partNumber), argStr(fileIndex), argStr(errorName(reads.error()))); });
         drainEvents(itemId);
         pumpSession();
         return;
@@ -584,7 +585,7 @@ void Ed3kUsenetJoin::keepDeletedVolumes(const QString& itemId)
         any |= keepDeleted({*m->root, itemId, f, *m->size, QString::fromStdString(m->name), now, 0, check});
     }
     if (any) {
-        logEd3k(QStringLiteral("ed3k usenet: %1 done, its deleted volumes stay published (%2 day(s) at most)").arg(itemId).arg(deletedDays()));
+        logEd3k(QStringLiteral("ed3k usenet: %1 done, its deleted volumes stay published (%2 day(s) at most)").arg(argStr(itemId), argStr(deletedDays())));
         republishKeptAliases(itemId);
     }
 }
@@ -730,9 +731,9 @@ std::shared_ptr<Ed3kUsenetJoin::Post> Ed3kUsenetJoin::ensurePost(const QString& 
         post->search.emplace(std::move(*search));
     m_posts.emplace(itemId, post);
     logEd3k(QStringLiteral("ed3k usenet: \"%1\" joined (%2 file(s), %3)")
-                .arg(item->name)
-                .arg(post->members.size())
-                .arg(link ? QStringLiteral("from its ed3k link") : QStringLiteral("NZB alone")));
+                .arg(argStr(item->name),
+                     argStr(post->members.size()),
+                     argStr(link ? QStringLiteral("from its ed3k link") : QStringLiteral("NZB alone"))));
 
     // members that have a root already (a restart): their downloads go on
     for (std::size_t f = 0; f < post->members.size(); ++f)
@@ -959,7 +960,7 @@ void Ed3kUsenetJoin::onMemberHashed(const QString& itemId, int fileIndex, quint6
         // was: ToDo: hash again later (the file is gone or unreadable) (done: after
         // kRehashMs, and at the next start in ensurePost)
         logEd3kWarning(QStringLiteral("ed3k usenet: cannot hash file %1 of %2 (%3)")
-                           .arg(fileIndex).arg(itemId, memberPath(itemId, fileIndex)));
+                           .arg(argStr(fileIndex), argStr(itemId), argStr(memberPath(itemId, fileIndex))));
         if (++m.rehashTries < kRehashTries)
             QTimer::singleShot(kRehashMs, this, [this, itemId, fileIndex] {
                 const auto p = findPost(itemId);
@@ -970,10 +971,10 @@ void Ed3kUsenetJoin::onMemberHashed(const QString& itemId, int fileIndex, quint6
     } else {
         m.hashes = hashed->hashes;
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: file %1 of %2 hashed: %3, %4 bytes")
-                         .arg(fileIndex).arg(itemId, hexOf(hashed->root.bytes)).arg(hashed->size); });
+                         .arg(argStr(fileIndex), argStr(itemId), argStr(hexOf(hashed->root.bytes)), argStr(hashed->size)); });
         if (auto done = post->join.memberHashed(std::uint64_t(fileIndex), hashed->hashes); !done)
             logEd3kWarning(QStringLiteral("ed3k usenet: hash of file %1 of %2 not taken (error %3)")
-                               .arg(fileIndex).arg(itemId, errorName(done.error())));
+                               .arg(argStr(fileIndex), argStr(itemId), argStr(errorName(done.error()))));
         drainEvents(itemId);
     }
     m_queue.releaseSealHold(itemId, fileIndex);
@@ -1013,7 +1014,7 @@ void Ed3kUsenetJoin::onMemberVerified(const QString& itemId, int fileIndex, cons
             keepMemberPaths(itemId, {{fileIndex, memberPath(itemId, fileIndex)}});
             return;
         }
-        logEd3kWarning(QStringLiteral("ed3k usenet: cannot share file %1 of %2").arg(fileIndex).arg(itemId));
+        logEd3kWarning(QStringLiteral("ed3k usenet: cannot share file %1 of %2").arg(argStr(fileIndex), argStr(itemId)));
         return;
     }
     // sources 1: this node, the file held complete (Protocol.md §10.7)
@@ -1021,13 +1022,13 @@ void Ed3kUsenetJoin::onMemberVerified(const QString& itemId, int fileIndex, cons
     // was: e->publish(t, info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both)
     if (auto ok = publishShared(info); !ok)
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: publish of file %1 of %2 failed (error %3)")
-                         .arg(fileIndex).arg(itemId, errorName(ok.error())); });
+                         .arg(argStr(fileIndex), argStr(itemId), argStr(errorName(ok.error()))); });
     if (auto alias = post->join.memberAlias(std::uint64_t(fileIndex), m_holdBack); alias && *alias) {
         const std::vector<ffi::Bytes> one{**alias};
         // was: if (auto ok = e->publishAlias(t, one); !ok)
         if (auto ok = publishAliasRecords(one); !ok)
             logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: nzb-file record of file %1 of %2 not published (error %3)")
-                             .arg(fileIndex).arg(itemId, errorName(ok.error())); });
+                             .arg(argStr(fileIndex), argStr(itemId), argStr(errorName(ok.error()))); });
         keepRecords(itemId, std::nullopt, {}, one);
     }
     keepMember(itemId, fileIndex, root, size, QString::fromStdString(name));
@@ -1085,7 +1086,7 @@ void Ed3kUsenetJoin::onClaimFalse(const QString& itemId, const ffi::uev::ClaimFa
     const auto* item = m_queue.findItem(itemId);
     const QString file = item ? item->bestFileName(int(ev.member)) : QString::number(ev.member);
     logEd3kWarning(QStringLiteral("ed3k usenet: false claim %1 for file %2 of %3, %4 publisher(s) banned")
-                       .arg(hexOf(ev.root.bytes)).arg(ev.member).arg(itemId).arg(banned.size()));
+                       .arg(argStr(hexOf(ev.root.bytes)), argStr(ev.member), argStr(itemId), argStr(banned.size())));
     reportProblem(itemId, int(ev.member),
                   tr("ed3k: a false claim for \"%1\" was found and ignored; the file continues from Usenet").arg(file));
 }
@@ -1178,7 +1179,7 @@ bool Ed3kUsenetJoin::sealHold(const QString& itemId, int fileIndex)
             m_queue.releaseSealHold(itemId, fileIndex);
         });
         logEd3k(QStringLiteral("ed3k usenet: file %1 of %2 kept open for ed3k (%3 range(s) missing)")
-                    .arg(fileIndex).arg(itemId).arg(missing->size()));
+                    .arg(argStr(fileIndex), argStr(itemId), argStr(missing->size())));
     }
     return !pm.holdUntil->hasExpired();
 }
@@ -1297,7 +1298,7 @@ bool Ed3kUsenetJoin::writeBlock(QString itemId, int fileIndex, std::uint64_t off
     f.close();
     if (auto ok = post->join.ed3kBlock(std::uint64_t(fileIndex), offset, std::uint32_t(data.size())); !ok)
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: block %1 of file %2 not taken (error %3)")
-                         .arg(offset).arg(fileIndex).arg(errorName(ok.error())); });
+                         .arg(argStr(offset), argStr(fileIndex), argStr(errorName(ok.error()))); });
     drainEvents(itemId);
     return true;
 }

@@ -479,8 +479,8 @@ jobs:
             echo "| --- | --- |"
             echo "| Linux x86_64 | \`eMuleQt-v${VERSION}-linux-x86_64.tar.gz\` |"
             echo "| Linux x86_64 (AppImage) | \`eMuleQt-v${VERSION}-linux-x86_64.AppImage\` |"
-            echo "| macOS 13+ (Apple silicon) | \`eMuleQt-v${VERSION}-macOS-arm64.dmg\` |"
-            echo "| macOS 13+ (Intel) | \`eMuleQt-v${VERSION}-macOS-x86_64.dmg\` |"
+            echo "| macOS 14.4+ (Apple silicon) | \`eMuleQt-v${VERSION}-macOS-arm64.dmg\` |"
+            echo "| macOS 14.4+ (Intel) | \`eMuleQt-v${VERSION}-macOS-x86_64.dmg\` |"
             echo "| Windows x64 (installer) | \`eMuleQt-v${VERSION}-win64-setup.exe\` |"
             echo "| Windows x64 (portable zip) | \`eMuleQt-v${VERSION}-win64.zip\` |"
             echo

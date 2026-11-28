@@ -1,4 +1,5 @@
 #include "nntp/NntpCommand.h"
+#include "utils/ArgStr.h"
 
 #include <QStringList>
 
@@ -27,7 +28,7 @@ QString refusalText(const QString& messageId, int code, const QString& text)
 {
     if (code == 430)
         return QStringLiteral("<%1>").arg(messageId);
-    return QStringLiteral("<%1> (%2 %3)").arg(messageId).arg(code).arg(text);
+    return QStringLiteral("<%1> (%2 %3)").arg(argStr(messageId), argStr(code), argStr(text));
 }
 
 } // namespace

@@ -91,7 +91,7 @@ jobs:
       # - name: Install Qt 6
       #   uses: jurplel/install-qt-action@v4
       #   with:
-      #     version: "6.10.3"
+      #     version: "6.12.1"
       #     arch: win64_msvc2022_64
       #     modules: qthttpserver qtwebsockets qtmultimedia qtgrpc
 
@@ -101,20 +101,20 @@ jobs:
           pip install aqtinstall
           $qtDir = "D:\Qt"
 
-          Write-Host "=== Available modules for 6.10.3 win64_msvc2022_64 ==="
-          aqt list-qt windows desktop --modules 6.10.3 win64_msvc2022_64
+          Write-Host "=== Available modules for 6.12.1 win64_msvc2022_64 ==="
+          aqt list-qt windows desktop --modules 6.12.1 win64_msvc2022_64
 
           Write-Host "=== Installing Qt base + modules ==="
           # py7zr's parallel workers race on the shared sbom/ dir ("Bad7zFile:
           # Specified path is bad") -> extract with 7z.exe, retry from scratch
-          $aqtArgs = @("install-qt", "windows", "desktop", "6.10.3", "win64_msvc2022_64",
+          $aqtArgs = @("install-qt", "windows", "desktop", "6.12.1", "win64_msvc2022_64",
                        "-m", "qthttpserver", "qtwebsockets", "qtmultimedia", "qtgrpc",
                        "-O", $qtDir, "--base", "https://ftp.fau.de/qtproject/")
           if (Get-Command 7z -ErrorAction SilentlyContinue) { $aqtArgs += @("--external", "7z") }
           for ($try = 1; $try -le 3; $try++) {
             # parallel 7z.exe runs race on creating the shared output dir
             # ("Cannot create output directory") -> create it up front
-            New-Item -ItemType Directory -Force "$qtDir\6.10.3\msvc2022_64" | Out-Null
+            New-Item -ItemType Directory -Force "$qtDir\6.12.1\msvc2022_64" | Out-Null
             aqt @aqtArgs
             if ($LASTEXITCODE -eq 0) { break }
             if ($try -eq 3) { Write-Host "ERROR: aqt install-qt failed 3 times" -ForegroundColor Red; exit 1 }
@@ -123,7 +123,7 @@ jobs:
             Start-Sleep -Seconds 10
           }
 
-          $root = "$qtDir\6.10.3\msvc2022_64"
+          $root = "$qtDir\6.12.1\msvc2022_64"
           echo "QT_ROOT_DIR=$root" >> $env:GITHUB_ENV
           echo "CMAKE_PREFIX_PATH=$root" >> $env:GITHUB_ENV
           echo "$root\bin" >> $env:GITHUB_PATH

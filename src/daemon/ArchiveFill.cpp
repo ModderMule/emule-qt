@@ -6,6 +6,7 @@
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -59,8 +60,8 @@ void ArchiveFill::setSources(const QString& itemId, const QStringList& paths)
     item.sources = paths;
     item.lookup = 0;
     logUsenet(QStringLiteral("Usenet: %1 file(s) inside the archives of \"%2\" are on disk here; the volumes are filled from them")
-                  .arg(paths.size())
-                  .arg(itemId));
+                  .arg(argStr(paths.size()),
+                       argStr(itemId)));
     tryFill(itemId);
 }
 
@@ -172,7 +173,7 @@ void ArchiveFill::tryFill(const QString& id)
                 bytes += r.length;
                 it->second.pending[file].emplace_back(r.offset, r.length);
             }
-            logUsenet(QStringLiteral("Usenet: \"%1\": %2 byte(s) of its volumes from disk").arg(id).arg(bytes));
+            logUsenet(QStringLiteral("Usenet: \"%1\": %2 byte(s) of its volumes from disk").arg(argStr(id), argStr(bytes)));
             emit self->filled(id, bytes);
             self->acceptPending(id);
         }, Qt::QueuedConnection);
@@ -200,7 +201,7 @@ void ArchiveFill::acceptPending(const QString& id)
         int articles = 0;
         for (const auto& [offset, length] : p->second)
             articles += m_queue.acceptExternalRange(id, file, offset, length);
-        logUsenet(QStringLiteral("Usenet: \"%1\": %2 article(s) of file %3 not fetched (on disk here)").arg(id).arg(articles).arg(file));
+        logUsenet(QStringLiteral("Usenet: \"%1\": %2 article(s) of file %3 not fetched (on disk here)").arg(argStr(id), argStr(articles), argStr(file)));
         p = pending.erase(p);
         emit accepted(id, file, articles);
     }

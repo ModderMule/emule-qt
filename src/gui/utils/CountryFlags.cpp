@@ -3,6 +3,7 @@
 /// @brief Country flag icons, names and the Country column binding.
 
 #include "utils/CountryFlags.h"
+#include "utils/ArgStr.h"
 
 
 #include <QFile>
@@ -101,7 +102,7 @@ QString tooltipHtml(const QString& cc)
     if (!QFile::exists(path))
         return text.toHtmlEscaped();
     return QStringLiteral("<img src=\"%1\" width=\"%2\" height=\"%3\" align=\"middle\">&nbsp;%4")
-        .arg(path).arg(kFlagWidth).arg(kIconSize).arg(text.toHtmlEscaped());
+        .arg(argStr(path), argStr(kFlagWidth), argStr(kIconSize), argStr(text.toHtmlEscaped()));
 }
 
 QIcon withFlag(const QIcon& base, const QString& cc)

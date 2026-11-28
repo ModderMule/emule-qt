@@ -11,6 +11,7 @@
 #include "server/Server.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <cstring>
 
@@ -187,7 +188,7 @@ void LugdunumNatPath::onNotice(const Endpoint& /*from*/, const uint8* data, uint
     const PeerInfo& peer = n->peer;
     const uint32 requesterID = peer.clientID;
     log(QStringLiteral("notice: id %1 at %2 flags 0x%3")
-            .arg(requesterID).arg(udp.toString()).arg(n->flags, 2, 16, QLatin1Char('0')));
+            .arg(argStr(requesterID), argStr(udp.toString()), argFmt(n->flags, 2, 16, QLatin1Char('0'))));
 
     // A callback to ourselves only reflects our own mapped port.
     if (requesterID == ourID())

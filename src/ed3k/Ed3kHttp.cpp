@@ -8,6 +8,7 @@
 #include "net/ProxySettings.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QHostInfo>
 #include <QPointer>
@@ -132,7 +133,7 @@ void Ed3kHttp::start(const ::ed3k::event::HttpRequest& req)
         }
         r->reportProxy = m_reportProxy;
     } else if (req.via != ED3K_HTTP_VIA_NORMAL) {
-        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: unknown route %2").arg(id).arg(int(req.via)); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: unknown route %2").arg(argStr(id), argStr(int(req.via))); });
         m_answers.failed(id);
         return;
     }
@@ -349,13 +350,13 @@ void Ed3kHttp::onSocketError(std::uint64_t id)
             onDisconnected(id);
             return;
         }
-        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: %2").arg(id).arg(r.socket->errorString()); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: %2").arg(argStr(id), argStr(r.socket->errorString())); });
         fail(id);   // broken transfer
         return;
     }
     if (r.tcpUp || r.literal) {
         // TLS failure, or the one address of a literal URL: no other address (host-io.md)
-        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: %2").arg(id).arg(r.socket->errorString()); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: %2").arg(argStr(id), argStr(r.socket->errorString())); });
         fail(id);
         return;
     }
@@ -516,7 +517,7 @@ void Ed3kHttp::finish(std::uint64_t id)
         m_answers.rpcAnswer(id, r->body);
         return;
     }
-    logEd3kDebug([&]() -> QString { return QStringLiteral("rpc %1: status %2").arg(id).arg(r->status); });
+    logEd3kDebug([&]() -> QString { return QStringLiteral("rpc %1: status %2").arg(argStr(id), argStr(r->status)); });
     if (m_answers.rpcFailed)
         m_answers.rpcFailed(id);
 }

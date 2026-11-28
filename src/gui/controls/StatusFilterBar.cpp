@@ -3,6 +3,7 @@
 /// @brief Row of state filter buttons — implementation.
 
 #include "controls/StatusFilterBar.h"
+#include "utils/ArgStr.h"
 
 #include <QAbstractButton>
 #include <QButtonGroup>
@@ -60,7 +61,7 @@ void StatusFilterBar::setCounts(std::span<const int> counts)
         if (!b)
             continue;
         const QString text = std::size_t(f) < counts.size()
-            ? QStringLiteral("%1 (%2)").arg(m_names.at(f)).arg(counts[std::size_t(f)])
+            ? QStringLiteral("%1 (%2)").arg(argStr(m_names.at(f)), argStr(counts[std::size_t(f)]))
             : m_names.at(f);
         if (b->text() != text)
             b->setText(text);

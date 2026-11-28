@@ -12,6 +12,7 @@
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadStats.h"
+#include "utils/ArgStr.h"
 
 
 namespace eMule::kad {
@@ -214,9 +215,9 @@ bool SearchManager::startSearch(Search* search)
     }
 
     logKad(QStringLiteral("Kad: Started %1 search %2 for %3")
-               .arg(Search::getTypeName(search->getSearchType()))
-               .arg(search->getSearchID())
-               .arg(search->getTarget().toHexString()));
+               .arg(argStr(Search::getTypeName(search->getSearchType())),
+                    argStr(search->getSearchID()),
+                    argStr(search->getTarget().toHexString())));
 
     notifySearchesChanged();
     return true;

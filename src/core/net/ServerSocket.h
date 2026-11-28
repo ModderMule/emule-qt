@@ -166,12 +166,19 @@ signals:
     void callbackRequested(uint32 clientIP, uint16 clientPort,
                            const uint8* cryptOptions, uint32 cryptSize);
 
-    /// OP_CALLBACK_FAIL: the server could not reach the LowID we asked a callback for.
+    /// Empty OP_CALLBACK_FAIL: the server could not reach the LowID of our OP_CALLBACKREQUEST.
+    /// It names no target.
     void callbackFailed();
 
-    /// IPv6 LowID callback (OP_CALLBACKREQUESTED_IPV6): the requester's public IPv6
-    /// endpoint. We connect back to it over IPv6 (no crypt trailer in this variant).
-    void callbackRequestedIPv6(const eMule::Endpoint& requester);
+    /// 5-byte OP_CALLBACK_FAIL: our OP_IPV6_CALLBACK_REQUEST or OP_CALLBACKREQUEST for
+    /// @p targetID was refused (IPV6CB_REFUSED_* @p reason; ed2k-server#62, #63).
+    void callbackRefused(uint32 targetID, uint8 reason);
+
+    /// IPv6 LowID callback (OP_CALLBACKREQUESTED_IPV6): the requester's dialled-back IPv6
+    /// endpoint, plus <crypt options 1><user hash 16> (@p cryptSize 17) when both of us
+    /// obfuscate. We connect back to it over IPv6.
+    void callbackRequestedIPv6(const eMule::Endpoint& requester, const uint8* cryptOptions,
+                               uint32 cryptSize);
 
     /// NAT rendezvous notice (OP_NAT_CALLBACKREQUESTED, OP_LOWID_HOLEPUNCH_INFO/FAIL).
     void natPacketReceived(uint8 opcode, const QByteArray& payload);

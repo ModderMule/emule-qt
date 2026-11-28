@@ -5,6 +5,7 @@
 #include "portmap/UPnPWorker.h"
 #include "net/LocalIPv6.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QElapsedTimer>
 
@@ -87,7 +88,7 @@ void UPnPWorker::discover(const QString& bindAddress)
     QElapsedTimer elapsed;
     elapsed.start();
     const auto took = [&elapsed](const QString& text) {
-        return QStringLiteral("%1 after %2 ms").arg(text).arg(elapsed.elapsed());
+        return QStringLiteral("%1 after %2 ms").arg(argStr(text), argStr(elapsed.elapsed()));
     };
 
     const QByteArray bindLatin = bindAddress.toLatin1();

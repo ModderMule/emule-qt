@@ -7,6 +7,7 @@
 #include "Ed3kStore.h"
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -132,8 +133,8 @@ quint64 Ed3kLinkGrabber::grab(const QString& text, const QString& source, bool d
         m_queue.append(Crawl{token, u, deep, clipboard});
     logHosterDebug([&]() -> QString {
         return QStringLiteral("link grabber: %1 link(s) to crawl from %2%3")
-            .arg(urls.size())
-            .arg(source.isEmpty() ? QStringLiteral("?") : source, deep ? QStringLiteral(" (deep)") : QString());
+            .arg(argStr(urls.size()),
+                 argStr(source.isEmpty() ? QStringLiteral("?") : source), argStr(deep ? QStringLiteral(" (deep)") : QString()));
     });
     if (!m_resolver->available())
         m_resolver->wantPlugins();   // none shipped: fetched on the first link
@@ -181,8 +182,8 @@ int Ed3kLinkGrabber::add(const QList<ResolverLink>& links, const QString& source
     startChecks(urls);
     if (!urls.isEmpty())
         logHoster(QStringLiteral("link grabber: %1 link(s) added from %2")
-                      .arg(urls.size())
-                      .arg(source.isEmpty() ? QStringLiteral("?") : source));
+                      .arg(argStr(urls.size()),
+                           argStr(source.isEmpty() ? QStringLiteral("?") : source)));
     return int(urls.size());
 }
 

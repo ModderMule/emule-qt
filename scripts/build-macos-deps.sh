@@ -4,13 +4,13 @@
 #
 # Homebrew builds its libraries for the OS and CPU of the machine it runs on.
 # Bundling those made the v0.5.6 app arm64-only and macOS 26-only, although Qt
-# itself supports x86_64 and macOS 13.  This builds the three libraries the app
+# itself supports x86_64 and macOS 14.4.  This builds the three libraries the app
 # used to take from Homebrew, as static archives, for a chosen CPU and minimum
 # macOS, so nothing of them ends up as a dylib in the bundle.  Boost: headers
 # only, for the static libtorrent-rasterbar CMake builds (FetchContent).
 #
 # Usage:
-#   MACOSX_DEPLOYMENT_TARGET=13.0 ./scripts/build-macos-deps.sh <arch> <prefix>
+#   MACOSX_DEPLOYMENT_TARGET=14.4 ./scripts/build-macos-deps.sh <arch> <prefix>
 #
 #   arch     arm64 | x86_64   (cross-building works in both directions)
 #   prefix   install dir; gets include/ and lib/

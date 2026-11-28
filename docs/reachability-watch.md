@@ -62,3 +62,7 @@ demoted. Spec: eNode-go `docs/server-client-communication.md`.
 Sends `hash` = user hash when obfuscation is supported → plugin ≥ 1.6.0 dials obfuscated
 (RC4 client handshake), so a core that requires encryption answers. Without `hash`: plain.
 Plain dial refused by require-crypt (`bad_reply`/`rejected`) = unknown, not closed.
+IP filter (#266): first `GET porttest/source` (plugin ≥ 1.9.0) → server's egress `ip4[]`/`ip6[]`;
+`PortTestGate` lets them past the filter (TCP accept + client UDP) until the reply (≤ 50 s). Other
+filter hits meanwhile → result `filterHits`; exempted server addresses the filter matches →
+`serverFiltered`. Plugin ≥ 1.9.0: link closed before a byte = `dropped` (unknown, not closed).

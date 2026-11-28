@@ -11,6 +11,7 @@
 #include "utils/Log.h"
 #include "utils/PathUtils.h"
 #include "utils/SafeRemove.h"
+#include "utils/ArgStr.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -854,9 +855,9 @@ quint64 Ed3kHosterJoin::openClickNLoad(const ClickNLoad& post)
         return 0;
     ask.token = m_nextContainer++;
     logInfo(QStringLiteral("Click'n'Load from %1: %2 link(s)%3")
-                .arg(ask.source.isEmpty() ? QStringLiteral("?") : ask.source)
-                .arg(ask.plain.size())
-                .arg(dummy.isEmpty() ? QString() : QStringLiteral(" and an encrypted list")));
+                .arg(argStr(ask.source.isEmpty() ? QStringLiteral("?") : ask.source),
+                     argStr(ask.plain.size()),
+                     argStr(dummy.isEmpty() ? QString() : QStringLiteral(" and an encrypted list"))));
     const quint64 token = ask.token;
     if (dummy.isEmpty()) {
         // nothing to decrypt: the answer still comes after the caller has the token
@@ -1106,7 +1107,7 @@ void Ed3kHosterJoin::onLocalCopyDone(const Download& d, int blocks)
     Entry* e = find(idOf(d.owner));
     if (!e || e->item.retired || e->item.state == State::Complete || !e->root)
         return;
-    logInfo(QStringLiteral("%1: %2 block(s) from a local copy, the rest from peers and the link").arg(e->item.host).arg(blocks));
+    logInfo(QStringLiteral("%1: %2 block(s) from a local copy, the rest from peers and the link").arg(argStr(e->item.host), argStr(blocks)));
     askOpen(*e);
 }
 
@@ -1379,9 +1380,9 @@ bool Ed3kHosterJoin::debridFailed(const Ask& a, const ResolverEvent& ev)
             it->second.at = 0;   // asked again on the next refresh
     const QString via = a.via.section(QLatin1Char('|'), 0, 0);
     logWarning(QStringLiteral("hoster: %1 could not download from %2 (%3), skipped %4 for %5 min")
-                   .arg(via, a.viaSite, ev.code.isEmpty() ? ev.text : ev.code,
-                        whole ? QStringLiteral("for all hosters") : QStringLiteral("for it"))
-                   .arg(blockMs / 60000));
+                   .arg(argStr(via), argStr(a.viaSite), argStr(ev.code.isEmpty() ? ev.text : ev.code),
+                        argStr(whole ? QStringLiteral("for all hosters") : QStringLiteral("for it")),
+                        argStr(blockMs / 60000)));
     return true;
 }
 
@@ -1884,7 +1885,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         m_containerAsks.erase(it);
         QFile::remove(c.path);
         if (ev.kind == K::Links && !ev.links.isEmpty()) {
-            logInfo(QStringLiteral("container %1: %2 link(s)").arg(c.fileName).arg(ev.links.size()));
+            logInfo(QStringLiteral("container %1: %2 link(s)").arg(argStr(c.fileName), argStr(ev.links.size())));
             emit containerOpened(c.token, c.fileName, ev.links, {}, {});
         } else {
             const QString code = ev.kind == K::Links ? QStringLiteral("invalid")
@@ -1958,7 +1959,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
                 st.password = password;
             }
             if (st.multi)
-                logInfo(QStringLiteral("%1 downloads %2 hosters").arg(host).arg(st.hosts.size()));
+                logInfo(QStringLiteral("%1 downloads %2 hosters").arg(argStr(host), argStr(st.hosts.size())));
         }
         emit accountChecked(host, user, ev);
         // a stored login's new session survives a restart (no browser login again);
@@ -2267,7 +2268,7 @@ void Ed3kHosterJoin::resumeRootless(Entry& e)
             if (auto r = eng->linkResume(link, std::as_bytes(std::span{cp->blob.constData(), std::size_t(cp->blob.size())})))
                 at = *r;
         if (at) {
-            logInfo(QStringLiteral("%1: goes on at %2 of the bytes kept").arg(e->item.host).arg(*at));
+            logInfo(QStringLiteral("%1: goes on at %2 of the bytes kept").arg(argStr(e->item.host), argStr(*at)));
             e->wholeAt = *at;
             e->item.done = *at;
         } else {
@@ -2429,7 +2430,7 @@ void Ed3kHosterJoin::onLinkEnded(std::uint64_t link, std::uint32_t code, std::ui
             e->peerLink = 0;
         if (code != ED3K_HTTP_OK)
             e->peerTried.insert(link);
-        logDebug([&]() -> QString { return QStringLiteral("%1: a peer's link ended, code %2, %3 bytes").arg(e->item.host).arg(code).arg(bytes); });
+        logDebug([&]() -> QString { return QStringLiteral("%1: a peer's link ended, code %2, %3 bytes").arg(argStr(e->item.host), argStr(code), argStr(bytes)); });
         if (tryPeerLink(*e))
             return;
         if (e->link)
@@ -2442,7 +2443,7 @@ void Ed3kHosterJoin::onLinkEnded(std::uint64_t link, std::uint32_t code, std::ui
     // complete, or whole and its checksum checked (checkHash)
     if (!e || e->item.state == State::Complete || e->hashing)
         return;
-    logDebug([&]() -> QString { return QStringLiteral("%1: link ended, code %2, %3 bytes").arg(e->item.host).arg(code).arg(bytes); });
+    logDebug([&]() -> QString { return QStringLiteral("%1: link ended, code %2, %3 bytes").arg(argStr(e->item.host), argStr(code), argStr(bytes)); });
     switch (code) {
     case ED3K_HTTP_OK:
         // the stream ended before the file was complete: open it again
@@ -2565,7 +2566,7 @@ void Ed3kHosterJoin::onPeerLinks(const ev::Links& links)
         return;
     for (const auto& [id, src] : links.links)
         m_peerLinks[id] = PeerLink{e->item.id, src.offset, QString::fromStdString(src.url)};
-    logDebug([&]() -> QString { return QStringLiteral("%1 hoster link(s) from peers for %2").arg(links.links.size()).arg(e->item.name); });
+    logDebug([&]() -> QString { return QStringLiteral("%1 hoster link(s) from peers for %2").arg(argStr(links.links.size()), argStr(e->item.name)); });
     if (ownLinkStuck(*e))
         tryPeerLink(*e);
 }
@@ -3306,7 +3307,7 @@ void Ed3kHosterJoin::publishShared(Entry& e)
     }
     e.sharedOut = urls;
     if (!urls.isEmpty())
-        logInfo(QStringLiteral("%1: %2 link(s) handed out with the file (SOURCE record, downloaders)").arg(e.item.host).arg(urls.size()));
+        logInfo(QStringLiteral("%1: %2 link(s) handed out with the file (SOURCE record, downloaders)").arg(argStr(e.item.host), argStr(urls.size())));
     else
         logInfo(QStringLiteral("%1: links no longer handed out with the file").arg(e.item.host));
 }
@@ -3361,7 +3362,7 @@ void Ed3kHosterJoin::queueRechecks(qint64 now)
             l.reportCheck = reported;
             const QString host = l.url == e.item.url ? e.item.host : QUrl(l.url).host();
             if (reported)
-                logInfo(QStringLiteral("%1: downloaders in %2 sites reported a published link dead, checking it").arg(host).arg(kReportsUntilCheck));
+                logInfo(QStringLiteral("%1: downloaders in %2 sites reported a published link dead, checking it").arg(argStr(host), argStr(kReportsUntilCheck)));
             else
                 logDebug([&]() -> QString { return QStringLiteral("%1: rechecking a published link").arg(host); });
             m_probeQueue.append({l.url, host, now, e.item.id});
@@ -3472,7 +3473,7 @@ void Ed3kHosterJoin::onHttpResults(const ev::HttpResults& r)
             if (std::ranges::find(l.reporters, r.site) == l.reporters.end() && l.reporters.size() < 16)
                 l.reporters.push_back(r.site);
             logDebug([&]() -> QString { return QStringLiteral("%1: a downloader reported a published link dead (%2)")
-                         .arg(QUrl(l.url).host()).arg(l.reporters.size()); });
+                         .arg(argStr(QUrl(l.url).host()), argStr(l.reporters.size())); });
             due = due || reportDue(l, now);
         }
     }
@@ -3619,7 +3620,7 @@ void Ed3kHosterJoin::scanTempDirs()
         Entry& ref = *e;
         m_items.emplace(it.id, std::move(e));
         logInfo(QStringLiteral("%1 taken up from %2 (%3 of %4 B)")
-                    .arg(ref.item.name, metPath).arg(ref.item.done).arg(ref.item.size));
+                    .arg(argStr(ref.item.name), argStr(metPath), argStr(ref.item.done), argStr(ref.item.size)));
         changed(ref);
         switch (ref.item.state) {
         case State::Paused:
@@ -3828,8 +3829,8 @@ QString Ed3kHosterJoin::freePath(const QString& dir, const QString& name)
     QString to = QDir(dir).filePath(name);
     for (int n = 1; QFileInfo::exists(to) && n < 1000; ++n)
         to = QDir(dir).filePath(base.completeSuffix().isEmpty()
-                                    ? QStringLiteral("%1 (%2)").arg(base.baseName()).arg(n)
-                                    : QStringLiteral("%1 (%2).%3").arg(base.baseName()).arg(n).arg(base.completeSuffix()));
+                                    ? QStringLiteral("%1 (%2)").arg(argStr(base.baseName()), argStr(n))
+                                    : QStringLiteral("%1 (%2).%3").arg(argStr(base.baseName()), argStr(n), argStr(base.completeSuffix())));
     return to;
 }
 
@@ -4010,7 +4011,7 @@ void Ed3kHosterJoin::onUnpacked(const HosterUnpackResult& r)
         changed(e);
     }
     if (r.ok) {
-        logInfo(QStringLiteral("unpacked %1: %2 file(s)").arg(QFileInfo(r.firstVolume).fileName()).arg(r.files.size()));
+        logInfo(QStringLiteral("unpacked %1: %2 file(s)").arg(argStr(QFileInfo(r.firstVolume).fileName()), argStr(r.files.size())));
         if (drop) {
             for (const QString& v : r.volumes)
                 QFile::remove(v);
@@ -4038,7 +4039,7 @@ void Ed3kHosterJoin::keepDeletedVolumes(const QStringList& volumes)
             links << l.url;
         if (keepDeleted({*e.root, QString::number(id), -1, e.item.size, e.item.name, now, 0, links}))
             logInfo(QStringLiteral("%1: volume deleted after unpacking, its links stay published (%2 day(s) at most, rechecked)")
-                        .arg(e.item.host).arg(deletedDays()));
+                        .arg(argStr(e.item.host), argStr(deletedDays())));
     }
 }
 
@@ -4175,7 +4176,7 @@ void Ed3kHosterJoin::startTail(Entry& e, std::uint64_t offset)
     const auto account = openAccount(e, a.url, a);
     const auto task = m_resolver->open(a.url, account, a.dir, offset);
     logInfo(QStringLiteral("%1: a player reads %2 at %3 of %4, its end is fetched ahead of the stream")
-                .arg(e.item.host, e.item.name).arg(offset).arg(e.item.size));
+                .arg(argStr(e.item.host), argStr(e.item.name), argStr(offset), argStr(e.item.size)));
     e.tailTask = task;
     e.tailFrom = offset;
     e.tailAt = offset;

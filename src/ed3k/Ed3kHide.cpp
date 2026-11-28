@@ -8,6 +8,7 @@
 #include "Ed3kStore.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QJsonArray>
@@ -219,10 +220,10 @@ void Ed3kHide::onEvent(const ffi::Event& ev)
 {
     namespace e = ffi::event;
     if (const auto* b = std::get_if<e::HopsPathBuilt>(&ev)) {
-        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: path %1 built (%2 hops)").arg(b->path).arg(b->hops); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: path %1 built (%2 hops)").arg(argStr(b->path), argStr(b->hops)); });
         emit changed();
     } else if (const auto* f = std::get_if<e::HopsPathFailed>(&ev)) {
-        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: path %1 failed at hop %2 (code %3)").arg(f->path).arg(f->hop).arg(f->code); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: path %1 failed at hop %2 (code %3)").arg(argStr(f->path), argStr(f->hop), argStr(f->code)); });
         emit changed();
     } else if (std::holds_alternative<e::HopsPathClosed>(ev)) {
         emit changed();

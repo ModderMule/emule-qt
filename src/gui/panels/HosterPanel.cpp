@@ -30,6 +30,7 @@
 #include "utils/StringUtils.h"
 #include "IpcMessage.h"
 #include "app/SkinIcons.h"
+#include "utils/ArgStr.h"
 
 #include <QAction>
 #include <QApplication>
@@ -1552,9 +1553,9 @@ void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
 
     if (cnl)
         logInfo(QStringLiteral("%1: %2 link(s) from %3, asking which to add")
-                    .arg(grab ? QStringLiteral("Clipboard") : QStringLiteral("Click'n'Load"))
-                    .arg(links.size())
-                    .arg(fileName));
+                    .arg(argStr(grab ? QStringLiteral("Clipboard") : QStringLiteral("Click'n'Load")),
+                         argStr(links.size()),
+                         argStr(fileName)));
     QDialog dlg(window());
     dlg.setWindowTitle(grab ? tr("Copied hoster links") : tr("Links of %1").arg(fileName));
     auto* layout = new QVBoxLayout(&dlg);

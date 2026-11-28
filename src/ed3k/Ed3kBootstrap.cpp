@@ -9,6 +9,7 @@
 
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -281,7 +282,7 @@ void Ed3kBootstrap::applyShipped()
     if (auto ok = e->bootstrapShipped({reinterpret_cast<const std::byte*>(file.constData()), std::size_t(file.size())}); !ok)
         logEd3kWarning(QStringLiteral("ed3k: shipped node list not used (error %1)").arg(errorName(ok.error())));
     else
-        logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: shipped node list %1 (%2 bytes)").arg(m_shippedPath).arg(file.size()); });
+        logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: shipped node list %1 (%2 bytes)").arg(argStr(m_shippedPath), argStr(file.size())); });
 }
 
 void Ed3kBootstrap::loadLast()

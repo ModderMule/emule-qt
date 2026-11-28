@@ -10,6 +10,7 @@
 #include "transfer/DownloadQueue.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <QDate>
 #include <QDateTime>
@@ -120,12 +121,12 @@ QString SourceListFile::formatRecord(const SavedSource& src)
                                   : ipstr(src.legacyId);
 
     QString line = QStringLiteral("%1:%2,%3,%4,%5:%6;")
-                       .arg(host)
-                       .arg(src.port)
-                       .arg(src.expiration)
-                       .arg(static_cast<int>(src.srcExchangeVer))
-                       .arg(ipstr(src.serverIP))
-                       .arg(src.serverPort);
+                       .arg(argStr(host),
+                            argStr(src.port),
+                            argStr(src.expiration),
+                            argStr(static_cast<int>(src.srcExchangeVer)),
+                            argStr(ipstr(src.serverIP)),
+                            argStr(src.serverPort));
 
     QStringList ext;
     if (!ipv6Host && src.ipv6.isIPv6())
@@ -520,9 +521,9 @@ bool SourceSaver::saveList(PartFile* file, const QString& path,
     // MorphXT stores the eD2K link as a met-recovery aid (SourceSaver.cpp:287). Neither
     // parser reads it back, so the canonical three-field form is enough.
     const QString ed2kLink = QStringLiteral("ed2k://|file|%1|%2|%3|/")
-                                 .arg(urlEncode(stripInvalidFilenameChars(file->fileName())))
-                                 .arg(static_cast<uint64>(file->fileSize()))
-                                 .arg(md4str(file->fileHash()));
+                                 .arg(urlEncode(stripInvalidFilenameChars(file->fileName())),
+                                      QString::number(static_cast<uint64>(file->fileSize())),
+                                      md4str(file->fileHash()));
 
     return SourceListFile::write(path, best, ed2kLink);
 }

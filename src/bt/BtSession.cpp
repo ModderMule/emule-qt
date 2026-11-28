@@ -13,6 +13,7 @@
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 #include "utils/ShareRatio.h"
+#include "utils/ArgStr.h"
 
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/announce_entry.hpp>
@@ -2504,7 +2505,7 @@ void BtSession::drainAlerts()
             const QString err = QString::fromStdString(ia->error.message());
             if (err != d->i2pError)
                 logWarning(QStringLiteral("BitTorrent: I2P SAM bridge %1:%2: %3")
-                               .arg(d->settings.i2pSamHost).arg(d->settings.i2pSamPort).arg(err));
+                               .arg(argStr(d->settings.i2pSamHost), argStr(d->settings.i2pSamPort), argStr(err)));
             d->i2pError = err;
             emit statusChanged();
         } else if (auto* pb = lt::alert_cast<lt::peer_blocked_alert>(a)) {
@@ -3145,7 +3146,7 @@ void BtSession::locateCopyNext(const QString& id)
         l.copies.clear();
         l.report.copied = int(l.copiedFiles.size());
         if (l.report.copied > 0)
-            logInfo(QStringLiteral("BitTorrent: %1: proved pieces of %2 located file(s) copied into the download").arg(id).arg(l.report.copied));
+            logInfo(QStringLiteral("BitTorrent: %1: proved pieces of %2 located file(s) copied into the download").arg(argStr(id), argStr(l.report.copied)));
         locateLink(id);
         return;
     }

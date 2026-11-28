@@ -9,6 +9,7 @@
 #include "net/HttpDefaults.h"
 #include "utils/Log.h"
 #include "utils/PathUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QCryptographicHash>
 #include <QFile>
@@ -246,13 +247,13 @@ void HttpCachePublisher::deleteChunk(const QString& url, const QString& apiKey)
         // TTL runs out, so this is worth seeing rather than swallowing.
         if (status == 204 || status == 404) {
             logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: DELETE %1 -> %2")
-                         .arg(reply->url().toString())
-                         .arg(status); });
+                         .arg(argStr(reply->url().toString()),
+                              argStr(status)); });
         } else {
             logWarning(QStringLiteral("HTTP Cache: DELETE %1 failed with %2 — the chunk may "
                                       "stay available until it expires")
-                           .arg(reply->url().toString())
-                           .arg(status));
+                           .arg(argStr(reply->url().toString()),
+                                argStr(status)));
         }
 
         reply->deleteLater();

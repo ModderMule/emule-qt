@@ -8,6 +8,7 @@
 #include "net/LocalIPv6.h"
 #include "portmap/PortMapWire.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QNetworkDatagram>
 
@@ -379,8 +380,8 @@ void UdpMappingBackend::onTransactionError(int transactionId)
 
     const bool wasProbe = transaction->isProbe;
     logDebug([&]() -> QString { return QStringLiteral("%1: gateway refused the connection (nothing on UDP/%2)")
-                 .arg(name())
-                 .arg(kServerPort); });
+                 .arg(argStr(name()),
+                      argStr(kServerPort)); });
 
     if (wasProbe) {
         eraseTransaction(transactionId);

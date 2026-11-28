@@ -35,6 +35,7 @@
 #include "utils/TorrentAdd.h"
 #include "utils/TorrentLinks.h"
 #include "utils/ViewNavigation.h"
+#include "utils/ArgStr.h"
 
 #include <QAction>
 #include <QCborArray>
@@ -1077,8 +1078,8 @@ void TorrentPanel::updateSummary()
         // ext controls: v4 / v6 apart (one DHT per listen socket family)
         const QString dht = thePrefs.showExtControls()
             ? tr("%1 v4 / %2 v6")
-                  .arg(m_status.value(QStringLiteral("dhtNodesV4")).toInteger())
-                  .arg(m_status.value(QStringLiteral("dhtNodesV6")).toInteger())
+                  .arg(argStr(m_status.value(QStringLiteral("dhtNodesV4")).toInteger()),
+                       argStr(m_status.value(QStringLiteral("dhtNodesV6")).toInteger()))
             : QString::number(m_status.value(QStringLiteral("dhtNodes")).toInteger());
         m_summary->setText(
             tr("%n torrent(s), %1 active — Down: %2, Up: %3 — DHT: %4 nodes — Port %5 %6", nullptr,

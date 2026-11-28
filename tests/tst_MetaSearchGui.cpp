@@ -399,6 +399,24 @@ void tst_MetaSearchGui::hideRelatedContentHidesOtherFiles()
 
     proxy.setKeywords({});   // no keywords: nothing to hold the names against
     QCOMPARE(proxy.rowCount(), 4);
+
+    // only release files and none matches: the list would be empty, they show anyway
+    SearchResultsModel filesOnly;
+    filesOnly.setResults({rows[1], rows[2]});
+    SearchResultsProxy files;
+    QSignalSpy fallback(&files, &SearchResultsProxy::relatedFallbackChanged);
+    files.setSourceModel(&filesOnly);
+    files.setNetworkFilter(SearchResultsProxy::NetworkFilter{.hideRelatedContent = true});
+    files.setKeywords(SearchResultsProxy::keywordsOf(u"keygen"_s));
+    QVERIFY(!files.relatedFallback());
+    QCOMPARE(files.rowCount(), 1);
+    files.setKeywords(SearchResultsProxy::keywordsOf(u"parallels"_s));
+    QVERIFY(files.relatedFallback());
+    QCOMPARE(files.rowCount(), 2);
+    QCOMPARE(fallback.count(), 1);
+    files.setKeywords(SearchResultsProxy::keywordsOf(u"vmware fusion"_s));
+    QVERIFY(!files.relatedFallback());
+    QCOMPARE(files.rowCount(), 1);
 }
 
 void tst_MetaSearchGui::networkFilterHidesForeignRows()

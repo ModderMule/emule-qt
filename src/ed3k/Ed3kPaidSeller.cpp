@@ -11,6 +11,7 @@
 #include "Ed3kSets.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QFile>
@@ -750,7 +751,7 @@ bool Ed3kPaidSeller::signOffer(Sale& s, const Season& season, const Secret& pub,
     f.devices = s.terms.devices;
     const auto offer = ffi::paidOfferSign(pub.expose(), f);
     if (!offer) {
-        logEd3kWarning(QStringLiteral("ed3k: paid scope %1: the offer was not signed (error %2)").arg(Ed3kPaid::hexOf(s.scope)).arg(int(offer.error())));
+        logEd3kWarning(QStringLiteral("ed3k: paid scope %1: the offer was not signed (error %2)").arg(argStr(Ed3kPaid::hexOf(s.scope)), argStr(int(offer.error()))));
         if (error)
             *error = offer.error() == ffi::Error::TooLarge ? tr("The offer is larger than 4 KiB: shorten the terms.")
                                                            : tr("The offer could not be signed.");
@@ -772,7 +773,7 @@ std::optional<Ed3kPaidSeller::Season> Ed3kPaidSeller::makeSeason(Sale& s, std::u
     wipe(std::span<std::uint8_t>{*seed});
     const auto chain = ffi::paidChainNew(pub.expose(), s.scope, base, length, ss.expose());
     if (!chain) {
-        logEd3kWarning(QStringLiteral("ed3k: paid scope %1: no season at %2 (error %3)").arg(Ed3kPaid::hexOf(s.scope)).arg(base).arg(int(chain.error())));
+        logEd3kWarning(QStringLiteral("ed3k: paid scope %1: no season at %2 (error %3)").arg(argStr(Ed3kPaid::hexOf(s.scope)), argStr(base), argStr(int(chain.error()))));
         QFile::remove(QDir(sellDir()).filePath(name));
         return std::nullopt;
     }
@@ -786,16 +787,16 @@ void Ed3kPaidSeller::publishSeason(Sale& s, const Season& season)
         return;
     auto seed = loadSecret(sellDir(), QFileInfo(fileOf(s, QStringLiteral("-%1.season").arg(season.base))).fileName());
     if (!seed) {
-        logEd3kWarning(QStringLiteral("ed3k: paid scope %1: the seed of the season at %2 is missing").arg(Ed3kPaid::hexOf(s.scope)).arg(season.base));
+        logEd3kWarning(QStringLiteral("ed3k: paid scope %1: the seed of the season at %2 is missing").arg(argStr(Ed3kPaid::hexOf(s.scope)), argStr(season.base)));
         return;
     }
     const Secret ss(*seed);
     wipe(std::span<std::uint8_t>{*seed});
     if (const auto ok = e->paidPublish(s.scope, spanOf(season.chain), ss.expose()); !ok)
         logEd3kWarning(QStringLiteral("ed3k: paid scope %1: the season at %2 was refused (error %3)")
-                           .arg(Ed3kPaid::hexOf(s.scope))
-                           .arg(season.base)
-                           .arg(int(ok.error())));
+                           .arg(argStr(Ed3kPaid::hexOf(s.scope)),
+                                argStr(season.base),
+                                argStr(int(ok.error()))));
 }
 
 void Ed3kPaidSeller::renewOwnPass(Sale& s, const Secret& pub)
@@ -815,14 +816,14 @@ void Ed3kPaidSeller::renewOwnPass(Sale& s, const Secret& pub)
     const std::array<ffi::Scope, 1> scopes{s.scope};
     const auto pass = ffi::paidSignPass(pub.expose(), scopes, *key, now, now + kOwnPassS, 0);
     if (!pass) {
-        logEd3kWarning(QStringLiteral("ed3k: paid scope %1: the own pass was not signed (error %2)").arg(Ed3kPaid::hexOf(s.scope)).arg(int(pass.error())));
+        logEd3kWarning(QStringLiteral("ed3k: paid scope %1: the own pass was not signed (error %2)").arg(argStr(Ed3kPaid::hexOf(s.scope)), argStr(int(pass.error()))));
         return;
     }
     s.ownPass = bytesOf(pass->bytes());
     s.ownUntil = now + kOwnPassS;
     if (auto* e = m_session.engine(); e && s.onEngine) {
         if (const auto ok = e->paidSetPass(m_session.now(), s.scope, spanOf(s.ownPass), holder.expose()); !ok)
-            logEd3kWarning(QStringLiteral("ed3k: paid scope %1: the own pass was not taken (error %2)").arg(Ed3kPaid::hexOf(s.scope)).arg(int(ok.error())));
+            logEd3kWarning(QStringLiteral("ed3k: paid scope %1: the own pass was not taken (error %2)").arg(argStr(Ed3kPaid::hexOf(s.scope)), argStr(int(ok.error()))));
     }
     save();
 }

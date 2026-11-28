@@ -70,18 +70,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxss-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Qt 6.10.2 via aqtinstall
+# Install Qt 6.12.1 via aqtinstall
 RUN python3 -m venv /opt/aqt-venv \
     && /opt/aqt-venv/bin/pip install aqtinstall \
-    && /opt/aqt-venv/bin/aqt install-qt linux desktop 6.10.2 linux_gcc_64 \
+    && /opt/aqt-venv/bin/aqt install-qt linux desktop 6.12.1 linux_gcc_64 \
         -m qtmultimedia qthttpserver qtwebsockets \
         --base https://ftp.fau.de/qtproject/ \
         --outputdir /opt/Qt \
     && rm -rf /opt/aqt-venv
 
-ENV CMAKE_PREFIX_PATH=/opt/Qt/6.10.2/gcc_64
-ENV PATH="/opt/Qt/6.10.2/gcc_64/bin:${PATH}"
-ENV LD_LIBRARY_PATH=/opt/Qt/6.10.2/gcc_64/lib
+ENV CMAKE_PREFIX_PATH=/opt/Qt/6.12.1/gcc_64
+ENV PATH="/opt/Qt/6.12.1/gcc_64/bin:${PATH}"
+ENV LD_LIBRARY_PATH=/opt/Qt/6.12.1/gcc_64/lib
 
 # Copy source and build
 WORKDIR /src

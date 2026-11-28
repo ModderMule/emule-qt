@@ -24,8 +24,10 @@
 #include "kademlia/KadPrefs.h"
 #include "transfer/UploadQueue.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 #include <algorithm>
+#include <cstring>
 #include <unordered_set>
 
 
@@ -317,7 +319,7 @@ void ClientList::setBuddy(UpDownClient* buddy, BuddyStatus status)
     } else if (status == BuddyStatus::None) {
         if (m_buddyStatus == BuddyStatus::Connected)
             kad::logKad(QStringLiteral("Kad: buddy lost — %1 (%2), held %3 s")
-                            .arg(m_buddyInfo, originName(lostOrigin)).arg(now - m_buddySince));
+                            .arg(argStr(m_buddyInfo), argStr(originName(lostOrigin)), argStr(now - m_buddySince)));
         else if (m_buddyStatus == BuddyStatus::Connecting)
             kad::logKad(QStringLiteral("Kad: no buddy candidate left"));
         m_buddyOrigin = BuddyOrigin::None;
@@ -416,6 +418,7 @@ BuddyRefusal ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort
     auto* client = new UpDownClient(tcpPort, ip, 0, 0, nullptr);
     client->setConnectAddress(Address::fromHostOrder(ip));
     client->setKadPort(udpPort);
+    client->setServedUdpSeen(addr, udpPort);
     client->setUserHash(clientID);
     client->setKadState(KadState::IncomingBuddy);
     client->setServedBuddy(true);
@@ -423,14 +426,40 @@ BuddyRefusal ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort
 
     addClient(client);
     kad::logKad(QStringLiteral("Kad: buddy claim from %1:%2 accepted (%3/%4 served)")
-                    .arg(ipstr(Address::fromHostOrder(ip))).arg(tcpPort)
-                    .arg(servedBuddyCount()).arg(thePrefs.servedBuddyLimit()));
+                    .arg(argStr(ipstr(Address::fromHostOrder(ip))), argStr(tcpPort),
+                         argStr(servedBuddyCount()), argStr(thePrefs.servedBuddyLimit())));
 
     // No status change: MFC leaves m_nBuddyStatus alone here (srchybrid/ClientList.cpp:735-746)
     // and lets the client become ConnectedBuddy when its connection completes. Claiming
     // Connecting for an inbound request would block a genuine outgoing attempt behind a peer
     // that may never connect.
     return {};
+}
+
+UpDownClient* ClientList::refreshServedBuddy(uint32 ip, uint16 udpPort, const uint8* clientID)
+{
+    // Repeat FINDBUDDY_REQ from a node we already serve: only its UDP mapping moves.
+    // Caller checked the receiver key, so the IP is the sender's. Same IP as the first
+    // request (or its TCP link when it claimed over TCP), same user hash.
+    const Address addr = Address::fromHostOrder(ip);
+    for (auto* client : m_items) {
+        if (!client->isServedBuddy() || !client->hasValidHash()
+            || std::memcmp(client->userHash(), clientID, 16) != 0)
+            continue;
+        const KadState st = client->kadState();
+        if (st != KadState::IncomingBuddy && st != KadState::ConnectedBuddy)
+            continue;
+        const Address& known = client->servedUdpPort() != 0 ? client->servedUdpAddress()
+                                                             : client->connectAddress();
+        if (known != addr)
+            continue;
+        if (client->servedUdpPort() != udpPort)
+            kad::logKad(QStringLiteral("Kad: served buddy %1 UDP port %2 -> %3")
+                            .arg(argStr(ipstr(addr)), argStr(client->servedUdpPort()), argStr(udpPort)));
+        client->setServedUdpSeen(addr, udpPort);
+        return client;
+    }
+    return nullptr;
 }
 
 bool ClientList::takeBuddyOffer(UpDownClient& offerer, uint16 kadPort)
@@ -1038,6 +1067,9 @@ void ClientList::processKadList()
                 packet->prot = OP_EMULEPROT;
                 client->sendPacket(std::move(packet));
                 client->setLastBuddyPingPongTime();
+                // Not MFC: UDP twin of the ping, from the Kad socket (natt-rendezvous.md)
+                if (kadInst)
+                    kadInst->sendBuddyRefresh(*client, false);
             }
             break;
 
@@ -1113,6 +1145,9 @@ void ClientList::processConnectingClients()
     for (auto* client : timedOut) {
         if (!isValidClient(client))
             continue;
+        // Not MFC: no IPv6 callback came back (the target could not dial us): the next route.
+        if (client->ipv6CallbackFailed(0))
+            continue;
         // Not MFC: a server callback that never came back may be a LowID that moved
         // servers; its Kad buddy still reaches it.
         if (client->fallBackToKadCallback())
@@ -1121,9 +1156,34 @@ void ClientList::processConnectingClients()
     }
 }
 
+void ClientList::serverCallbackRefused(uint32 targetID, uint8 reason)
+{
+    // The 5-byte form names the target, so several requests may be pending at once.
+    // It answers either request (ed2k-server#62, #63): the source's state says which.
+    std::vector<UpDownClient*> refused;
+    for (const auto& cc : m_connectingClients) {
+        if (!isValidClient(cc.client) || cc.client->userIDHybrid() != targetID)
+            continue;
+        const ConnectingState state = cc.client->connectingState();
+        if (state == ConnectingState::ServerIPv6Callback || state == ConnectingState::ServerCallback)
+            refused.push_back(cc.client);
+    }
+    // Collected first: the fallback re-adds to m_connectingClients.
+    for (auto* client : refused) {
+        if (client->ipv6CallbackFailed(reason))
+            continue;
+        // A classic callback: the Kad buddy, else the attempt ends now, not at the
+        // 45-second timeout. Not MFC (it ignores OP_CALLBACK_FAIL).
+        if (client->fallBackToKadCallback())
+            continue;
+        client->disconnected(QStringLiteral("Server callback refused, reason %1").arg(reason));
+    }
+}
+
 void ClientList::serverCallbackFailed()
 {
-    // OP_CALLBACK_FAIL carries no ID; only attributable with exactly one request pending.
+    // The empty OP_CALLBACK_FAIL carries no ID; only attributable with exactly one request
+    // pending. (The 5-byte form does: serverCallbackRefused.)
     // With more, each pending one falls back on its own timeout instead.
     UpDownClient* pending = nullptr;
     for (const auto& cc : m_connectingClients) {

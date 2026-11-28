@@ -221,6 +221,9 @@ public:
     [[nodiscard]] bool directUdpCallbackAvailable() const;
     /// Kad callback route usable: buddy ID valid, Kad connected, buddy address or a file.
     [[nodiscard]] bool kadCallbackAvailable() const;
+    /// Both of us are LowID on our server, which offers the IPv6 callback, and our IPv6
+    /// passed its dial-back (ST_IPV6_STATUS 0x07): OP_IPV6_CALLBACK_REQUEST can reach it.
+    [[nodiscard]] bool ipv6CallbackAvailable() const;
 
     [[nodiscard]] uint16 userPort() const { return m_userPort; }
     void setUserPort(uint16 port) { m_userPort = port; sourceIdentityChanged(); }
@@ -365,6 +368,10 @@ public:
     /// the stored server/LowID stale (peer likely moved servers). True when a Kad callback
     /// went out. Not MFC: MFC never leaves the server path while on the same server.
     bool fallBackToKadCallback();
+    /// Our OP_IPV6_CALLBACK_REQUEST for this source was refused (IPV6CB_REFUSED_* @p reason,
+    /// 0 = timed out): skip it for this source for a while and try the next route now. False
+    /// when no IPv6 callback was pending. Not MFC (ed2k-server#62).
+    bool ipv6CallbackFailed(uint8 reason);
 
     [[nodiscard]] InfoPacketState infoPacketsReceived() const { return m_infoPacketsReceived; }
     void setInfoPacketsReceived(InfoPacketState state) { m_infoPacketsReceived = state; }
@@ -925,6 +932,11 @@ public:
     /// ClientList::getBuddy(), the buddy we use ourselves. Cleared with the Kad state.
     [[nodiscard]] bool isServedBuddy() const { return m_servedBuddy; }
     void setServedBuddy(bool val) { m_servedBuddy = val; }
+    /// Served buddy: source of its latest Kad UDP packet to us (FINDBUDDY_REQ or refresh).
+    /// Per client, kept apart from the hello's Kad port, which a NAT does not keep.
+    [[nodiscard]] const Address& servedUdpAddress() const { return m_servedUdpAddr; }
+    [[nodiscard]] uint16 servedUdpPort() const { return m_servedUdpPort; }
+    void setServedUdpSeen(const Address& addr, uint16 port) { m_servedUdpAddr = addr; m_servedUdpPort = port; }
     /// Charges `bytes` relayed to this served buddy; false (nothing charged) when they
     /// would pass the per-minute byte budget.
     [[nodiscard]] bool allowBuddyRelay(uint32 bytes);
@@ -1399,6 +1411,8 @@ private:
     uint16 m_serverPort = 0;
     uint16 m_udpPort = 0;
     uint16 m_kadPort = 0;
+    Address m_servedUdpAddr;         // served buddy: last seen UDP source
+    uint16 m_servedUdpPort = 0;
     Address m_buddyAddress;
     uint16 m_buddyPort = 0;
     std::array<uint8, 16> m_buddyID{};
@@ -1441,6 +1455,8 @@ private:
     Address m_staleCallbackServer;
     uint16 m_staleCallbackServerPort = 0;
     uint32 m_staleCallbackUserID = 0;
+    // No OP_IPV6_CALLBACK_REQUEST for this source before this tick (a refusal or timeout).
+    uint64 m_ipv6CallbackSkipUntil = 0;
     InfoPacketState m_infoPacketsReceived = InfoPacketState::None;
 
     // -- Upload tracking ----------------------------------------------------

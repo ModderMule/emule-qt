@@ -8,6 +8,7 @@
 #include "archive/ArchiveReader.h"
 #include "utils/Log.h"
 #include "utils/SafeRemove.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QDirIterator>
@@ -250,8 +251,8 @@ ExternalUnpacker::Result ExternalUnpacker::extract(const QStringList& volumes,
 
     result.outcome = Outcome::Failed;
     result.error = QObject::tr("%1 could not unpack %2 (exit %3)")
-                       .arg(toolName(), QFileInfo(archive).fileName())
-                       .arg(code);
+                       .arg(argStr(toolName()), argStr(QFileInfo(archive).fileName()),
+                            argStr(code));
     return result;
 }
 
@@ -478,8 +479,8 @@ ExternalUnpacker::Result ExternalUnpacker::extractStreamed(const QStringList& vo
     result.outcome = Outcome::Failed;
     result.error = m_cancelled.load() ? QObject::tr("Cancelled")
                                       : QObject::tr("%1 could not unpack %2 (exit %3)")
-                                            .arg(toolName(), QFileInfo(volumes.first()).fileName())
-                                            .arg(code);
+                                            .arg(argStr(toolName()), argStr(QFileInfo(volumes.first()).fileName()),
+                                                 argStr(code));
     return result;
 }
 

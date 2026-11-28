@@ -77,7 +77,7 @@ find_qt_tool() {
     fi
 
     # 2) Known Qt installation path
-    local known="/Users/daniel/Qt/6.10.2/macos/bin/$tool"
+    local known="/Users/daniel/Qt/6.12.1/macos/bin/$tool"
     if [ -x "$known" ]; then
         echo "$known"
         return

@@ -488,6 +488,7 @@
     <ClInclude Include="files\Collection.h" />
     <ClInclude Include="files\CollectionFile.h" />
     <ClInclude Include="files\CollectionKeys.h" />
+    <ClInclude Include="utils\ArgStr.h" />
     <ClInclude Include="utils\ContainerUtils.h" />
     <ClInclude Include="utils\ShareRatio.h" />
     <ClInclude Include="utils\CorroborationTally.h" />

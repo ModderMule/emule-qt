@@ -9,6 +9,7 @@
 #include "Ed3kStore.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -407,8 +408,8 @@ std::expected<Ed3kPaid::PassTaken, QString> Ed3kPaid::addPassLink(const QString&
     save();
     markChanged();
     logEd3k(QStringLiteral("ed3k: paid scope %1: a pass by hand%2 until %3")
-                .arg(hexOf(main), voucher ? QStringLiteral(" (voucher)") : QString())
-                .arg(parsed->until));
+                .arg(argStr(hexOf(main)), argStr(voucher ? QStringLiteral(" (voucher)") : QString()),
+                     argStr(parsed->until)));
     if (!waits)
         emit passArrived(hexOf(main), s.title, parsed->until);
     return PassTaken{hexOf(main), s.title, int(parsed->scopes.size()), voucher, waits};

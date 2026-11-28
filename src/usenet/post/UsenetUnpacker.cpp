@@ -6,6 +6,7 @@
 #include "archive/ArchiveReader.h"
 #include "archive/ExternalUnpacker.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QFile>
@@ -161,8 +162,8 @@ UsenetUnpacker::Result UsenetUnpacker::unpackAll(const QString& sourceDir, const
         // used to fail a release whose real payload sat right beside it.
         logUsenetWarning(QStringLiteral("Usenet: \"%1\" has no first volume; not unpacking "
                                         "its %2 volume(s)")
-                             .arg(QFileInfo(set.firstVolume).fileName())
-                             .arg(set.volumes.size()));
+                             .arg(argStr(QFileInfo(set.firstVolume).fileName()),
+                                  argStr(set.volumes.size())));
         result.headlessVolumes += set.volumes;
     }
 
@@ -312,8 +313,8 @@ UsenetUnpacker::SetOutcome UsenetUnpacker::extractSet(const ArchiveSet& set, con
                                                                      : QString()});
 
             logUsenet(QStringLiteral("Usenet: unpacked \"%1\" (%2 file(s))")
-                        .arg(QFileInfo(set.firstVolume).fileName())
-                        .arg(produced.size()));
+                        .arg(argStr(QFileInfo(set.firstVolume).fileName()),
+                             argStr(produced.size())));
             return SetOutcome::Ok;
         }
 
@@ -494,7 +495,7 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
     }
     if (passwords.size() > 1 && outcome.ok())
         logUsenet(QStringLiteral("Usenet: \"%1\" opened with password %2 of %3")
-                      .arg(name).arg(passwords.indexOf(tried) + 1).arg(passwords.size()));
+                      .arg(argStr(name), argStr(passwords.indexOf(tried) + 1), argStr(passwords.size())));
 
     for (const QString& rejected : outcome.rejectedEntries) {
         logUsenetWarning(QStringLiteral("Usenet: skipped unsafe archive member \"%1\" in \"%2\"")
@@ -532,8 +533,8 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
         if (contentsTap)
             result.contents.append({contentsTap, name, tried});
         logUsenet(QStringLiteral("Usenet: unpacked \"%1\" with %2 (%3 file(s))")
-                    .arg(name, external.toolName())
-                    .arg(outcome.extractedFiles.size()));
+                    .arg(argStr(name), argStr(external.toolName()),
+                         argStr(outcome.extractedFiles.size())));
         return true;
     }
 

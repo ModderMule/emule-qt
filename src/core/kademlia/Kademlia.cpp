@@ -19,9 +19,11 @@
 #include "app/AppContext.h"
 #include "kademlia/KadStats.h"
 #include "client/ClientList.h"
+#include "client/UpDownClient.h"
 #include "prefs/Preferences.h"
 #include "ipfilter/IPFilter.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 
@@ -872,7 +874,7 @@ void Kademlia::probeFirewall(time_t now)
 void Kademlia::startCatchUp(time_t now, const QString& why)
 {
     logKad(QStringLiteral("Kad: %1 — rechecking all contacts within %2 min")
-               .arg(why).arg(kCatchUpSpread / 60));
+               .arg(argStr(why), argStr(kCatchUpSpread / 60)));
     m_catchUpUntil = now + kCatchUpSpread;
     const auto zones = static_cast<uint32>(m_zoneEvents.size());
     uint32 i = 0;
@@ -964,6 +966,41 @@ void Kademlia::askRememberedBuddies(time_t now, bool ignoreReask)
         logKad(QStringLiteral("Kad: FINDBUDDY_REQ → %1:%2 (remembered)")
                    .arg(ipToString(e.ip)).arg(e.udpPort));
     }
+}
+
+void Kademlia::sendBuddyRefresh(const UpDownClient& buddy, bool onDemand)
+{
+    if (!m_running || !m_udpListener || !isConnected())
+        return;
+    const time_t now = time(nullptr);
+    if (onDemand && now - m_lastBuddyRefresh < kBuddyRefreshGapSecs)
+        return;
+    const Address& addr = buddy.connectAddress();
+    const uint16 port = buddy.kadPort() != 0 ? buddy.kadPort() : buddy.udpPort();
+    if (!addr.isIPv4() || port == 0)
+        return;
+    const uint32 ip = addr.toUint32();
+    // The buddy takes it as a refresh only with a valid receiver key: needs its contact.
+    const Contact* contact = m_routingZone ? m_routingZone->getContact(ip, port, false) : nullptr;
+    UInt128 kadId = contact ? contact->getClientID() : UInt128();
+    if (kadId == 0) {
+        const auto& entries = m_buddyStore.entries();
+        const auto it = std::ranges::find_if(entries, [&](const BuddyStore::Entry& e) {
+            return e.ip == ip && e.udpPort == port;
+        });
+        if (it != entries.end())
+            kadId = it->kadId;
+    }
+    if (kadId == 0) {
+        logKad(QStringLiteral("Kad: buddy refresh → %1:%2 skipped, Kad ID unknown")
+                   .arg(argStr(ipToString(ip)), argStr(port)));
+        return;
+    }
+    m_lastBuddyRefresh = now;
+    m_udpListener->sendFindBuddyReq(ip, port, contact ? contact->getUDPKey() : KadUDPKey(0), &kadId);
+    logKad(QStringLiteral("Kad: buddy refresh → %1:%2%3")
+               .arg(argStr(ipToString(ip)), argStr(port),
+                    argStr(onDemand ? QStringLiteral(" (rendezvous)") : QString())));
 }
 
 void Kademlia::updateSessionVerdict()

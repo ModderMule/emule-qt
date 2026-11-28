@@ -25,6 +25,7 @@
 #include "transfer/DownloadQueue.h"
 #include "utils/Log.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 
 #include <zlib.h>
@@ -266,11 +267,11 @@ void UpDownClient::sendFileRequest()
     const bool useMultiPacket = supportMultiPacket() || supportsFileIdentifiers();
     if (thePrefs.logRawSocketPackets())
         logDebug([&]() -> QString { return QStringLiteral("sendFileRequest: %1 path for file=%2 multiPacket=%3 extMultiPacket=%4 fileIdent=%5")
-                     .arg(useMultiPacket ? QStringLiteral("multipacket") : QStringLiteral("individual"))
-                     .arg(m_reqFile->fileName())
-                     .arg(supportMultiPacket())
-                     .arg(supportExtMultiPacket())
-                     .arg(supportsFileIdentifiers()); });
+                     .arg(argStr(useMultiPacket ? QStringLiteral("multipacket") : QStringLiteral("individual")),
+                          argStr(m_reqFile->fileName()),
+                          argStr(supportMultiPacket()),
+                          argStr(supportExtMultiPacket()),
+                          argStr(supportsFileIdentifiers())); });
 
     if (useMultiPacket) {
         // --- Multipacket path (MFC DownloadClient.cpp SendFileRequest) ---
@@ -1367,11 +1368,11 @@ void UpDownClient::sendHashSetRequest()
 
     if (thePrefs.logRawSocketPackets())
         logDebug([&]() -> QString { return QStringLiteral("sendHashSetRequest: file=%1 md4needed=%2 aichNeeded=%3 state=%4 fileIdent=%5")
-                     .arg(m_reqFile->fileName())
-                     .arg(m_reqFile->isMD4HashsetNeeded())
-                     .arg(m_reqFile->isAICHPartHashsetNeeded())
-                     .arg(static_cast<int>(m_downloadState))
-                     .arg(supportsFileIdentifiers()); });
+                     .arg(argStr(m_reqFile->fileName()),
+                          argStr(m_reqFile->isMD4HashsetNeeded()),
+                          argStr(m_reqFile->isAICHPartHashsetNeeded()),
+                          argStr(static_cast<int>(m_downloadState)),
+                          argStr(supportsFileIdentifiers())); });
 
     if (supportsFileIdentifiers()) {
         // MFC: v2 path — OP_HASHSETREQUEST2 with FileIdentifier + options byte
@@ -2099,9 +2100,9 @@ void UpDownClient::noteDownloadSessionEndedByPeer()
         const Verdict verdict = ledger->noteFruitlessSession(userHash(), now);
         if (verdict != Verdict::Noted) {
             logDebug([&]() -> QString { return QStringLiteral("Download sessions with %1 gave no data; %2 for %3 s")
-                         .arg(userName(), verdict == Verdict::Quarantined
-                                              ? QStringLiteral("quarantined") : QStringLiteral("paused"))
-                         .arg(ledger->heldBackFor(userHash(), now) / 1000); });
+                         .arg(argStr(userName()), argStr(verdict == Verdict::Quarantined
+                                              ? QStringLiteral("quarantined") : QStringLiteral("paused")),
+                              argStr(ledger->heldBackFor(userHash(), now) / 1000)); });
         }
         return;
     }
@@ -2109,7 +2110,7 @@ void UpDownClient::noteDownloadSessionEndedByPeer()
         m_fruitlessSessionTick = 0;
         m_downloadCooldownUntil = now + kDownloadCooldownMs;
         logDebug([&]() -> QString { return QStringLiteral("Two download sessions with %1 gave no data; pausing it for %2 s")
-                     .arg(userName()).arg(kDownloadCooldownMs / 1000); });
+                     .arg(argStr(userName()), argStr(kDownloadCooldownMs / 1000)); });
     } else {
         m_fruitlessSessionTick = now;
     }

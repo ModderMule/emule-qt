@@ -13,6 +13,7 @@
 
 #include "utils/FileTypeFilter.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QFile>
@@ -259,7 +260,7 @@ std::expected<void, QString> Ed3kSets::setFolder(std::uint32_t id, const QString
     s->dirByUser = !wanted.isEmpty();
     // empty: the default again (<incoming>/<title>, kept at the first download)
     s->dir = s->dirByUser ? QDir::cleanPath(QDir(wanted).absolutePath()) : QString();
-    logEd3k(QStringLiteral("ed3k: set %1: folder %2").arg(id).arg(s->dirByUser ? s->dir : QStringLiteral("default")));
+    logEd3k(QStringLiteral("ed3k: set %1: folder %2").arg(argStr(id), argStr(s->dirByUser ? s->dir : QStringLiteral("default"))));
     save();
     markChanged();
     return {};
@@ -296,14 +297,14 @@ bool Ed3kSets::applyVersion(std::uint32_t id)
             QFile::remove(QDir(setsDir()).filePath(hexOf(s->applied->root.bytes) + QStringLiteral(".manifest")));
         s->applied = std::move(s->pending);
         s->pending.reset();
-        logEd3k(QStringLiteral("ed3k: set %1 version %2 taken").arg(id).arg(s->applied->seq));
+        logEd3k(QStringLiteral("ed3k: set %1 version %2 taken").arg(argStr(id), argStr(s->applied->seq)));
     }
     // was: ToDo: a mount's new version under Ask downloaded on the next apply (done: it waits
     // in pendingMounts, shown in the dialog, taken here)
     for (auto& [path, root] : s->pendingMounts)
         s->mounts[path] = root;
     if (!s->pendingMounts.empty())
-        logEd3k(QStringLiteral("ed3k: set %1: %2 mount version(s) taken").arg(id).arg(s->pendingMounts.size()));
+        logEd3k(QStringLiteral("ed3k: set %1: %2 mount version(s) taken").arg(argStr(id), argStr(s->pendingMounts.size())));
     s->pendingMounts.clear();
     download(*s);
     save();
@@ -324,7 +325,7 @@ bool Ed3kSets::downloadParts(std::uint32_t id, const std::optional<ffi::Key32>& 
                                                  : e->setPartDownload(m_session.now(), *s->topic, by);
     m_session.pump();
     if (!ok)
-        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: parts of set %1 not downloaded (error %2)").arg(id).arg(int(ok.error())); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: parts of set %1 not downloaded (error %2)").arg(argStr(id), argStr(int(ok.error()))); });
     return ok.has_value();
 }
 
@@ -405,12 +406,12 @@ void Ed3kSets::onEventPolled(const ffi::Event& event, ffi::KeyKind key, bool* ha
     if (const auto* h = std::get_if<e::SetHead>(&event)) {
         if (Set* s = setOfTopic(h->set)) {
             *handled = true;
-            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1 has version %2, fetching it").arg(s->id).arg(h->seq); });
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1 has version %2, fetching it").arg(argStr(s->id), argStr(h->seq)); });
         }
     } else if (const auto* hh = std::get_if<e::SetHiddenHead>(&event)) {
         if (Set* s = setOfTopic(hh->set)) {
             *handled = true;
-            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: hidden set %1 has version %2, fetching it").arg(s->id).arg(hh->seq); });
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: hidden set %1 has version %2, fetching it").arg(argStr(s->id), argStr(hh->seq)); });
         }
     } else if (const auto* m = std::get_if<e::SetManifest>(&event)) {
         if (Set* s = setOfTopic(m->set, &mount)) {
@@ -424,7 +425,7 @@ void Ed3kSets::onEventPolled(const ffi::Event& event, ffi::KeyKind key, bool* ha
         if (Set* s = setOfTopic(r->set)) {
             *handled = true;
             s->error = QStringLiteral("a version was refused (%1)").arg(int(r->why));
-            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: %2").arg(s->id).arg(s->error); });
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: %2").arg(argStr(s->id), argStr(s->error)); });
             markChanged();
         }
     } else if (const auto* in = std::get_if<e::SetInner>(&event)) {
@@ -555,7 +556,7 @@ bool Ed3kSets::followOnEngine(Set& s)
     }
     if (!topic) {
         s.error = QStringLiteral("not followed (error %1)").arg(int(topic.error()));
-        logEd3kWarning(QStringLiteral("ed3k: set %1 %2").arg(s.id).arg(s.error));
+        logEd3kWarning(QStringLiteral("ed3k: set %1 %2").arg(argStr(s.id), argStr(s.error)));
         return false;
     }
     s.topic = *topic;
@@ -653,7 +654,7 @@ void Ed3kSets::onManifest(Set& s, const ffi::Root& root, const ffi::Bytes& file,
     s.pending = std::move(v);
     decideNew(s);
     followPaid(s);
-    logEd3k(QStringLiteral("ed3k: set %1 has a new version %2 (waiting for the user)").arg(s.id).arg(seq));
+    logEd3k(QStringLiteral("ed3k: set %1 has a new version %2 (waiting for the user)").arg(argStr(s.id), argStr(seq)));
     save();
     const Info i = infoOf(s);
     emit newVersion(s.id, s.title, seq, i.added, i.changed, i.removed);
@@ -672,7 +673,7 @@ void Ed3kSets::onMountManifest(Set& s, const QString& path, const ffi::Root& roo
         return;   // offered already
     storeManifest(root, f);
     s.inner[root] = f;
-    logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: a new version of the mount at %2").arg(s.id).arg(path); });
+    logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: a new version of the mount at %2").arg(argStr(s.id), argStr(path)); });
     // was: ToDo: a mount's new version under Policy::Ask is shown, downloaded on the next apply
     // (done: the first version is taken; a newer one under Ask waits for the user)
     // s.mounts[path] = root;
@@ -746,7 +747,7 @@ void Ed3kSets::download(Set& s)
             ++added;
     }
     if (added > 0)
-        logEd3k(QStringLiteral("ed3k: set %1: %2 member download(s) added").arg(s.id).arg(added));
+        logEd3k(QStringLiteral("ed3k: set %1: %2 member download(s) added").arg(argStr(s.id), argStr(added)));
     pumpQueue(s);
     // the sealed ones here already
     openSealed(s);
@@ -780,7 +781,7 @@ bool Ed3kSets::addMember(Set& s, const ffi::Root& root, std::uint64_t size, cons
     spec.key = s.key;   // hops.md §1: under the set's key, not the hiding switch
     // spec.paused = true;
     if (auto ok = m_downloads.add(spec); !ok) {
-        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: a member not added (%2)").arg(s.id).arg(ok.error()); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: a member not added (%2)").arg(argStr(s.id), argStr(ok.error())); });
         return false;
     }
     // s.queued.push_back(root);
@@ -1342,7 +1343,7 @@ bool Ed3kSets::openMember(Set& s, const Ed3kSetEntry& m, const QString& sealedPa
                 anon = i->anon;
         auto got = e->paidMemberKey(m_session.now(), *scope, *m.epoch, anon);
         if (!got) {
-            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: no member key (error %2)").arg(s.id).arg(int(got.error())); });
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: no member key (error %2)").arg(argStr(s.id), argStr(int(got.error()))); });
             return false;
         }
         if (!*got) {
@@ -1351,7 +1352,7 @@ bool Ed3kSets::openMember(Set& s, const Ed3kSetEntry& m, const QString& sealedPa
                 // was: (void)e->paidWantKeys(m_session.now(), *scope);
                 (void)(anon ? e->paidAnonWantKeys(m_session.now(), *scope) : e->paidWantKeys(m_session.now(), *scope));
                 m_session.pump();
-                logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: a sealed member waits for the key of epoch %2").arg(s.id).arg(*m.epoch); });
+                logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: a sealed member waits for the key of epoch %2").arg(argStr(s.id), argStr(*m.epoch)); });
             }
             return false;
         }

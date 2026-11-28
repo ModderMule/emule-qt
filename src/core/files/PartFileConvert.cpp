@@ -12,6 +12,7 @@
 #include "utils/PathUtils.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -87,8 +88,8 @@ void ConvertThread::run()
         }
 
         logInfo(QStringLiteral("PartFileConvert: job '%1' finished with status %2")
-                    .arg(currentJob->filename)
-                    .arg(static_cast<int>(result)));
+                    .arg(argStr(currentJob->filename),
+                         argStr(static_cast<int>(result))));
     }
 }
 

@@ -12,6 +12,8 @@
 
 #include <QStringList>
 
+#include <vector>
+
 namespace eMule {
 
 class SearchResultsProxy : public SortValueProxy {
@@ -52,12 +54,26 @@ public:
     /// Source rows the filter keeps out of the list.
     [[nodiscard]] int hiddenCount() const;
 
+    /// hideRelatedContent would leave the list empty, so related rows show anyway
+    [[nodiscard]] bool relatedFallback() const { return m_relatedFallback; }
+
+    void setSourceModel(QAbstractItemModel* model) override;
+
+signals:
+    void relatedFallbackChanged(bool on);
+
 protected:
     [[nodiscard]] bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override;
     [[nodiscard]] bool lessThan(const QModelIndex& left, const QModelIndex& right) const override;
 
 private:
+    [[nodiscard]] bool accepts(int sourceRow, bool hideRelated) const;
+    /// re-decides m_relatedFallback after rows or filters changed
+    void updateRelatedFallback();
+
     NetworkFilter m_filter;
+    bool m_relatedFallback = false;
+    std::vector<QMetaObject::Connection> m_sourceConnections;
     QStringList m_tokens;
     QStringList m_keywords;   ///< folded
     int m_tokenColumn = 0;

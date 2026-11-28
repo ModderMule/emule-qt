@@ -29,6 +29,7 @@
 #include "transfer/DownloadQueue.h"
 #include "protocol/Tag.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <QtEndian>
 
@@ -550,7 +551,7 @@ void Search::go(uint32 maxToSend)
         if (auto* rz = Kademlia::getInstanceRoutingZone())
             rtContacts = rz->getNumContacts();
         logKad(QStringLiteral("Kad search %1: go() — possible map empty, routing table has %2 contacts")
-                   .arg(m_searchID).arg(rtContacts));
+                   .arg(argStr(m_searchID), argStr(rtContacts)));
         UInt128 distance(RoutingZone::localKadId());
         distance.xorWith(m_target);
         if (auto* rz = Kademlia::getInstanceRoutingZone()) {
@@ -584,8 +585,8 @@ void Search::go(uint32 maxToSend)
         const UInt128 closestPossible = m_possible.begin()->first;
         if (!(closestPossible < kthResponded)) {
             logKad(QStringLiteral("Kad search %1: converged — best=%2 responded=%3 possible=%4 tried=%5")
-                       .arg(m_searchID).arg(m_best.size()).arg(m_responded.size())
-                       .arg(m_possible.size()).arg(m_tried.size()));
+                       .arg(argStr(m_searchID), argStr(m_best.size()), argStr(m_responded.size()),
+                            argStr(m_possible.size()), argStr(m_tried.size())));
             prepareToStop();
             return;
         }
@@ -647,8 +648,8 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
                  && m_requestedMoreNodesContact == pFromContact
                  && results.size() <= KADEMLIA_FIND_VALUE_MORE)) {
             logKad(QStringLiteral("Kad search %1: node %2:%3 sent %4 contacts (expected <= %5), ignoring")
-                       .arg(m_searchID).arg(ipToString(fromIP)).arg(fromPort)
-                       .arg(results.size()).arg(expected));
+                       .arg(argStr(m_searchID), argStr(ipToString(fromIP)), argStr(fromPort),
+                            argStr(results.size()), argStr(expected)));
             return;
         }
     }
@@ -679,7 +680,7 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
             if (sk->isBadNode(fromIP, fromPort, pFromContact->getClientID(),
                               pFromContact->getVersion(), true, false)) {
                 logKad(QStringLiteral("Kad search %1: SafeKad rejected response from %2:%3")
-                           .arg(m_searchID).arg(ipToString(fromIP)).arg(fromPort));
+                           .arg(argStr(m_searchID), argStr(ipToString(fromIP)), argStr(fromPort)));
                 return;
             }
         }
@@ -689,9 +690,9 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
     }
 
     logKad(QStringLiteral("Kad search %1: response from %2:%3 — sender %4, +%5 contacts, best=%6 responded=%7 possible=%8")
-               .arg(m_searchID).arg(ipToString(fromIP)).arg(fromPort)
-               .arg(pFromContact ? QStringLiteral("found") : QStringLiteral("NOT found"))
-               .arg(results.size()).arg(m_best.size()).arg(m_responded.size()).arg(m_possible.size()));
+               .arg(argStr(m_searchID), argStr(ipToString(fromIP)), argStr(fromPort),
+                    argStr(pFromContact ? QStringLiteral("found") : QStringLiteral("NOT found")),
+                    argStr(results.size()), argStr(m_best.size()), argStr(m_responded.size()), argStr(m_possible.size())));
 
     // Firewall-check responses are handed to the UDP firewall tester by the
     // listener (process_KADEMLIA2_RES). The search itself must NOT query these
@@ -950,7 +951,7 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
         return;
     default:
         logKad(QStringLiteral("Kad search %1: skipping unknown source type %2 from %3")
-                   .arg(m_searchID).arg(sourceType).arg(answer.toHexString()));
+                   .arg(argStr(m_searchID), argStr(sourceType), argStr(answer.toHexString())));
         return;
     }
 
@@ -1019,9 +1020,9 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
     }
 
     logKad(QStringLiteral("Kad search %1: got file source %2, type=%3 IP=%4:%5 buddy=%6:%7")
-               .arg(m_searchID).arg(answer.toHexString()).arg(sourceType)
-               .arg(ipToString(sourceIP)).arg(sourcePort)
-               .arg(ipToString(buddyIP)).arg(buddyPort));
+               .arg(argStr(m_searchID), argStr(answer.toHexString()), argStr(sourceType),
+                    argStr(ipToString(sourceIP)), argStr(sourcePort),
+                    argStr(ipToString(buddyIP)), argStr(buddyPort)));
 }
 
 std::vector<eMule::HttpCacheOffer>
@@ -1154,7 +1155,7 @@ void Search::processResultKeyword(const UInt128& answer, TagList& info, uint32 f
     // 1. Without a name or size there is nothing usable here.
     if (!hasFileName || !hasFileSize || fileName.isEmpty()) {
         logKad(QStringLiteral("Kad search %1: dropping keyword result from %2:%3 — missing name or size")
-                   .arg(m_searchID).arg(ipToString(fromIP)).arg(fromPort));
+                   .arg(argStr(m_searchID), argStr(ipToString(fromIP)), argStr(fromPort)));
         return;
     }
 
@@ -1172,7 +1173,7 @@ void Search::processResultKeyword(const UInt128& answer, TagList& info, uint32 f
             }
             if (!found) {
                 logKad(QStringLiteral("Kad search %1: dropping \"%2\" from %3:%4 — missing keyword \"%5\"")
-                           .arg(m_searchID).arg(fileName).arg(ipToString(fromIP)).arg(fromPort).arg(want));
+                           .arg(argStr(m_searchID), argStr(fileName), argStr(ipToString(fromIP)), argStr(fromPort), argStr(want)));
                 return;
             }
         }
@@ -1195,7 +1196,7 @@ void Search::processResultKeyword(const UInt128& answer, TagList& info, uint32 f
             candidate.addTag(tag);
         if (!candidate.startSearchTermsMatch(*m_searchTerm)) {
             logKad(QStringLiteral("Kad search %1: dropping \"%2\" from %3:%4 — fails search expression")
-                       .arg(m_searchID).arg(fileName).arg(ipToString(fromIP)).arg(fromPort));
+                       .arg(argStr(m_searchID), argStr(fileName), argStr(ipToString(fromIP)), argStr(fromPort)));
             return;
         }
     }
@@ -1326,7 +1327,7 @@ void Search::processResultNotes(const UInt128& answer, TagList& info)
     }
 
     logKad(QStringLiteral("Kad search %1: got notes result %2, rating=%3")
-               .arg(m_searchID).arg(answer.toHexString()).arg(rating));
+               .arg(argStr(m_searchID), argStr(answer.toHexString()), argStr(rating)));
 }
 
 void Search::jumpStart()
@@ -1344,8 +1345,8 @@ void Search::jumpStart()
     time_t lifetime = static_cast<time_t>(getLifetime());
     if ((now - m_created) > lifetime) {
         logKad(QStringLiteral("Kad search %1: lifetime expired (%2s) — best=%3 responded=%4 possible=%5")
-                   .arg(m_searchID).arg(now - m_created)
-                   .arg(m_best.size()).arg(m_responded.size()).arg(m_possible.size()));
+                   .arg(argStr(m_searchID), argStr(now - m_created),
+                        argStr(m_best.size()), argStr(m_responded.size()), argStr(m_possible.size())));
         prepareToStop();
         return;
     }
@@ -1445,7 +1446,7 @@ bool Search::sendFindValue(Contact* contact, bool reAskMore)
         if (m_heldLookups.insert(contact->getClientID()).second) {
             countKad(&KadCounters::requestsHeld);
             logKad(QStringLiteral("Kad search %1: KADEMLIA2_REQ → %2 held, over its flood budget")
-                       .arg(m_searchID).arg(contact->address().toString()));
+                       .arg(argStr(m_searchID), argStr(contact->address().toString())));
         }
         return false;
     }
@@ -1544,7 +1545,7 @@ void Search::retryUnstoredSource() const
     m_target.toByteArray(hash);
     if (KnownFile* file = theApp.sharedFileList->getFileByID(hash)) {
         logKad(QStringLiteral("Kad search %1: source stored nowhere — %2 is due again")
-                   .arg(m_searchID).arg(file->fileName()));
+                   .arg(argStr(m_searchID), argStr(file->fileName())));
         file->setLastPublishTimeKadSrc(0, 0);
     }
 }
@@ -1634,8 +1635,8 @@ void Search::storePacket(bool flushRemaining)
             if (m_heldStores.insert(dist).second) {
                 countKad(&KadCounters::storesHeld);
                 logKad(QStringLiteral("Kad search %1: opcode 0x%2 → %3 held, over its flood budget")
-                           .arg(m_searchID).arg(actionOpcode, 2, 16, QChar(u'0'))
-                           .arg(contact->address().toString()));
+                           .arg(argStr(m_searchID), argFmt(actionOpcode, 2, 16, QChar(u'0')),
+                                argStr(contact->address().toString())));
             }
             continue;
         }
@@ -1648,9 +1649,9 @@ void Search::storePacket(bool flushRemaining)
         case SearchType::Keyword: {
             // Action phase: send KADEMLIA2_SEARCH_KEY_REQ to closest responded contacts
             logKad(QStringLiteral("Kad search %1: SEARCH_KEY_REQ → %2:%3 dist=%4")
-                       .arg(m_searchID)
-                       .arg(contact->address().toString()).arg(contact->getUDPPort())
-                       .arg(dist.toHexString()));
+                       .arg(argStr(m_searchID),
+                            argStr(contact->address().toString()), argStr(contact->getUDPPort()),
+                            argStr(dist.toHexString())));
             SafeMemFile packet;
             io::writeUInt128(packet, m_target);
             // Position marker with 0x8000 flag indicating search terms follow
@@ -1747,9 +1748,9 @@ void Search::storePacket(bool flushRemaining)
                 packet.seek(endPos, 0);
 
                 logKad(QStringLiteral("Kad search %1: PUBLISH_KEY_REQ → %2:%3, %4 files")
-                           .arg(m_searchID)
-                           .arg(contact->address().toString()).arg(contact->getUDPPort())
-                           .arg(packetFileCount));
+                           .arg(argStr(m_searchID),
+                                argStr(contact->address().toString()), argStr(contact->getUDPPort()),
+                                argStr(packetFileCount)));
                 UInt128 pubKeyClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_KEY_REQ,
                                         contact->address().toUint32(), contact->getUDPPort(),
@@ -1769,7 +1770,7 @@ void Search::storePacket(bool flushRemaining)
             if (m_pointerPublish) {
                 if (!keyed) {
                     logKad(QStringLiteral("Kad search %1: pointer not sent to %2:%3 — no receiver key")
-                               .arg(m_searchID).arg(contact->address().toString()).arg(contact->getUDPPort()));
+                               .arg(argStr(m_searchID), argStr(contact->address().toString()), argStr(contact->getUDPPort())));
                     break;
                 }
                 // Pointer record at ~clientHash (ipv6-spec §5.6.1)
@@ -1788,7 +1789,7 @@ void Search::storePacket(bool flushRemaining)
                 io::writeUInt128(packet, prefs->clientHash());
                 io::writeKadTagList(packet, tags);
                 logKad(QStringLiteral("Kad search %1: pointer PUBLISH_SOURCE_REQ → %2:%3")
-                           .arg(m_searchID).arg(contact->address().toString()).arg(contact->getUDPPort()));
+                           .arg(argStr(m_searchID), argStr(contact->address().toString()), argStr(contact->getUDPPort())));
                 UInt128 pubPtrClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_SOURCE_REQ,
                                         contact->address().toUint32(), contact->getUDPPort(),
@@ -1851,7 +1852,7 @@ void Search::storePacket(bool flushRemaining)
             std::vector<Tag> tags = buildSourcePublishTags(sp, canPublish);
             if (canPublish && !keyed && !tags.empty() && tags[0].intValue() == 7) {
                 logKad(QStringLiteral("Kad search %1: type 7 not sent to %2:%3 — no receiver key")
-                           .arg(m_searchID).arg(contact->address().toString()).arg(contact->getUDPPort()));
+                           .arg(argStr(m_searchID), argStr(contact->address().toString()), argStr(contact->getUDPPort())));
                 break;
             }
             if (!canPublish) {
@@ -1868,11 +1869,11 @@ void Search::storePacket(bool flushRemaining)
 
             io::writeKadTagList(packet, tags);
             logKad(QStringLiteral("Kad search %1: PUBLISH_SOURCE_REQ → %2:%3, pktLen=%4 tags=%5 srcType=%6")
-                       .arg(m_searchID)
-                       .arg(contact->address().toString()).arg(contact->getUDPPort())
-                       .arg(packet.length())
-                       .arg(tags.size())
-                       .arg(tags.empty() ? 0 : tags[0].intValue()));
+                       .arg(argStr(m_searchID),
+                            argStr(contact->address().toString()), argStr(contact->getUDPPort()),
+                            argStr(packet.length()),
+                            argStr(tags.size()),
+                            argStr(tags.empty() ? 0 : tags[0].intValue())));
             {
                 UInt128 pubSrcClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_SOURCE_REQ,
@@ -1915,8 +1916,8 @@ void Search::storePacket(bool flushRemaining)
 
             io::writeKadTagList(packet, tags);
             logKad(QStringLiteral("Kad search %1: PUBLISH_NOTES_REQ → %2:%3")
-                       .arg(m_searchID)
-                       .arg(contact->address().toString()).arg(contact->getUDPPort()));
+                       .arg(argStr(m_searchID),
+                            argStr(contact->address().toString()), argStr(contact->getUDPPort())));
             {
                 UInt128 pubNotesClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_NOTES_REQ,
@@ -1937,9 +1938,9 @@ void Search::storePacket(bool flushRemaining)
             // unless the contact already gave us a UDP key.
             UInt128 clientID = contact->getClientID();
             logKad(QStringLiteral("Kad search %1: FINDBUDDY_REQ → %2:%3 v%4 dist=%5")
-                       .arg(m_searchID)
-                       .arg(contact->address().toString()).arg(contact->getUDPPort())
-                       .arg(contact->getVersion()).arg(dist.toHexString()));
+                       .arg(argStr(m_searchID),
+                            argStr(contact->address().toString()), argStr(contact->getUDPPort()),
+                            argStr(contact->getVersion()), argStr(dist.toHexString())));
             udpListener->sendFindBuddyReq(contact->address().toUint32(), contact->getUDPPort(),
                                           contact->getUDPKey(), &clientID);
             // Offers come later by TCP, so each request counts as an answer (MFC Search.cpp:838)
@@ -1958,7 +1959,7 @@ void Search::storePacket(bool flushRemaining)
                                                              RelayRequest::KadCallback))
             {
                 logKad(QStringLiteral("Kad search %1: CALLBACK_REQ → %2 not sent, relay limit")
-                           .arg(m_searchID).arg(contact->address().toString()));
+                           .arg(argStr(m_searchID), argStr(contact->address().toString())));
                 break;
             }
             SafeMemFile packet;
@@ -2074,7 +2075,7 @@ void Search::processSizeProbeResult(const UInt128& answer, const TagList& info)
         return;
     const uint32 votes = ++m_sizeVotes[size];
     logKad(QStringLiteral("Kad search %1: size probe — source %2 reports %3 (%4 votes)")
-               .arg(m_searchID).arg(answer.toHexString()).arg(size).arg(votes));
+               .arg(argStr(m_searchID), argStr(answer.toHexString()), argStr(size), argStr(votes)));
     if (votes >= 2) {
         finishSizeProbe(size);
         prepareToStop();
@@ -2096,7 +2097,7 @@ void Search::processPointerResult(const UInt128& answer, const TagList& info)
     ++m_answers;
     auto hit = acceptPointerRecord(answer, info, m_pointerSource, m_pointerSourceIP);
     if (!hit) {
-        logKad(QStringLiteral("Kad search %1: pointer record from %2 refused").arg(m_searchID).arg(answer.toHexString()));
+        logKad(QStringLiteral("Kad search %1: pointer record from %2 refused").arg(argStr(m_searchID), argStr(answer.toHexString())));
         return;
     }
     // Several storers return the same pointer; only distinct ones count (§5.6.1)
@@ -2107,8 +2108,8 @@ void Search::processPointerResult(const UInt128& answer, const TagList& info)
         return;
     m_pointerHits.push_back(*hit);
     logKad(QStringLiteral("Kad search %1: pointer for %2 → buddy %3:%4 (candidate %5)")
-               .arg(m_searchID).arg(answer.toHexString()).arg(ipstr(hit->buddyIP)).arg(hit->buddyPort)
-               .arg(m_pointerHits.size()));
+               .arg(argStr(m_searchID), argStr(answer.toHexString()), argStr(ipstr(hit->buddyIP)), argStr(hit->buddyPort),
+                    argStr(m_pointerHits.size())));
     PointerDone done = m_pointerDone;   // copy: the receiver may start more searches
     done(hit);
     if (m_pointerHits.size() >= kMaxPointerCandidates) {

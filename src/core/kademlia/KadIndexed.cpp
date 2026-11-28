@@ -13,6 +13,7 @@
 #include "utils/TimeUtils.h"
 
 #include "app/AppContext.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QFile>
@@ -665,7 +666,7 @@ void Indexed::loadFiles()
 
     if (!aborting()) {
         logKad(QStringLiteral("Kad: index loaded — %1 keyword, %2 source and %3 load entries")
-                   .arg(m_totalIndexKeyword).arg(m_totalIndexSource).arg(m_totalIndexLoad));
+                   .arg(argStr(m_totalIndexKeyword), argStr(m_totalIndexSource), argStr(m_totalIndexLoad)));
         m_dataLoaded.store(true, std::memory_order_release);
     }
 }

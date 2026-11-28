@@ -439,6 +439,8 @@ private slots:
     void kadCallback_requestReachesBuddyAndDialBackAttaches();
     // OP_CALLBACK_FAIL -> Kad buddy fallback (LowID moved servers; not MFC)
     void serverCallbackFail_fallsBackToKadBuddy();
+    void ipv6CallbackFail_movesOnlyTheNamedSourceOn();
+    void classicCallbackRefusal_movesOnlyTheNamedSourceOn();
     void incomingHello_unknownPeer_staysSeparateClient();
     // Inbound OP_EMULEINFO — MFC ListenSocket.cpp:274-275
     void incomingHello_legacyEmulePeer_receivesEmuleInfo();
@@ -1574,6 +1576,131 @@ void tst_CallbackAndQueueRank::serverCallbackFail_fallsBackToKadBuddy()
         c->setReqFile(nullptr);
         m_clientList->removeClient(c);
         delete c;
+    }
+}
+
+// The 5-byte OP_CALLBACK_FAIL names the target (ed2k-server#62): only that source leaves
+// the IPv6 callback, at once and for the next route (here its Kad buddy), and it is not
+// asked for again by the retry. A refusal for an unknown ID touches nothing.
+void tst_CallbackAndQueueRank::ipv6CallbackFail_movesOnlyTheNamedSourceOn()
+{
+    KadFixture kad{KadMode::Connected};
+
+    QUdpSocket buddyReceiver;
+    QVERIFY(buddyReceiver.bind(QHostAddress::LocalHost, 0));
+    const uint8 fileHash[16] = {0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+                                0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F};
+    // not the buddy of serverCallbackFail_fallsBackToKadBuddy: Kad callbacks to one buddy are paced
+    const uint8 buddyId[16] = {0x02, 0x13, 0x24, 0x35, 0x46, 0x57, 0x68, 0x79,
+                               0x8A, 0x9B, 0xAC, 0xBD, 0xCE, 0xDF, 0xE0, 0xF1};
+    PartFile partFile;
+    partFile.setFileSize(EMFileSize(1024 * 1024));
+    partFile.setFileHash(fileHash);
+
+    auto makeSource = [&](uint32 lowId) {
+        auto* c = new UpDownClient();
+        c->setUserIDHybrid(lowId);
+        c->setReqFile(&partFile);
+        c->setBuddyID(buddyId);
+        c->setBuddyAddress(Address::fromHostOrder(0x7F000001));
+        c->setBuddyPort(buddyReceiver.localPort());
+        c->setConnectingState(ConnectingState::ServerIPv6Callback);
+        c->setDownloadState(DownloadState::WaitCallback);
+        m_clientList->addClient(c);
+        m_clientList->addConnectingClient(c);
+        return c;
+    };
+    auto* a = makeSource(1111);
+    auto* b = makeSource(2222);
+
+    m_clientList->serverCallbackRefused(3333, IPV6CB_REFUSED_TARGET_GONE);
+    QCOMPARE(a->connectingState(), ConnectingState::ServerIPv6Callback);
+    QCOMPARE(b->connectingState(), ConnectingState::ServerIPv6Callback);
+
+    m_clientList->serverCallbackRefused(1111, IPV6CB_REFUSED_NOT_OPTED_IN);
+    qDebug() << "input: refusal 6 for 1111, output: a state" << static_cast<int>(a->connectingState())
+             << "b state" << static_cast<int>(b->connectingState());
+    QVERIFY(a->connectingState() != ConnectingState::ServerIPv6Callback);
+    QCOMPARE(b->connectingState(), ConnectingState::ServerIPv6Callback);
+    QVERIFY(QTest::qWaitFor([&] {
+        flushUDPSocket(m_receiverUDP);
+        return buddyReceiver.hasPendingDatagrams();
+    }, 5000));
+    QCOMPARE(a->connectingState(), ConnectingState::KadCallback);
+    // No longer waiting on an IPv6 callback: a second refusal is not its business
+    QVERIFY(!a->ipv6CallbackFailed(IPV6CB_REFUSED_NOT_OPTED_IN));
+
+    for (auto* c : {a, b}) {
+        m_clientList->removeConnectingClient(c);
+        c->setReqFile(nullptr);
+        m_clientList->removeClient(c);
+        delete c;
+    }
+}
+
+// The 5-byte OP_CALLBACK_FAIL also answers OP_CALLBACKREQUEST (ed2k-server#63): with
+// several server callbacks out, only the named source ends, at once: its Kad buddy, or
+// without one the attempt itself. Not MFC (it ignores OP_CALLBACK_FAIL).
+void tst_CallbackAndQueueRank::classicCallbackRefusal_movesOnlyTheNamedSourceOn()
+{
+    KadFixture kad{KadMode::Connected};
+
+    QUdpSocket buddyReceiver;
+    QVERIFY(buddyReceiver.bind(QHostAddress::LocalHost, 0));
+    const uint8 fileHash[16] = {0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,
+                                0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F};
+    // a buddy of its own: Kad callbacks to one buddy are paced
+    const uint8 buddyId[16] = {0x03, 0x14, 0x25, 0x36, 0x47, 0x58, 0x69, 0x7A,
+                               0x8B, 0x9C, 0xAD, 0xBE, 0xCF, 0xD0, 0xE1, 0xF2};
+    PartFile partFile;
+    partFile.setFileSize(EMFileSize(1024 * 1024));
+    partFile.setFileHash(fileHash);
+
+    auto makeSource = [&](uint32 lowId, bool withBuddy) {
+        auto* c = new UpDownClient();
+        c->setUserIDHybrid(lowId);
+        c->setReqFile(&partFile);
+        if (withBuddy) {
+            c->setBuddyID(buddyId);
+            c->setBuddyAddress(Address::fromHostOrder(0x7F000001));
+            c->setBuddyPort(buddyReceiver.localPort());
+        }
+        c->setConnectingState(ConnectingState::ServerCallback);
+        c->setDownloadState(DownloadState::WaitCallback);
+        m_clientList->addClient(c);
+        m_clientList->addConnectingClient(c);
+        return c;
+    };
+    auto* a = makeSource(1111, true);
+    auto* b = makeSource(2222, true);
+    auto* c = makeSource(4444, false);
+
+    m_clientList->serverCallbackRefused(3333, IPV6CB_REFUSED_TARGET_GONE);
+    QCOMPARE(a->connectingState(), ConnectingState::ServerCallback);
+    QCOMPARE(b->connectingState(), ConnectingState::ServerCallback);
+    QCOMPARE(c->connectingState(), ConnectingState::ServerCallback);
+
+    m_clientList->serverCallbackRefused(1111, IPV6CB_REFUSED_TARGET_GONE);
+    QVERIFY(QTest::qWaitFor([&] {
+        flushUDPSocket(m_receiverUDP);
+        return buddyReceiver.hasPendingDatagrams();
+    }, 5000));
+    qDebug() << "input: refusal 5 for 1111, output: a state" << static_cast<int>(a->connectingState())
+             << "b state" << static_cast<int>(b->connectingState());
+    QCOMPARE(a->connectingState(), ConnectingState::KadCallback);
+    QCOMPARE(b->connectingState(), ConnectingState::ServerCallback);
+
+    // No buddy: the attempt ends now, not at the 45-second timeout
+    m_clientList->serverCallbackRefused(4444, IPV6CB_REFUSED_UNREACHABLE);
+    qDebug() << "input: refusal 7 for 4444 (no buddy), output: c state" << static_cast<int>(c->connectingState());
+    QCOMPARE(c->connectingState(), ConnectingState::None);
+    QCOMPARE(b->connectingState(), ConnectingState::ServerCallback);
+
+    for (auto* x : {a, b, c}) {
+        m_clientList->removeConnectingClient(x);
+        x->setReqFile(nullptr);
+        m_clientList->removeClient(x);
+        delete x;
     }
 }
 

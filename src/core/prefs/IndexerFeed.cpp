@@ -20,6 +20,29 @@ IndexerFeedKind indexerFeedKindFromString(const QString& text)
     return IndexerFeedKind::SavedSearch;
 }
 
+QString indexerFeedNetworkToString(IndexerFeedNetwork network)
+{
+    switch (network) {
+    case IndexerFeedNetwork::Usenet:
+        return QStringLiteral("usenet");
+    case IndexerFeedNetwork::BitTorrent:
+        return QStringLiteral("bittorrent");
+    case IndexerFeedNetwork::Auto:
+        break;
+    }
+    return QStringLiteral("auto");
+}
+
+IndexerFeedNetwork indexerFeedNetworkFromString(const QString& text)
+{
+    const QString t = text.trimmed().toLower();
+    if (t == QLatin1String("usenet"))
+        return IndexerFeedNetwork::Usenet;
+    if (t == QLatin1String("bittorrent") || t == QLatin1String("torrent"))
+        return IndexerFeedNetwork::BitTorrent;
+    return IndexerFeedNetwork::Auto;
+}
+
 QString IndexerFeed::slug() const
 {
     QString out;

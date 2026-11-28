@@ -10,6 +10,7 @@
 #include "IpcProtocol.h"
 #include "utils/AsyncMessageBox.h"
 #include "utils/IpcFeedback.h"
+#include "utils/ArgStr.h"
 
 #include <QCborArray>
 #include <QCborMap>
@@ -46,8 +47,8 @@ void run(QWidget* parent, IpcClient* ipc, const QString& startDir, std::function
             text = QCoreApplication::translate("LocateFilesAction", "No file of the downloads found there.");
         text += u"\n\n"
                 + QCoreApplication::translate("LocateFilesAction", "%1 file(s) looked at, %2 of a matching size hashed.")
-                      .arg(r.value(QStringLiteral("files")).toInteger())
-                      .arg(r.value(QStringLiteral("hashed")).toInteger());
+                      .arg(argStr(r.value(QStringLiteral("files")).toInteger()),
+                           argStr(r.value(QStringLiteral("hashed")).toInteger()));
         AsyncMessageBox::information(guard, title, text);
         if (refresh)
             refresh();
@@ -97,7 +98,7 @@ void runTorrents(QWidget* parent, IpcClient* ipc, const QStringList& ids, const 
                     + QCoreApplication::translate("LocateFilesAction", "%n file(s) found but not provable as a whole; their matching pieces were copied into the download.", nullptr, sum->copied);
             if (text.isEmpty())
                 text = QCoreApplication::translate("LocateFilesAction", "No file of the torrents found there.");
-            text += u"\n\n" + QCoreApplication::translate("LocateFilesAction", "%1 file(s) looked at, %2 of a matching size hashed.").arg(sum->files).arg(sum->hashed);
+            text += u"\n\n" + QCoreApplication::translate("LocateFilesAction", "%1 file(s) looked at, %2 of a matching size hashed.").arg(argStr(sum->files), argStr(sum->hashed));
             if (sum->partial > 0)
                 text += u"\n" + QCoreApplication::translate("LocateFilesAction", "%n file(s) of the right size did not match and were left alone.", nullptr, sum->partial);
             if (sum->failed + sum->errors > 0)

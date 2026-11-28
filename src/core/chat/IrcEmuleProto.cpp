@@ -3,6 +3,7 @@
 /// @brief eMule's CTCP extensions on IRC — implementation.
 
 #include "chat/IrcEmuleProto.h"
+#include "utils/ArgStr.h"
 
 #include <QStringList>
 
@@ -45,10 +46,10 @@ QString friendReply(const QString& version, const QString& verify,
     // MFC prints the server address as a number, "0.0.0.0" when on no server
     const QString server = serverIp != 0 ? QString::number(serverIp) : QStringLiteral("0.0.0.0");
     return QStringLiteral("REPFRIEND eMule%1|%2|%3:%4|%5:%6|%7|")
-        .arg(version, verify)
-        .arg(clientId).arg(port)
-        .arg(server).arg(serverIp != 0 ? serverPort : 0)
-        .arg(userHashHex);
+        .arg(argStr(version), argStr(verify),
+             argStr(clientId), argStr(port),
+             argStr(server), argStr(serverIp != 0 ? serverPort : 0),
+             argStr(userHashHex));
 }
 
 QString sendLink(const QString& userHashHex, const QString& link)

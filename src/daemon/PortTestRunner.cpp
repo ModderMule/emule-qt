@@ -19,6 +19,7 @@
 #include "server/ServerConnect.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -274,9 +275,9 @@ void send(PortTestApi::Request req, std::shared_ptr<Ed3kRun> run, const Done& do
     httpReq.setTransferTimeout(kTransferTimeoutMs);
     QNetworkReply* reply = nam()->get(httpReq);
     logInfo(QStringLiteral("Port test: %1 port %2 via %3")
-                .arg(networkName(req.network))
-                .arg(req.network == PortTestApi::Network::Ed3k ? req.udpPort : req.tcpPort)
-                .arg(QLatin1String(kWebsiteUrl)));
+                .arg(argStr(networkName(req.network)),
+                     argStr(req.network == PortTestApi::Network::Ed3k ? req.udpPort : req.tcpPort),
+                     QLatin1String(kWebsiteUrl)));
 
     QObject::connect(reply, &QNetworkReply::finished, reply, [reply, req, run, done] {
         reply->deleteLater();

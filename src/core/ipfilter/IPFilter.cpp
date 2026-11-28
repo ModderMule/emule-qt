@@ -9,6 +9,7 @@
 #include "utils/TimeUtils.h"
 #include "utils/AtomicFile.h"
 #include "utils/BackgroundFileWriter.h"
+#include "utils/ArgStr.h"
 
 #include <QBuffer>
 #include <QDir>
@@ -298,7 +299,7 @@ int IPFilter::loadFromFile(const QString& filePath)
         if (file.read(reinterpret_cast<char*>(&version), 1) != 1
             || (version != 1 && version != 2)) {
             logWarning(QStringLiteral("IP filter not loaded: \"%1\" has unsupported PeerGuardian2 version %2")
-                           .arg(filePath).arg(version));
+                           .arg(argStr(filePath), argStr(version)));
             return 0;
         }
         // PeerGuardian2 has no standardised IPv6 record — both published versions store a
@@ -428,11 +429,11 @@ int IPFilter::loadFromFile(const QString& filePath)
 
     const auto elapsed = getTickCount() - startTime;
     logInfo(QStringLiteral("IP filter loaded: %1 entries from \"%2\" (%3 ranges found, %4 lines, %5 ms)")
-                .arg(entryCount())
-                .arg(filePath)
-                .arg(foundRanges)
-                .arg(lineCount)
-                .arg(elapsed));
+                .arg(argStr(entryCount()),
+                     argStr(filePath),
+                     argStr(foundRanges),
+                     argStr(lineCount),
+                     argStr(elapsed)));
 
     emit filterLoaded(entryCount());
     emit filterChanged();

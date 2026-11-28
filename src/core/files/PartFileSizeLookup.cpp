@@ -17,6 +17,7 @@
 #include "transfer/DownloadQueue.h"
 #include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QPointer>
 
@@ -68,7 +69,7 @@ private:
             const QString name = server ? server->name() : QStringLiteral("?");
             reason = found
                 ? QStringLiteral("server %1 reported %2, not a size this hashset allows")
-                      .arg(name).arg(size)
+                      .arg(argStr(name), argStr(size))
                 : QStringLiteral("server %1 returned no size (it may not support ed2k:: hash "
                                  "searches)").arg(name);
         }

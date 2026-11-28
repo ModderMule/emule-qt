@@ -12,6 +12,7 @@
 #include "utils/MenuUtils.h"
 #include "utils/StringUtils.h"
 #include "IpcMessage.h"
+#include "utils/ArgStr.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -378,7 +379,7 @@ void LinkGrabberPanel::updatePackage(qint64 id)
     }
     const bool was = m_filling;
     m_filling = true;
-    row->setText(ColName, QStringLiteral("%1 (%2)").arg(p.value(QStringLiteral("name")).toString()).arg(row->childCount()));
+    row->setText(ColName, QStringLiteral("%1 (%2)").arg(argStr(p.value(QStringLiteral("name")).toString()), argStr(row->childCount())));
     const QStringList pw = p.value(QStringLiteral("passwords")).toVariant().toStringList();
     row->setToolTip(ColName, pw.isEmpty() ? QString() : tr("Archive passwords: %1").arg(pw.join(QStringLiteral(", "))));
     row->setText(ColSize, size > 0 ? formatByteSize(size) : QString());

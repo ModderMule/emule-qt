@@ -132,6 +132,7 @@
 #include "utils/OtherFunctions.h"
 #include "utils/Log.h"
 #include "utils/SafeRemove.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -303,7 +304,7 @@ bool DaemonApp::start()
 
     if (!m_ipcServer->start(addrs, port)) {
         logError(QStringLiteral("Failed to start IPC server on %1 port %2")
-                     .arg(addressListText(addrs)).arg(port));
+                     .arg(argStr(addressListText(addrs)), argStr(port)));
         m_startError = m_ipcServer->errorText();
         m_coreSession->stop();
         m_coreSession.reset();
@@ -1241,7 +1242,7 @@ bool DaemonApp::start()
 
     m_running = true;
     logInfo(QStringLiteral("Daemon started — IPC server on %1 port %2")
-                .arg(addressListText(m_ipcServer->listenAddresses())).arg(port));
+                .arg(argStr(addressListText(m_ipcServer->listenAddresses())), argStr(port)));
     return true;
 }
 
@@ -2071,7 +2072,7 @@ void DaemonApp::applyHosterConfig()
                                  ? QString::fromLatin1(QUrl::toPercentEncoding(p.user)) + QLatin1Char(':')
                                        + QString::fromLatin1(QUrl::toPercentEncoding(p.password)) + QLatin1Char('@')
                                  : QString();
-        proxy = QStringLiteral("%1://%2%3:%4").arg(scheme, auth, p.host).arg(p.port);
+        proxy = QStringLiteral("%1://%2%3:%4").arg(argStr(scheme), argStr(auth), argStr(p.host), argStr(p.port));
         m_javaRuntime->setProxy(toNetworkProxy(p));
         m_ffmpegTool->setProxy(toNetworkProxy(p));
         if (m_resolverUpdater)

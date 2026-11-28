@@ -14,6 +14,7 @@
 #include "queue/UsenetReleaseName.h"
 #include "queue/UsenetStatistics.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QPointer>
 #include <QUrl>
@@ -87,7 +88,7 @@ void UsenetRetryGrabber::onItemFinished(const QString& id, bool success, const Q
         return;
     if (item->origin.retries >= kMaxRetries) {
         logUsenet(QStringLiteral("Usenet: \"%1\" failed; %2 replacement NZBs tried already")
-                      .arg(item->name).arg(item->origin.retries));
+                      .arg(argStr(item->name), argStr(item->origin.retries)));
         return;
     }
 

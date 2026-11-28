@@ -30,6 +30,7 @@
 
 #include "protocol/ED2KLink.h"
 #include "app/SkinIcons.h"
+#include "utils/ArgStr.h"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -303,7 +304,7 @@ void ServerPanel::updateServerMetFromUrl(const QString& urlStr)
                 entryName.isEmpty()
                     ? tr("Downloaded server.met (%1 bytes). Parsing...").arg(data.size())
                     : tr("Downloaded server.met, unpacked \"%1\" (%2 bytes). Parsing...")
-                          .arg(entryName).arg(data.size()));
+                          .arg(argStr(entryName), argStr(data.size())));
 
             parseAndAddServersFromMet(data);
         });

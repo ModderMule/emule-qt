@@ -38,6 +38,16 @@ enum class IndexerFeedKind : quint8 {
 [[nodiscard]] QString indexerFeedKindToString(IndexerFeedKind kind);
 [[nodiscard]] IndexerFeedKind indexerFeedKindFromString(const QString& text);
 
+/// Where a URL feed's rows are queued. Auto reads each row's hints.
+enum class IndexerFeedNetwork : quint8 {
+    Auto = 0,
+    Usenet = 1,
+    BitTorrent = 2,
+};
+
+[[nodiscard]] QString indexerFeedNetworkToString(IndexerFeedNetwork network);
+[[nodiscard]] IndexerFeedNetwork indexerFeedNetworkFromString(const QString& text);
+
 /// A saved feed. Plain value type; `name` is the identity.
 struct IndexerFeed {
     /// Display name, and the identity: it keys the seen-set sidecar and is what
@@ -72,6 +82,10 @@ struct IndexerFeed {
     /// is a credential that happens to look like a URL. It is redacted before it
     /// reaches a log line or the GUI.
     QString url;
+
+    /// Overrides the per-row Usenet/torrent guess, for tracker feeds that give
+    /// no hint (no bittorrent enclosure type, no .torrent path, no magnet).
+    IndexerFeedNetwork network = IndexerFeedNetwork::Auto;
 
     // -- Filters ------------------------------------------------------------
     //

@@ -15,5 +15,8 @@ using eMule::IndexerFeed;
 using eMule::IndexerFeedKind;
 using eMule::indexerFeedKindFromString;
 using eMule::indexerFeedKindToString;
+using eMule::IndexerFeedNetwork;
+using eMule::indexerFeedNetworkFromString;
+using eMule::indexerFeedNetworkToString;
 
 } // namespace eMule::indexer

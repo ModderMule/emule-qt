@@ -124,7 +124,26 @@ void applyAttr(IndexerResult& row, QStringView key, QStringView value)
     }
 }
 
-void readItem(QXmlStreamReader& xml, IndexerResult& row, qint64& enclosureLength)
+/// What readItem saw beside the row itself.
+struct ItemExtras {
+    qint64 enclosureLength = 0;
+    qint64 elementSize = 0;        ///< <size>/<contentLength> element, plain tracker RSS
+    bool torrentEnclosure = false; ///< enclosure type application/x-bittorrent
+    bool hadEnclosure = false;     ///< downloadUrl came from <enclosure>, not <link>
+};
+
+[[nodiscard]] bool isInfoHashName(QStringView name)
+{
+    return name.compare(u"infohash", Qt::CaseInsensitive) == 0
+        || name.compare(u"info_hash", Qt::CaseInsensitive) == 0;
+}
+
+[[nodiscard]] bool isMagnet(const QUrl& url)
+{
+    return url.scheme().compare(QLatin1StringView("magnet"), Qt::CaseInsensitive) == 0;
+}
+
+void readItem(QXmlStreamReader& xml, IndexerResult& row, ItemExtras& extras)
 {
     while (xml.readNextStartElement()) {
         const auto name = xml.name();
@@ -162,7 +181,12 @@ void readItem(QXmlStreamReader& xml, IndexerResult& row, qint64& enclosureLength
             const QString url = attrs.value(QLatin1String("url")).toString();
             if (!url.isEmpty())
                 row.downloadUrl = QUrl(url);   // wins over <link>, which is often an HTML page
-            enclosureLength = attrs.value(QLatin1String("length")).toLongLong();
+            extras.enclosureLength = attrs.value(QLatin1String("length")).toLongLong();
+            extras.hadEnclosure = !url.isEmpty();
+            if (attrs.value(QLatin1String("type"))
+                    .compare(QLatin1String("application/x-bittorrent"), Qt::CaseInsensitive) == 0) {
+                extras.torrentEnclosure = true;
+            }
             xml.skipCurrentElement();
             continue;
         }
@@ -174,11 +198,110 @@ void readItem(QXmlStreamReader& xml, IndexerResult& row, qint64& enclosureLength
             continue;
         }
 
+        // -- plain tracker RSS (nyaa:, tv:, ezRSS torrent:) --
+        if (name == QLatin1String("torrent")) {
+            readItem(xml, row, extras);   // ezRSS nests infoHash/magnetURI here
+            continue;
+        }
+        if (isInfoHashName(name)) {
+            if (const QString hash = xml.readElementText().trimmed(); !hash.isEmpty())
+                row.infoHash = hash;
+            continue;
+        }
+        if (name.compare(u"magnetURI", Qt::CaseInsensitive) == 0) {
+            if (const QUrl magnet(xml.readElementText().trimmed()); isMagnet(magnet))
+                row.magnetUrl = magnet;
+            continue;
+        }
+        if (name == QLatin1String("contentLength") || name == QLatin1String("size")) {
+            extras.elementSize = parseHumanSize(xml.readElementText());
+            continue;
+        }
+        if (name == QLatin1String("seeders") || name == QLatin1String("seeds")) {
+            if (row.seeders < 0)
+                row.seeders = xml.readElementText().trimmed().toInt();
+            else
+                xml.skipCurrentElement();
+            continue;
+        }
+
         xml.skipCurrentElement();
     }
 }
 
+[[nodiscard]] QUrl magnetFromHash(const QString& infoHash, const QString& title)
+{
+    return QUrl(QStringLiteral("magnet:?xt=urn:btih:%1&dn=%2")
+                    .arg(infoHash.trimmed(), QString::fromLatin1(QUrl::toPercentEncoding(title))));
+}
+
+/// Torrent hints a plain tracker feed gives instead of torznab attrs.
+void classifyPayload(IndexerResult& row, const ItemExtras& extras)
+{
+    // some feeds put the magnet in <guid> only
+    if (row.downloadUrl.isEmpty() && row.guid.startsWith(QLatin1String("magnet:"), Qt::CaseInsensitive))
+        row.downloadUrl = QUrl(row.guid);
+
+    if (isMagnet(row.downloadUrl)) {
+        if (row.magnetUrl.isEmpty())
+            row.magnetUrl = row.downloadUrl;
+        row.payload = IndexerPayload::Torrent;
+        return;
+    }
+    const bool torrentFile = extras.torrentEnclosure
+        || row.downloadUrl.path().endsWith(QLatin1String(".torrent"), Qt::CaseInsensitive);
+    if (!torrentFile && row.magnetUrl.isEmpty() && row.infoHash.isEmpty())
+        return;
+    row.payload = IndexerPayload::Torrent;
+
+    // <link> without a torrent hint is a details page on tracker feeds (ezRSS):
+    // the magnet is the download
+    if (!torrentFile && !extras.hadEnclosure) {
+        if (row.magnetUrl.isEmpty())
+            row.magnetUrl = magnetFromHash(row.infoHash, row.title);
+        row.downloadUrl = row.magnetUrl;
+    }
+}
+
 } // namespace
+
+bool looksLikeTorrentFile(const QByteArray& body)
+{
+    // bencoded dict with an info key; an NZB starts with '<' or a BOM
+    return body.startsWith('d') && body.contains("4:info");
+}
+
+qint64 parseHumanSize(QStringView text)
+{
+    const QStringView t = text.trimmed();
+    qsizetype i = 0;
+    while (i < t.size() && (t[i].isDigit() || t[i] == u'.' || t[i] == u','))
+        ++i;
+    if (i == 0)
+        return 0;
+    QString number = t.first(i).toString();
+    number.remove(u',');
+    bool ok = false;
+    const double value = number.toDouble(&ok);
+    if (!ok || value < 0)
+        return 0;
+
+    const QString unit = t.sliced(i).trimmed().toString().toLower();
+    double mul = 1;
+    if (unit.isEmpty() || unit == u"b" || unit == u"bytes")
+        mul = 1;
+    else if (unit.startsWith(u'k'))
+        mul = 1024.0;
+    else if (unit.startsWith(u'm'))
+        mul = 1024.0 * 1024;
+    else if (unit.startsWith(u'g'))
+        mul = 1024.0 * 1024 * 1024;
+    else if (unit.startsWith(u't'))
+        mul = 1024.0 * 1024 * 1024 * 1024;
+    else
+        return 0;
+    return qint64(value * mul);
+}
 
 int IndexerResult::ageDays() const
 {
@@ -239,24 +362,25 @@ IndexerSearchPage parseIndexerSearch(const QByteArray& xml, const QString& index
 
             IndexerResult row;
             row.indexerName = indexerName;
-            qint64 enclosureLength = 0;
-            readItem(reader, row, enclosureLength);
+            ItemExtras extras;
+            readItem(reader, row, extras);
 
             // The attr and the enclosure disagree on several indexers. The attr
             // is the one the indexer computed for the release; the enclosure
             // length is sometimes the size of the .nzb file itself.
             if (row.size <= 0)
-                row.size = enclosureLength;
+                row.size = extras.elementSize;
+            if (row.size <= 0)
+                row.size = extras.enclosureLength;
 
             // magnet-only torznab row: the magnet (or one built from the infohash) is the download
             if (row.downloadUrl.isEmpty() && row.magnetUrl.isValid() && !row.magnetUrl.isEmpty())
                 row.downloadUrl = row.magnetUrl;
             if (row.downloadUrl.isEmpty() && !row.infoHash.isEmpty()) {
-                row.downloadUrl = QUrl(QStringLiteral("magnet:?xt=urn:btih:%1&dn=%2")
-                                           .arg(row.infoHash.trimmed(),
-                                                QString::fromLatin1(QUrl::toPercentEncoding(row.title))));
+                row.downloadUrl = magnetFromHash(row.infoHash, row.title);
                 row.magnetUrl = row.downloadUrl;
             }
+            classifyPayload(row, extras);
 
             if (row.title.isEmpty() || row.downloadUrl.isEmpty())
                 continue;

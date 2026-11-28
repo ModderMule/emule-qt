@@ -13,6 +13,7 @@
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCborArray>
 #include <QCoreApplication>
@@ -347,7 +348,7 @@ void MetaSearchService::askNextServer(quint64 key)
         if (!r.ok()) {
             run.lastError = errorText(r, statusFor(r));
             logServerVerbose([&]() -> QString { return QStringLiteral("Meta search %1: %2 — %3")
-                                 .arg(searchID).arg(server.endpoint.serverName, r.message); });
+                                 .arg(argStr(searchID), argStr(server.endpoint.serverName), argStr(r.message)); });
             askNextServer(key);
             return;
         }
@@ -369,8 +370,8 @@ void MetaSearchService::askNextServer(quint64 key)
             return;
         }
         logServerVerbose([&]() -> QString { return QStringLiteral(">>> Meta search %1: \"%2\" (%3) -> %4")
-                             .arg(searchID).arg(run.request.query(), metaNetworkName(run.type),
-                                                server.endpoint.serverName); });
+                             .arg(argStr(searchID), argStr(run.request.query()), argStr(metaNetworkName(run.type)),
+                                                argStr(server.endpoint.serverName)); });
         askPage(key, server, token, 0);
     });
 }
@@ -405,7 +406,7 @@ void MetaSearchService::askPage(quint64 key, const MetaSearchCandidate& server, 
                 run.lastError = QStringLiteral("%1: %2").arg(server.endpoint.serverName, errorText(r, st));
             }
             logServerVerbose([&]() -> QString { return QStringLiteral("Meta search %1: %2 — %3 (grpc %4)")
-                                 .arg(searchID).arg(server.endpoint.serverName, r.message).arg(r.grpcCode); });
+                                 .arg(argStr(searchID), argStr(server.endpoint.serverName), argStr(r.message), argStr(r.grpcCode)); });
             askNextServer(key);
             return;
         }
@@ -425,8 +426,8 @@ void MetaSearchService::askPage(quint64 key, const MetaSearchCandidate& server, 
             emit theApp.searchList->tabHeaderUpdated(searchID);
         }
         logServerVerbose([&]() -> QString { return QStringLiteral("<<< Meta search %1: %2 row(s) from %3, %4 kept")
-                             .arg(searchID).arg(resp.entries().size())
-                             .arg(server.endpoint.serverName).arg(added); });
+                             .arg(argStr(searchID), argStr(resp.entries().size()),
+                                  argStr(server.endpoint.serverName), argStr(added)); });
 
         // One page a request: the next is fetched when the user asks for more.
         run.rows += added;

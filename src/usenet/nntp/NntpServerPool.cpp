@@ -2,6 +2,7 @@
 
 #include "nntp/NntpSocket.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QTimer>
@@ -206,8 +207,8 @@ void NntpServerPool::blockServer(const QString& serverKey)
     m_blockedUntil.insert(serverKey, nowSeconds() + m_retryIntervalSec);
     if (!alreadyBlocked) {
         logUsenetWarning(QStringLiteral("Usenet: %1 backed off for %2 s")
-                       .arg(serverKey)
-                       .arg(m_retryIntervalSec));
+                       .arg(argStr(serverKey),
+                            argStr(m_retryIntervalSec)));
     }
 
     // A blocked server's pooled connections are not merely unused, they are

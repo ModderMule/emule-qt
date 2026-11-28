@@ -14,6 +14,7 @@
 #include "Ed3kDownloads.h"
 
 #include "Ed3kSession.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QFile>
@@ -253,7 +254,7 @@ void Ed3kDownloads::webFetch(Entry& e)
         e.web.fetchAt = offset;
         return;
     }
-    logEd3kDebug([&]() -> QString { return QStringLiteral("\"%1\": HTTP fetch at %2: %3").arg(e.info.name).arg(offset).arg(errorName(fetch.error())); });
+    logEd3kDebug([&]() -> QString { return QStringLiteral("\"%1\": HTTP fetch at %2: %3").arg(argStr(e.info.name), argStr(offset), argStr(errorName(fetch.error()))); });
     switch (fetch.error()) {
     case ffi::Error::State:
         // no block values: the whole file in order from 0 (§3 "Verification")
@@ -275,7 +276,7 @@ void Ed3kDownloads::webFetch(Entry& e)
     case ffi::Error::Denied:
         break;   // HttpFetched says why
     default:
-        logWarning(QStringLiteral("\"%1\": HTTP fetch at %2 refused (%3)").arg(e.info.name).arg(offset).arg(errorName(fetch.error())));
+        logWarning(QStringLiteral("\"%1\": HTTP fetch at %2 refused (%3)").arg(argStr(e.info.name), argStr(offset), argStr(errorName(fetch.error()))));
         e.web.retryAt.setRemainingTime(kFailRetryMs);
         break;
     }
@@ -313,7 +314,7 @@ void Ed3kDownloads::webFetched(Entry& e, std::uint32_t code)
     const int wait = std::min(kFailRetryMaxMs, kFailRetryMs << std::min(e.web.failures - 1, 6));
     if (e.web.failures == 1 || e.web.failures % 5 == 0)
         logWarning(QStringLiteral("\"%1\": HTTP fetch failed (%2), %3 in a row; again in %4 s")
-                       .arg(e.info.name, codeName(code)).arg(e.web.failures).arg(wait / 1000));
+                       .arg(argStr(e.info.name), argStr(codeName(code)), argStr(e.web.failures), argStr(wait / 1000)));
     e.web.retryAt.setRemainingTime(wait);
 }
 
@@ -430,7 +431,7 @@ void Ed3kDownloads::webResumed(const ffi::Root& root, std::uint64_t source, cons
         e->web.whole = true;
         e->web.wholeNext = *at;
         e->web.resumed = true;
-        logInfo(QStringLiteral("\"%1\": HTTP read goes on at %2 of %3 B").arg(e->info.name).arg(*at).arg(e->info.size));
+        logInfo(QStringLiteral("\"%1\": HTTP read goes on at %2 of %3 B").arg(argStr(e->info.name), argStr(*at), argStr(e->info.size)));
     } else {
         logWarning(QStringLiteral("\"%1\": HTTP read cannot go on (%2): from the start")
                        .arg(e->info.name, cp ? errorName(at.error()) : QStringLiteral("part file unreadable")));
@@ -494,8 +495,8 @@ void Ed3kDownloads::webPrefixChecked(const ffi::Root& root, std::uint64_t upTo, 
         logWarning(QStringLiteral("\"%1\": unchecked HTTP bytes unreadable: fetched again").arg(e->info.name));
     else
         logInfo(QStringLiteral("\"%1\": %2 of %3 unchecked HTTP blocks match the block values%4")
-                    .arg(e->info.name).arg(held).arg(count)
-                    .arg(wrong > 0 ? QStringLiteral(", %1 fetched again").arg(wrong) : QString()));
+                    .arg(argStr(e->info.name), argStr(held), argStr(count),
+                         argStr(wrong > 0 ? QStringLiteral(", %1 fetched again").arg(wrong) : QString())));
     // a whole fetch still running wrote more meanwhile: checked once more
     const bool more = e->wholeAt > upTo;
     if (!more)

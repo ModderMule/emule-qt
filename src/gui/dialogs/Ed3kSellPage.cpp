@@ -8,6 +8,7 @@
 #include "app/IpcClient.h"
 #include "dialogs/Ed3kSellDialogs.h"
 #include "IpcMessage.h"
+#include "utils/ArgStr.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -179,7 +180,7 @@ QString Ed3kSellPage::seasonText(const QCborMap& s)
 {
     const qint64 base = s.value(QStringLiteral("seasonBase")).toInteger();
     const qint64 n = s.value(QStringLiteral("seasonEpochs")).toInteger();
-    QString text = tr("epoch %1 of %2–%3").arg(s.value(QStringLiteral("epoch")).toInteger()).arg(base).arg(base + std::max<qint64>(n, 1) - 1);
+    QString text = tr("epoch %1 of %2–%3").arg(argStr(s.value(QStringLiteral("epoch")).toInteger()), argStr(base), argStr(base + std::max<qint64>(n, 1) - 1));
     if (s.value(QStringLiteral("planned")).toBool())
         text += tr(", next one ready");
     return text;

@@ -10,6 +10,7 @@
 
 #include "net/DohResolver.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -625,7 +626,7 @@ void Ed3kNames::onNameEvent(const ffi::Event& ev, bool* handled)
         QList<QByteArray> ties;
         for (const auto& t : f->ties)
             ties.append(toBytes(t));
-        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: name %1 not resolved (why %2)").arg(textOf(f->name)).arg(f->why); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: name %1 not resolved (why %2)").arg(argStr(textOf(f->name)), argStr(f->why)); });
         emit failed(f->id, textOf(f->name), int(f->why), ties);
     } else if (const auto* lf = std::get_if<e::NameListFetch>(&ev)) {
         *handled = true;
@@ -728,7 +729,7 @@ void Ed3kNames::onResolved(const ffi::event::NameResolved& n)
     // at most a few hundred kept: the oldest go
     while (m_resolved.size() > 256)
         m_resolved.erase(m_resolved.begin());
-    logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: name %1 resolved (how %2, %3 link(s))").arg(r.name).arg(r.how.how).arg(r.links.size()); });
+    logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: name %1 resolved (how %2, %3 link(s))").arg(argStr(r.name), argStr(r.how.how), argStr(r.links.size())); });
     emit resolved(r);
 }
 
@@ -736,7 +737,7 @@ void Ed3kNames::onListFetch(const ffi::event::NameListFetch& f)
 {
     // the core opened the download; the base finds sources and fetches it into memory
     if (f.size == 0 || f.size > kListFileMax) {
-        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: list file %1 of %2 B not fetched").arg(textOf(f.name)).arg(f.size); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: list file %1 of %2 B not fetched").arg(argStr(textOf(f.name)), argStr(f.size)); });
         return;
     }
     if (!m_started || downloading(f.root))

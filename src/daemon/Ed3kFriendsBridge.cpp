@@ -2,6 +2,7 @@
 /// @brief ed3k friends and chat over IPC — implementation.
 
 #include "Ed3kFriendsBridge.h"
+#include "utils/ArgStr.h"
 
 #include <QCborArray>
 #include <QCborMap>
@@ -48,7 +49,7 @@ QString addressText(const ffi::Address& a)
     }
     Q_IPV6ADDR v6;
     std::copy(a.ip.begin(), a.ip.end(), v6.c);
-    return QStringLiteral("[%1]:%2").arg(QHostAddress(v6).toString()).arg(a.port);
+    return QStringLiteral("[%1]:%2").arg(argStr(QHostAddress(v6).toString()), argStr(a.port));
 }
 
 QCborMap friendsToCbor(ed3k::Ed3kFriends& f)

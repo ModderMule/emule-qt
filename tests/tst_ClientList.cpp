@@ -11,6 +11,7 @@
 #include "kademlia/KadIncomingLog.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadPrefs.h"
+#include "net/natt/KadBuddyNatPath.h"
 #include "prefs/Preferences.h"
 #include "transfer/DownloadQueue.h"
 #include "utils/SafeFile.h"
@@ -80,6 +81,7 @@ private slots:
     void requestBuddy_dialsEveryOfferAtOnce();
     void processKadList_releasesASecondConnectedCandidate();
     void incomingBuddy_oneServedBuddyPerIP();
+    void refreshServedBuddy_keepsTheSeenUdpPort();
     void requestBuddy_skipsAFailedCandidateForAnHour();
     void setBuddy_lossRearmsTheSearchWhileUdpIsUnverified();
     void infoPackets_neverReplaceAConnectedBuddy();
@@ -1391,6 +1393,38 @@ void tst_ClientList::incomingBuddy_oneServedBuddyPerIP()
     list.processKadList();
     QCOMPARE(first->kadState(), KadState::ConnectedBuddy);
     QCOMPARE(second->kadState(), KadState::None);
+
+    list.deleteAll();
+}
+
+// The buddy keeps the UDP port it saw per served client; the hello's Kad port does not
+// replace it, and a refresh needs the same IP and user hash.
+void tst_ClientList::refreshServedBuddy_keepsTheSeenUdpPort()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
+    ClientList list;
+    uint8 hash[16];
+    std::memset(hash, 0xA7, 16);
+    const uint8 id[16] = {0xB7};
+    const uint32 ip = 0x4D0A0B0C;
+
+    QVERIFY(!list.incomingBuddy(ip, 4662, 40000, hash, id).refused());
+    UpDownClient* served = list.refreshServedBuddy(ip, 40000, hash);
+    QVERIFY(served);
+    QCOMPARE(served->servedUdpPort(), uint16{40000});
+
+    served->setKadPort(4672);   // what the hello reports
+    QCOMPARE(eMule::natt::KadBuddyNatPath::ServedPeer::fromClient(*served).udp.port(), uint16{40000});
+
+    QCOMPARE(list.refreshServedBuddy(ip, 40001, hash), served);
+    QCOMPARE(served->servedUdpPort(), uint16{40001});
+
+    uint8 otherHash[16];
+    std::memset(otherHash, 0xA8, 16);
+    QVERIFY(!list.refreshServedBuddy(ip, 40002, otherHash));
+    QVERIFY(!list.refreshServedBuddy(ip + 1, 40002, hash));
+    QCOMPARE(served->servedUdpPort(), uint16{40001});
 
     list.deleteAll();
 }

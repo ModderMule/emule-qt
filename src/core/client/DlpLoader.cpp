@@ -3,6 +3,7 @@
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/PathUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -200,9 +201,9 @@ bool DlpLoader::tryLoad(const QString& path)
     auto abiVersion = reinterpret_cast<AbiVersionFn>(m_lib.resolve("sdlp_abi_version"));
     if (abiVersion == nullptr || abiVersion() != SDLP_ABI_VERSION) {
         logWarning(QStringLiteral("Anti-Leecher: %1 has ABI %2, need %3 - please update")
-                       .arg(path)
-                       .arg(abiVersion ? abiVersion() : 0)
-                       .arg(SDLP_ABI_VERSION));
+                       .arg(argStr(path),
+                            argStr(abiVersion ? abiVersion() : 0),
+                            argStr(SDLP_ABI_VERSION)));
         m_lib.unload();
         return false;
     }

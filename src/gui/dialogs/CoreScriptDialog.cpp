@@ -12,6 +12,7 @@
 #include "utils/CoreConnectScript.h"
 #include "utils/DialogSizing.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCborArray>
 #include <QCheckBox>
@@ -254,7 +255,7 @@ void CoreScriptDialog::save()
     QFile::setPermissions(path, perms);
 #endif
     logInfo(QStringLiteral("Saved core connect script for %1:%2 to %3")
-                .arg(params.host).arg(params.port).arg(path));
+                .arg(argStr(params.host), argStr(params.port), argStr(path)));
     accept();
 }
 
@@ -389,8 +390,8 @@ void CoreScriptDialog::updateListenRow()
     else
         m_listenLabel->setText(tr("The core listens on %1. Behind a router, forward TCP port %2 "
                                   "to this computer.")
-                                   .arg(addrs.join(QStringLiteral(", ")))
-                                   .arg(m_portSpin->value()));
+                                   .arg(argStr(addrs.join(QStringLiteral(", "))),
+                                        argStr(m_portSpin->value())));
     m_listenBtn->setEnabled(m_ipc && usable && !reachable && !m_listenBusy);
 }
 

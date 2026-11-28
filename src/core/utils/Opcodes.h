@@ -243,6 +243,13 @@
 // <ipv6 16> our new public IPv6, or zeros to withdraw. No reply; the verdict comes in a
 // fresh OP_SERVERIDENT (ST_IPV6_STATUS). Same address again only re-dials after a failure.
 #define OP_IPV6_UPDATE              0x63    // client -> server
+// IPv6 LowID callback (ed2k-server#62, eNode-go#2), offered by ST_IPV6_CALLBACK bit 0:
+// a LowID requester whose IPv6 passed the dial-back (ST_IPV6_STATUS 0x07) asks with 0x64;
+// the server sends the target OP_CALLBACKREQUESTED_IPV6, or the requester a 5-byte
+// OP_CALLBACK_FAIL <target id 4><reason 1> (IPV6CB_REFUSED_*). A target receives 0x26
+// only after it opted in with 0x65 on this session.
+#define OP_IPV6_CALLBACK_REQUEST    0x64    // client -> server: <target id 4>
+#define OP_IPV6_CALLBACK_OPTIN      0x65    // client -> server: [<features 1>], bit 0 set = in, clear = out
 
 // LowID<->LowID rendezvous, server TCP.
 // Lugdunum eserver: <ip 4><udp port 2><requester id 4><crypt flags 1>[<hash 16> if flags & 0x80]
@@ -699,6 +706,19 @@
 #define IPV6ST_REACHABLE            0x02        // that address is treated reachable (we're published as a v6 source)
 #define IPV6ST_PROBED               0x04        // verdict came from a real dial-back, not a trust default
 
+// ST_IPV6_CALLBACK (0xAA, uint8) feature byte (OP_SERVERIDENT) and OP_IPV6_CALLBACK_OPTIN payload.
+#define IPV6CB_CALLBACK             0x01        // the IPv6 LowID callback (0x64 / 0x65 / 0x26)
+// Reason byte of the 5-byte OP_CALLBACK_FAIL answering OP_IPV6_CALLBACK_REQUEST, and
+// OP_CALLBACKREQUEST with 5, 7 or 8 only (ed2k-server#63).
+#define IPV6CB_REFUSED_NOT_OFFERED      1       // off, server not dialling back, or we never announced IPv6
+#define IPV6CB_REFUSED_REQUESTER_HIGHID 2       // we have a HighID: use OP_CALLBACKREQUEST
+#define IPV6CB_REFUSED_UNVERIFIED       3       // our IPv6 has not passed the dial-back
+#define IPV6CB_REFUSED_SELF             4
+#define IPV6CB_REFUSED_TARGET_GONE      5
+#define IPV6CB_REFUSED_NOT_OPTED_IN     6       // the target sent no 0x65 (or cannot take 0x26)
+#define IPV6CB_REFUSED_UNREACHABLE      7       // the target's connection took no frame
+#define IPV6CB_REFUSED_RATE_LIMITED     8       // our relay allowance (shared with 0x1C) is used up
+
 // ClientID sentinel marking an inline IPv6 source inside a classic OP_FOUNDSOURCES block
 #define IPV6_SOURCE_SENTINEL        0xFFFFFFFFu
 
@@ -794,6 +814,7 @@
 // Note: no eMuleQt ident hello tag on purpose. eMuleAI Shield punishes any unknown hello tag
 // (DetectUnknownTag, default on, PR_UNKOWNTAG); a peer is told apart by modstring + MODMISC_HTTPCACHE
 // (UpDownClient::isEmuleQt). 0xA8 was the free CT_ id (eMuleAI holds 0xA1-0xA7, 0xAB) if it is ever needed.
+#define ST_IPV6_CALLBACK            0xAA    // uint8 (see IPV6CB_* above): IPv6 LowID callback offered (OP_SERVERIDENT tag; CT_MOD_MISCOPTIONS is the hello tag)
 #define ST_IPV6_STATUS              0xAB    // uint8 bitfield (see IPV6ST_* above): server's IPv6 verdict (OP_SERVERIDENT)
 #define ST_NATT_PROOF               0xA9    // u32 = 1: ed2k-server 0.9.88 takes the 36-byte proof 0x9F (OP_SERVERIDENT tag, not the c2c opcode)
 #define ST_ED3K                     0xE3    // string: the server's index node as an ed3k:node link (ed3k ed2k-signals.md §3; OP_SERVERIDENT, OP_SERVER_DESC_RES)

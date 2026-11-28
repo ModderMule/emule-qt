@@ -207,6 +207,11 @@ public:
     BuddyRefusal incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
                        const uint8* clientID, const uint8* buddyID);
 
+    /// Not MFC: a repeat FINDBUDDY_REQ with a valid receiver key from a node we serve
+    /// (same IP, same user hash) refreshes its UDP endpoint (UpDownClient::servedUdpPort).
+    /// The served client, or nullptr when the request is not a refresh.
+    UpDownClient* refreshServedBuddy(uint32 ip, uint16 udpPort, const uint8* clientID);
+
     /// Initiate a buddy request to a remote node found via Kad.
     /// Matches MFC CClientList::RequestBuddy (srchybrid/ClientList.cpp:694).
     void requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
@@ -253,8 +258,12 @@ public:
     void addConnectingClient(UpDownClient* client);
     void removeConnectingClient(const UpDownClient* client);
     void processConnectingClients();
-    /// Server answered OP_CALLBACK_FAIL: Kad fallback for the pending server callback.
+    /// Server answered an empty OP_CALLBACK_FAIL: Kad fallback for the pending server callback.
     void serverCallbackFailed();
+    /// Server refused our OP_IPV6_CALLBACK_REQUEST or OP_CALLBACKREQUEST for @p targetID
+    /// (5-byte OP_CALLBACK_FAIL, IPV6CB_REFUSED_* @p reason): that source goes on to its
+    /// next route at once.
+    void serverCallbackRefused(uint32 targetID, uint8 reason);
 
     // -- Banned clients -----------------------------------------------------
 

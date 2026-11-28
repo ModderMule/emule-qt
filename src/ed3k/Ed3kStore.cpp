@@ -7,6 +7,7 @@
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 #include "utils/OwnerOnly.h"
+#include "utils/ArgStr.h"
 
 #include <QDir>
 #include <QFile>
@@ -38,7 +39,7 @@ bool createKeyFile(const QString& path, const Seed& seed, QString* error)
     const int fd = ::open(native.constData(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, S_IRUSR | S_IWUSR);
     if (fd < 0) {
         if (error)
-            *error = QStringLiteral("create %1: errno %2").arg(path).arg(errno);
+            *error = QStringLiteral("create %1: errno %2").arg(argStr(path), argStr(errno));
         return false;
     }
     std::size_t done = 0;

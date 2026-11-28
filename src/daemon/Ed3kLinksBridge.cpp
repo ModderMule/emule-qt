@@ -2,6 +2,7 @@
 /// @brief The other ed3k links over IPC (node, cache, node list file) — implementation.
 
 #include "Ed3kLinksBridge.h"
+#include "utils/ArgStr.h"
 
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
@@ -67,7 +68,7 @@ void onStatus()
     if (links.isEmpty())
         return;
     if (auto ok = configure(*s_session, links); !ok)
-        logWarning(QStringLiteral("ed3k: the %1 cache server(s) were not configured (error %2)").arg(links.size()).arg(int(ok.error())));
+        logWarning(QStringLiteral("ed3k: the %1 cache server(s) were not configured (error %2)").arg(argStr(links.size()), argStr(int(ok.error()))));
 }
 #endif
 

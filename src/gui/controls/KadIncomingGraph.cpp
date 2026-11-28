@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "controls/KadIncomingGraph.h"
 #include "app/SkinIcons.h"
+#include "utils/ArgStr.h"
 
 #include <QCborArray>
 #include <QHelpEvent>
@@ -115,7 +116,7 @@ void KadIncomingGraph::setRequest(const QCborMap& row, const QCborMap& graph, co
     if (results >= 0)
         m_extra = tr("%n result(s) sent", nullptr, int(results));
     else if (records >= 0)
-        m_extra = tr("%1 of %2 stored").arg(row.value(QStringLiteral("stored")).toInteger()).arg(records);
+        m_extra = tr("%1 of %2 stored").arg(argStr(row.value(QStringLiteral("stored")).toInteger()), argStr(records));
 
     Dist target{};
     if (!parseId(m_target, target)) {

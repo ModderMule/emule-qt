@@ -1,4 +1,5 @@
 #include "ScheduleNetworkBridge.h"
+#include "utils/ArgStr.h"
 
 #include "UsenetBridge.h"
 #include "prefs/Preferences.h"
@@ -65,8 +66,8 @@ void ScheduleNetworkBridge::btPause(bool paused, bool persistent)
             flipped.append(row.id);
     }
     logInfo(QStringLiteral("Scheduler: %1 %2 torrent(s)")
-                .arg(paused ? QStringLiteral("paused") : QStringLiteral("resumed"))
-                .arg(flipped.size()));
+                .arg(argStr(paused ? QStringLiteral("paused") : QStringLiteral("resumed")),
+                     argStr(flipped.size())));
     if (!persistent) {
         m_btFlipped = std::move(flipped);
         m_btFlippedToPaused = paused;

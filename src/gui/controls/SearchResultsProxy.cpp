@@ -13,6 +13,21 @@ SearchResultsProxy::SearchResultsProxy(QObject* parent)
 {
 }
 
+void SearchResultsProxy::setSourceModel(QAbstractItemModel* model)
+{
+    for (const auto& c : std::exchange(m_sourceConnections, {}))
+        disconnect(c);
+    SortValueProxy::setSourceModel(model);
+    if (model) {
+        // after the base's own handlers: the proxy rows are current then
+        const auto recheck = &SearchResultsProxy::updateRelatedFallback;
+        m_sourceConnections = {connect(model, &QAbstractItemModel::rowsInserted, this, recheck),
+                               connect(model, &QAbstractItemModel::rowsRemoved, this, recheck),
+                               connect(model, &QAbstractItemModel::modelReset, this, recheck)};
+    }
+    updateRelatedFallback();
+}
+
 void SearchResultsProxy::setNetworkFilter(const NetworkFilter& filter)
 {
     if (filter == m_filter)
@@ -20,6 +35,7 @@ void SearchResultsProxy::setNetworkFilter(const NetworkFilter& filter)
     beginFilterChange();
     m_filter = filter;
     endFilterChange(Direction::Rows);
+    updateRelatedFallback();
 }
 
 void SearchResultsProxy::setTextFilter(const QStringList& tokens, int column)
@@ -30,6 +46,7 @@ void SearchResultsProxy::setTextFilter(const QStringList& tokens, int column)
     m_tokens = tokens;
     m_tokenColumn = column;
     endFilterChange(Direction::Rows);
+    updateRelatedFallback();
 }
 
 void SearchResultsProxy::setKeywords(const QStringList& keywords)
@@ -39,6 +56,7 @@ void SearchResultsProxy::setKeywords(const QStringList& keywords)
     beginFilterChange();
     m_keywords = keywords;
     endFilterChange(Direction::Rows);
+    updateRelatedFallback();
 }
 
 QStringList SearchResultsProxy::keywordsOf(const QString& expression)
@@ -114,39 +132,7 @@ bool SearchResultsProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sour
     // A name row goes wherever its file goes
     if (sourceParent.isValid())
         return true;
-
-    if (!m_tokens.isEmpty()) {
-        const QString target = sourceModel()->index(sourceRow, m_tokenColumn).data().toString();
-        if (!FilterEdit::matches(m_tokens, target))
-            return false;
-    }
-
-    // an indexer list has rows of one network only
-    const auto* model = qobject_cast<const SearchResultsModel*>(sourceModel());
-    const SearchResultRow* row = model ? model->resultAt(sourceRow) : nullptr;
-    if (!row)
-        return true;
-
-    // a release's file without the keywords: listed only for its release's name
-    if (m_filter.hideRelatedContent && !m_keywords.isEmpty() && row->isMetaFileRow()) {
-        const QString name = foldForMatch(row->fileName);
-        for (const QString& kw : m_keywords) {
-            if (!name.contains(kw))
-                return false;
-        }
-    }
-
-    if (row->isEd3k() && row->ed3kHidden)
-        return m_filter.ed3kHidden;
-    if (row->isUsenet())
-        return m_filter.usenet;
-    if (row->isTorrent())
-        return m_filter.torrent;
-    if (row->isWeb() || row->isContainer() || row->webOrigin)
-        return m_filter.web;
-    if (row->kadOrigin)
-        return m_filter.kad;
-    return true;
+    return accepts(sourceRow, m_filter.hideRelatedContent && !m_relatedFallback);
 }
 
 bool SearchResultsProxy::lessThan(const QModelIndex& left, const QModelIndex& right) const
@@ -174,6 +160,66 @@ bool SearchResultsProxy::lessThan(const QModelIndex& left, const QModelIndex& ri
         return (sortOrder() == Qt::AscendingOrder) ? rightSpam : leftSpam;
 
     return SortValueProxy::lessThan(left, right);
+}
+
+bool SearchResultsProxy::accepts(int sourceRow, bool hideRelated) const
+{
+    if (!m_tokens.isEmpty()) {
+        const QString target = sourceModel()->index(sourceRow, m_tokenColumn).data().toString();
+        if (!FilterEdit::matches(m_tokens, target))
+            return false;
+    }
+
+    // an indexer list has rows of one network only
+    const auto* model = qobject_cast<const SearchResultsModel*>(sourceModel());
+    const SearchResultRow* row = model ? model->resultAt(sourceRow) : nullptr;
+    if (!row)
+        return true;
+
+    // a release's file without the keywords: listed only for its release's name
+    if (hideRelated && !m_keywords.isEmpty() && row->isMetaFileRow()) {
+        const QString name = foldForMatch(row->fileName);
+        for (const QString& kw : m_keywords) {
+            if (!name.contains(kw))
+                return false;
+        }
+    }
+
+    if (row->isEd3k() && row->ed3kHidden)
+        return m_filter.ed3kHidden;
+    if (row->isUsenet())
+        return m_filter.usenet;
+    if (row->isTorrent())
+        return m_filter.torrent;
+    if (row->isWeb() || row->isContainer() || row->webOrigin)
+        return m_filter.web;
+    if (row->kadOrigin)
+        return m_filter.kad;
+    return true;
+}
+
+void SearchResultsProxy::updateRelatedFallback()
+{
+    bool fallback = false;
+    if (m_filter.hideRelatedContent && !m_keywords.isEmpty() && sourceModel()) {
+        // the list is empty with the related rows hidden, but not without
+        const int rows = sourceModel()->rowCount();
+        bool anyStrict = false;
+        bool anyLoose = false;
+        for (int r = 0; r < rows && !anyStrict; ++r) {
+            if (accepts(r, true))
+                anyStrict = true;
+            else if (!anyLoose && accepts(r, false))
+                anyLoose = true;
+        }
+        fallback = !anyStrict && anyLoose;
+    }
+    if (fallback == m_relatedFallback)
+        return;
+    beginFilterChange();
+    m_relatedFallback = fallback;
+    endFilterChange(Direction::Rows);
+    emit relatedFallbackChanged(fallback);
 }
 
 } // namespace eMule

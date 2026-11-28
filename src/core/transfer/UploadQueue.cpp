@@ -27,6 +27,7 @@
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QFileInfo>
 
@@ -100,8 +101,8 @@ void UploadQueue::onBlockPacketsReady(UpDownClient* client, QByteArray fileId,
         return;
     if (thePrefs.logRawSocketPackets())
         logDebug([&]() -> QString { return QStringLiteral("onBlockPacketsReady: client=%1 packets=%2")
-                     .arg(client->userName())
-                     .arg(packets.size()); });
+                     .arg(argStr(client->userName()),
+                          argStr(packets.size())); });
     if (!client->socket() || fileId.size() != 16)
         return;
 
@@ -469,7 +470,7 @@ UpDownClient* UploadQueue::findBestClientInQueue()
         logDebug([&]() -> QString {
             return QStringLiteral("Upload slot: line has room, asking LowID %1 to call back "
                                   "(%2 of %3 waiting LowIDs have a callback route)")
-                .arg(callbackClient->userName()).arg(callbackable).arg(unreachable); });
+                .arg(argStr(callbackClient->userName()), argStr(callbackable), argStr(unreachable)); });
         return callbackClient;
     }
 
@@ -907,8 +908,8 @@ bool UploadQueue::queueLimitRejects(const UpDownClient* client)
 
     if (waiting >= hardQueueLimit) {
         logDebug([&]() -> QString { return QStringLiteral("addClientToQueue: rejected %1 — hard queue limit %2 reached")
-                     .arg(client->userName())
-                     .arg(hardQueueLimit); });
+                     .arg(argStr(client->userName()),
+                          argStr(hardQueueLimit)); });
         return true;
     }
 
@@ -924,10 +925,10 @@ bool UploadQueue::queueLimitRejects(const UpDownClient* client)
 
     logDebug([&]() -> QString { return QStringLiteral("addClientToQueue: rejected %1 — soft queue limit %2 reached "
                             "and its rank %3 is below the queue average %4")
-                 .arg(client->userName())
-                 .arg(softQueueLimit)
-                 .arg(static_cast<double>(client->getCombinedFilePrioAndCredit()))
-                 .arg(static_cast<double>(m_averageCombinedFilePrioAndCredit)); });
+                 .arg(argStr(client->userName()),
+                      argStr(softQueueLimit),
+                      argStr(static_cast<double>(client->getCombinedFilePrioAndCredit())),
+                      argStr(static_cast<double>(m_averageCombinedFilePrioAndCredit))); });
     return true;
 }
 
@@ -1242,8 +1243,8 @@ bool UploadQueue::checkForTimeOver(const UpDownClient* client)
              && keepsProductiveSlot(client))) {
         if (thePrefs.logUlDlEvents()) {
             logDebug([&]() -> QString { return QStringLiteral("%1: upload session ended — max time %2 min")
-                         .arg(client->userName())
-                         .arg(SESSIONMAXTIME / MIN2MS(1)); });
+                         .arg(argStr(client->userName()),
+                              argStr(SESSIONMAXTIME / MIN2MS(1))); });
         }
         return true;
     }
@@ -1511,7 +1512,7 @@ void UploadQueue::recycleDeadSlots(uint64 curTick)
 
     logDebug([&]() -> QString { return QStringLiteral("Upload slot of %1 is taking nothing — given to the next in line "
                             "(not chosen again for %2 s)")
-                 .arg(dead->userName()).arg(wait / 1000); });
+                 .arg(argStr(dead->userName()), argStr(wait / 1000)); });
     m_deadSlotSince.erase(dead);
     if (removeFromUploadQueue(dead, QStringLiteral("Dead slot, given to the next in line")))
         dead->sendOutOfPartReqsAndAddToWaitingQueue();

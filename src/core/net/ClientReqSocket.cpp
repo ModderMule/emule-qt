@@ -12,6 +12,7 @@
 #include "stats/Statistics.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
+#include "utils/ArgStr.h"
 
 #include <stdexcept>
 
@@ -260,20 +261,20 @@ bool ClientReqSocket::packetReceived(Packet* packet)
         // stream past it cannot be trusted, and the rest of the read buffer is dropped anyway.
         logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::packetReceived — malformed packet: %1 "
                                   "(proto=0x%2 opcode=0x%3 wireSize=%4 peer=%5:%6)")
-                       .arg(QLatin1String(ex.what()))
-                       .arg(protocol, 2, 16, QLatin1Char('0'))
-                       .arg(opcode, 2, 16, QLatin1Char('0'))
-                       .arg(rawSize)
-                       .arg(peerAddress().toString()).arg(peerPort()); });
+                       .arg(QLatin1String(ex.what()),
+                            argFmt(protocol, 2, 16, QLatin1Char('0')),
+                            argFmt(opcode, 2, 16, QLatin1Char('0')),
+                            argStr(rawSize),
+                            argStr(peerAddress().toString()), argStr(peerPort())); });
         disconnect(QStringLiteral("Error while processing packet: %1").arg(QLatin1String(ex.what())));
         return false;
     } catch (const std::exception& ex) {
         logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::packetReceived — exception: %1 "
                                   "(proto=0x%2 opcode=0x%3 wireSize=%4)")
-                       .arg(QLatin1String(ex.what()))
-                       .arg(protocol, 2, 16, QLatin1Char('0'))
-                       .arg(opcode, 2, 16, QLatin1Char('0'))
-                       .arg(rawSize); });
+                       .arg(QLatin1String(ex.what()),
+                            argFmt(protocol, 2, 16, QLatin1Char('0')),
+                            argFmt(opcode, 2, 16, QLatin1Char('0')),
+                            argStr(rawSize)); });
         disconnect(QStringLiteral("Error while processing packet: %1").arg(QLatin1String(ex.what())));
         return false;
     } catch (...) {

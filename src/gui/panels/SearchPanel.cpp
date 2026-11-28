@@ -40,6 +40,7 @@
 #include "app/Ed3kLiveWatch.h"
 #include "app/SkinIcons.h"
 #include "utils/ScrollMessageBox.h"
+#include "utils/ArgStr.h"
 
 #include <set>
 #include <QMouseEvent>
@@ -316,6 +317,12 @@ void SearchPanel::startSearchFromExternal(const QString& expression,
     sendSearchRequest(req);
 }
 
+void SearchPanel::selectMethod(int searchType)
+{
+    if (const int idx = m_methodCombo->findData(searchType); idx >= 0)
+        m_methodCombo->setCurrentIndex(idx);
+}
+
 void SearchPanel::startRelatedSearch(const QStringList& hashes, const QStringList& names)
 {
     if (hashes.isEmpty())
@@ -519,7 +526,7 @@ QWidget* SearchPanel::createSearchBar()
         m_showKadCheck->setChecked(true);
         m_showTorrentCheck->setChecked(true);
         m_showWebCheck->setChecked(true);
-        m_hideRelatedCheck->setChecked(false);
+        m_hideRelatedCheck->setChecked(true);
     });
     typeRow->addWidget(m_resetBtn);
 
@@ -557,7 +564,8 @@ QWidget* SearchPanel::createSearchBar()
     m_hideRelatedCheck = new QCheckBox(tr("Hide related folder content"), container);
     m_hideRelatedCheck->setChecked(theUiState.searchHideRelatedContent());
     m_hideRelatedCheck->setToolTip(tr("Hide the files of a torrent, Usenet or web release whose name "
-                                      "lacks a search keyword. The release itself stays."));
+                                      "lacks a search keyword. The release itself stays. Shown anyway "
+                                      "when nothing else would be left."));
     networkRow->addWidget(m_hideRelatedCheck);
     connect(m_hideRelatedCheck, &QCheckBox::toggled, this, &SearchPanel::onNetworkFilterChanged);
     networkRow->addStretch();
@@ -1487,8 +1495,8 @@ QString SearchPanel::tabLabel(const SearchTab& tab) const
     // (SearchListCtrl.cpp:421-424).
     const int total = tab.resultCount();
     if (!m_filterTokens.isEmpty() && tab.proxy && tab.proxy->rowCount() != total)
-        return QStringLiteral("%1 (%2/%3)").arg(tab.title).arg(tab.proxy->rowCount()).arg(total);
-    return QStringLiteral("%1 (%2)").arg(tab.title).arg(total);
+        return QStringLiteral("%1 (%2/%3)").arg(argStr(tab.title), argStr(tab.proxy->rowCount()), argStr(total));
+    return QStringLiteral("%1 (%2)").arg(argStr(tab.title), argStr(total));
 }
 
 void SearchPanel::applyTextFilter()
@@ -3645,7 +3653,17 @@ int SearchPanel::addResultTab(SearchTab tab)
 {
     if (tab.model)
         tab.model->setPausedLookup(pausedLookup());
-    tab.proxy = new SearchResultsProxy(this);
+    auto* resultsProxy = new SearchResultsProxy(this);
+    tab.proxy = resultsProxy;
+    // hiding the related folder content would leave nothing: say why it shows
+    connect(resultsProxy, &SearchResultsProxy::relatedFallbackChanged, this, [this, resultsProxy](bool on) {
+        if (!on)
+            return;
+        const auto it = std::ranges::find(m_tabs, static_cast<QSortFilterProxyModel*>(resultsProxy), &SearchTab::proxy);
+        const QString title = it != m_tabs.end() ? it->title : QString();
+        StatusBarNotifier::post(tr("Search \"%1\": no file matches every keyword - showing related folder content.")
+                                    .arg(title), 6000);
+    });
     if (tab.isIndexer())
         tab.proxy->setSourceModel(tab.indexerModel);
     else
@@ -4006,7 +4024,7 @@ void SearchPanel::dumpEd3kMenus()
                     cat > 0 && cat < m_categoryTabs->count())
                     m_categoryTabs->setCurrentIndex(cat);
                 logInfo(QStringLiteral("ed3k menu Search: %1 %2 (category %3)")
-                            .arg(label, ref.row->fileName).arg(downloadCategory()));
+                            .arg(argStr(label), argStr(ref.row->fileName), argStr(downloadCategory())));
                 (*it)->trigger();
             }
         }

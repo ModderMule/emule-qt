@@ -50,6 +50,14 @@ private slots:
     void search_readsTorznabFields();
     void search_skipsAnItemWithNoDownloadUrl();
     void search_keepsAMagnetOnlyRow();
+    void tracker_nyaaFeedIsTorrent();
+    void tracker_showRssMagnetLinkIsTorrent();
+    void tracker_ezRssNestedTorrentIsRead();
+    void tracker_bittorrentEnclosureTypeIsTorrent();
+    void tracker_magnetInGuidOnlyIsKept();
+    void tracker_plainNzbFeedStaysUsenet();
+    void humanSize_readsUnits();
+    void torrentSniff_tellsTorrentFromNzb();
     void search_dedupKeyIgnoresCase();
     void search_classifiesThePasswordAttr();
     void passwordFlag_skipsAValueOnMostRows();
@@ -437,6 +445,166 @@ void tst_IndexerParse::search_keepsAMagnetOnlyRow()
     const QString built = page.results.at(1).downloadUrl.toString();
     QVERIFY2(built.startsWith(QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef")), qPrintable(built));
     QVERIFY(built.contains(QStringLiteral("dn=Hash")));
+}
+
+void tst_IndexerParse::tracker_nyaaFeedIsTorrent()
+{
+    // nyaa: <link> is the .torrent, guid a view page, infoHash/size in own namespace
+    const QByteArray xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:nyaa="https://nyaa.si/xmlns/nyaa" version="2.0">
+<channel><title>Nyaa - Home - Torrent File RSS</title>
+<item>
+  <title>[Group] Show - 01 (1080p).mkv</title>
+  <link>https://tracker.example/download/123.torrent</link>
+  <guid isPermaLink="true">https://tracker.example/view/123</guid>
+  <pubDate>Thu, 26 Nov 2026 10:00:00 -0000</pubDate>
+  <nyaa:seeders>42</nyaa:seeders>
+  <nyaa:leechers>3</nyaa:leechers>
+  <nyaa:infoHash>0123456789abcdef0123456789abcdef01234567</nyaa:infoHash>
+  <nyaa:size>1.5 GiB</nyaa:size>
+</item>
+</channel></rss>)";
+
+    const IndexerSearchPage page = parseIndexerSearch(xml, QStringLiteral("Nyaa"), QStringLiteral("nyaa"));
+    QVERIFY2(page.error.isEmpty(), qPrintable(page.error));
+    QCOMPARE(page.results.size(), 1);
+    const IndexerResult& row = page.results.at(0);
+    QCOMPARE(row.downloadUrl, QUrl(QStringLiteral("https://tracker.example/download/123.torrent")));
+    QCOMPARE(row.infoHash, QStringLiteral("0123456789abcdef0123456789abcdef01234567"));
+    QCOMPARE(row.seeders, 42);
+    QCOMPARE(row.size, qint64(1.5 * 1024 * 1024 * 1024));
+    QCOMPARE(row.payload, IndexerPayload::Torrent);
+    QVERIFY(!row.isUsenet());
+}
+
+void tst_IndexerParse::tracker_showRssMagnetLinkIsTorrent()
+{
+    // showRSS style: magnet in <link> and enclosure, tv:info_hash
+    const QByteArray xml = R"(<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:tv="https://showrss.example/tv"><channel>
+<item>
+  <title>Show S01E02 720p</title>
+  <link>magnet:?xt=urn:btih:ABCDEF0123456789ABCDEF0123456789ABCDEF01&amp;dn=Show</link>
+  <guid isPermaLink="false">ABCDEF0123456789ABCDEF0123456789ABCDEF01</guid>
+  <tv:info_hash>ABCDEF0123456789ABCDEF0123456789ABCDEF01</tv:info_hash>
+  <enclosure url="magnet:?xt=urn:btih:ABCDEF0123456789ABCDEF0123456789ABCDEF01&amp;dn=Show" length="0" type="application/x-bittorrent"/>
+</item>
+</channel></rss>)";
+
+    const IndexerSearchPage page = parseIndexerSearch(xml, QStringLiteral("S"), QStringLiteral("s"));
+    QCOMPARE(page.results.size(), 1);
+    const IndexerResult& row = page.results.at(0);
+    QCOMPARE(row.downloadUrl.scheme(), QStringLiteral("magnet"));
+    QCOMPARE(row.magnetUrl, row.downloadUrl);
+    QCOMPARE(row.infoHash, QStringLiteral("ABCDEF0123456789ABCDEF0123456789ABCDEF01"));
+    QVERIFY(!row.isUsenet());
+}
+
+void tst_IndexerParse::tracker_ezRssNestedTorrentIsRead()
+{
+    const QByteArray xml = R"(<?xml version="1.0"?>
+<rss version="2.0"><channel>
+<item>
+  <title>Distro 24.04 ISO</title>
+  <link>https://tracker.example/details/9</link>
+  <guid>ez-9</guid>
+  <torrent xmlns="http://xmlns.ezrss.it/0.1/">
+    <fileName>distro.iso.torrent</fileName>
+    <contentLength>3221225472</contentLength>
+    <infoHash>FEDCBA9876543210FEDCBA9876543210FEDCBA98</infoHash>
+    <magnetURI><![CDATA[magnet:?xt=urn:btih:FEDCBA9876543210FEDCBA9876543210FEDCBA98]]></magnetURI>
+    <trackers><group order="random"><tracker>udp://t.example:80</tracker></group></trackers>
+  </torrent>
+</item>
+</channel></rss>)";
+
+    const IndexerSearchPage page = parseIndexerSearch(xml, QStringLiteral("E"), QStringLiteral("e"));
+    QCOMPARE(page.results.size(), 1);
+    const IndexerResult& row = page.results.at(0);
+    QCOMPARE(row.size, qint64(3221225472LL));
+    QCOMPARE(row.infoHash, QStringLiteral("FEDCBA9876543210FEDCBA9876543210FEDCBA98"));
+    QVERIFY(row.magnetUrl.toString().startsWith(QStringLiteral("magnet:?xt=urn:btih:FEDCBA")));
+    // <link> is a details page: the magnet is what gets grabbed
+    QCOMPARE(row.downloadUrl, row.magnetUrl);
+    QVERIFY(!row.isUsenet());
+}
+
+void tst_IndexerParse::tracker_bittorrentEnclosureTypeIsTorrent()
+{
+    // private tracker: download.php link, no .torrent suffix, only the type says so
+    const QByteArray xml = R"(<?xml version="1.0"?>
+<rss version="2.0"><channel>
+<item><title>Private.Release</title><guid>p1</guid>
+  <enclosure url="https://tracker.example/download.php?id=7&amp;passkey=x" length="2048" type="application/x-bittorrent"/>
+</item>
+<item><title>Suffix.Only</title><guid>p2</guid>
+  <link>https://tracker.example/dl/8/Suffix.Only.TORRENT?passkey=x</link>
+</item>
+</channel></rss>)";
+
+    const IndexerSearchPage page = parseIndexerSearch(xml, QStringLiteral("P"), QStringLiteral("p"));
+    QCOMPARE(page.results.size(), 2);
+    QCOMPARE(page.results.at(0).payload, IndexerPayload::Torrent);
+    QCOMPARE(page.results.at(0).size, qint64(2048));
+    QCOMPARE(page.results.at(1).payload, IndexerPayload::Torrent);
+
+    // details-page <link> plus a bare hash: magnet built from the hash
+    const QByteArray hashOnly = R"(<?xml version="1.0"?>
+<rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa"><channel>
+<item><title>Hash.Row</title><guid>h1</guid><link>https://tracker.example/view/1</link>
+  <nyaa:infoHash>0123456789abcdef0123456789abcdef01234567</nyaa:infoHash></item>
+</channel></rss>)";
+    const IndexerSearchPage page2 = parseIndexerSearch(hashOnly, QStringLiteral("P"), QStringLiteral("p"));
+    QCOMPARE(page2.results.size(), 1);
+    QVERIFY(page2.results.at(0).downloadUrl.toString().startsWith(
+        QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef")));
+}
+
+void tst_IndexerParse::tracker_magnetInGuidOnlyIsKept()
+{
+    const QByteArray xml = R"(<?xml version="1.0"?>
+<rss version="2.0"><channel>
+<item><title>Guid.Magnet</title><guid>magnet:?xt=urn:btih:11112222333344445555666677778888aaaabbbb</guid></item>
+</channel></rss>)";
+
+    const IndexerSearchPage page = parseIndexerSearch(xml, QStringLiteral("G"), QStringLiteral("g"));
+    QCOMPARE(page.results.size(), 1);
+    QCOMPARE(page.results.at(0).downloadUrl.scheme(), QStringLiteral("magnet"));
+    QVERIFY(!page.results.at(0).isUsenet());
+}
+
+void tst_IndexerParse::tracker_plainNzbFeedStaysUsenet()
+{
+    const QByteArray xml = R"(<?xml version="1.0"?>
+<rss version="2.0"><channel>
+<item><title>Nzb.Release</title><guid>n1</guid>
+  <link>https://indexer.example/details/n1</link>
+  <enclosure url="https://indexer.example/getnzb/n1.nzb?r=key" length="500" type="application/x-nzb"/>
+</item>
+</channel></rss>)";
+
+    const IndexerSearchPage page = parseIndexerSearch(xml, QStringLiteral("N"), QStringLiteral("n"));
+    QCOMPARE(page.results.size(), 1);
+    QCOMPARE(page.results.at(0).payload, IndexerPayload::Unknown);
+    QVERIFY(page.results.at(0).isUsenet());
+}
+
+void tst_IndexerParse::humanSize_readsUnits()
+{
+    QCOMPARE(parseHumanSize(u"1234"), qint64(1234));
+    QCOMPARE(parseHumanSize(u" 700 MiB "), qint64(700) * 1024 * 1024);
+    QCOMPARE(parseHumanSize(u"1.5 GB"), qint64(1.5 * 1024 * 1024 * 1024));
+    QCOMPARE(parseHumanSize(u"2 TiB"), qint64(2) * 1024 * 1024 * 1024 * 1024);
+    QCOMPARE(parseHumanSize(u"1,024 KiB"), qint64(1024) * 1024);
+    QCOMPARE(parseHumanSize(u"n/a"), qint64(0));
+    QCOMPARE(parseHumanSize(u"12 parsecs"), qint64(0));
+}
+
+void tst_IndexerParse::torrentSniff_tellsTorrentFromNzb()
+{
+    QVERIFY(looksLikeTorrentFile("d8:announce13:udp://t:80/a4:infod4:name1:xee"));
+    QVERIFY(!looksLikeTorrentFile("<?xml version=\"1.0\"?><nzb/>"));
+    QVERIFY(!looksLikeTorrentFile(""));
 }
 
 void tst_IndexerParse::search_skipsAnItemWithNoDownloadUrl()

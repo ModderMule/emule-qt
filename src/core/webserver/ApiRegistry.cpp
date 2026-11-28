@@ -3,6 +3,7 @@
 /// @brief REST operation table — validation and dispatch.
 
 #include "webserver/ApiRegistry.h"
+#include "utils/ArgStr.h"
 
 #include <QJsonDocument>
 #include <QPromise>
@@ -88,9 +89,9 @@ namespace {
                                  : p.type == ParamType::Array ? QLatin1StringView(" items")
                                                               : QLatin1StringView(" characters");
     if (p.min && measure < *p.min)
-        return QStringLiteral("'%1' must be at least %2%3").arg(p.name).arg(*p.min).arg(what);
+        return QStringLiteral("'%1' must be at least %2%3").arg(argStr(p.name), argStr(*p.min), argStr(what));
     if (p.max && measure > *p.max)
-        return QStringLiteral("'%1' must be at most %2%3").arg(p.name).arg(*p.max).arg(what);
+        return QStringLiteral("'%1' must be at most %2%3").arg(argStr(p.name), argStr(*p.max), argStr(what));
 
     if (!p.enumValues.isEmpty() && !p.enumValues.contains(v.toString()))
         return QStringLiteral("'%1' must be one of: %2")

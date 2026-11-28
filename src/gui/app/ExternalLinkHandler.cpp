@@ -28,6 +28,7 @@
 #include "utils/ContainerDrop.h"
 #include "utils/TorrentLinks.h"
 #include "utils/ModalHost.h"
+#include "utils/ArgStr.h"
 
 #include <QDesktopServices>
 #include <QEvent>
@@ -448,7 +449,7 @@ void ExternalLinkHandler::queueForLater(PendingOpen item)
         return;
     }
     logInfo(QStringLiteral("%1 received before the daemon was ready — queued (%2)")
-                .arg(what).arg(m_pending.size()));
+                .arg(argStr(what), argStr(m_pending.size())));
 }
 
 void ExternalLinkHandler::askBootstrapSource(const Ipc::IpcMessage& msg)
@@ -552,10 +553,10 @@ void ExternalLinkHandler::tellEd3kSetVersion(const Ipc::IpcMessage& msg)
     // non-modal: a new version is no reason to stop what the user does
     auto* box = new QMessageBox(QMessageBox::Information, tr("ed3k set"),
                                 tr("Version %1 of the ed3k set \"%2\" is here: %3 new and %4 changed file(s).")
-                                    .arg(seq)
-                                    .arg(title)
-                                    .arg(added)
-                                    .arg(changed),
+                                    .arg(argStr(seq),
+                                         argStr(title),
+                                         argStr(added),
+                                         argStr(changed)),
                                 QMessageBox::NoButton, m_mainWindow);
     box->setAttribute(Qt::WA_DeleteOnClose);
     QPushButton* show = box->addButton(tr("Show"), QMessageBox::AcceptRole);

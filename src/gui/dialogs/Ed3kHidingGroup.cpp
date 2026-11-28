@@ -7,6 +7,7 @@
 #include "prefs/Preferences.h"
 #include "utils/Opcodes.h"
 #include "IpcMessage.h"
+#include "utils/ArgStr.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -210,9 +211,9 @@ void Ed3kHidingGroup::applyStatus(const QCborMap& h)
     const qint64 built = h.value(QStringLiteral("built")).toInteger();
     const qint64 paths = h.value(QStringLiteral("paths")).toInteger();
     QString text = tr("Hiding as anonymous node %1: %2 of %3 path(s) built.")
-                       .arg(h.value(QStringLiteral("nodeId")).toString())
-                       .arg(built)
-                       .arg(paths);
+                       .arg(argStr(h.value(QStringLiteral("nodeId")).toString()),
+                            argStr(built),
+                            argStr(paths));
     if (h.value(QStringLiteral("waitingForHops")).toBool())
         text += QLatin1Char(' ') + tr("Waiting for enough hops (20 known nodes that forward) before the first path.");
     // hops.md §2.6 Inwards: a leaf at 0 hops has no gate; the client tells its user so

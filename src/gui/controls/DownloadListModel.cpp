@@ -18,6 +18,7 @@
 #include "utils/PriorityText.h"
 #include "utils/RatingIcons.h"
 #include "utils/StringUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QColor>
 #include <QFont>
@@ -197,9 +198,9 @@ QString sourceTooltipText(const SourceRow& s, bool extended)
                                                ? QStringLiteral("(%1)").arg(DownloadListModel::tr("Unknown")) : s.userName);
     if (s.ed3k)
         info += u'\n' + ed3kNetworkText(s.ed3kAnon, ed3kJoinOf(s.ed3kJoin));
-    info += QStringLiteral("\n%1:%2:%3\n\n").arg(DownloadListModel::tr("Server"), s.serverAddr.isEmpty()
-                                                        ? QStringLiteral("0.0.0.0") : s.serverAddr)
-                .arg(s.serverPort);
+    info += QStringLiteral("\n%1:%2:%3\n\n").arg(argStr(DownloadListModel::tr("Server")), argStr(s.serverAddr.isEmpty()
+                                                        ? QStringLiteral("0.0.0.0") : s.serverAddr),
+                     argStr(s.serverPort));
     // not while it is being dialled or is sending: there is no next re-ask then
     if (s.downloadState != QLatin1String("Connecting") && s.downloadState != QLatin1String("Downloading")
         && s.nextReaskSecs >= 0)
@@ -572,15 +573,15 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             "Requests:\t%10\n"
             "Accepted Requests:\t%11\n"
             "Uploaded:\t%12")
-            .arg(d.fileName, d.hash,
-                 formatByteSize(d.fileSize),
-                 formatByteSize(d.completedSize),
-                 QString::number(d.percentCompleted, 'f', 1))
-            .arg(fileTypeText(d.fileType, d.fileName),
-                 statusText(d), downloadPriorityText(d.priority, d.isAutoDownPriority),
-                 sourcesText(d))
-            .arg(d.requests).arg(d.acceptedRequests)
-            .arg(formatByteSize(d.upTransferred));
+            .arg(argStr(d.fileName), argStr(d.hash),
+                 argStr(formatByteSize(d.fileSize)),
+                 argStr(formatByteSize(d.completedSize)),
+                 QString::number(d.percentCompleted, 'f', 1),
+                 argStr(fileTypeText(d.fileType, d.fileName)),
+                 argStr(statusText(d)), argStr(downloadPriorityText(d.priority, d.isAutoDownPriority)),
+                 argStr(sourcesText(d)),
+                 argStr(d.requests), argStr(d.acceptedRequests),
+                 argStr(formatByteSize(d.upTransferred)));
         tip += extra;
         if (d.isNetworkJob())
             tip += u'\n' + tr("Network:\t%1 (single transfer mode)").arg(networkName(ed3kJoinOf(d.ed3kNetwork)));

@@ -24,6 +24,13 @@
 
 namespace eMule::indexer {
 
+/// What a row's download is. Unknown = decide from the torznab fields.
+enum class IndexerPayload : quint8 {
+    Unknown = 0,
+    Usenet = 1,
+    Torrent = 2,
+};
+
 struct IndexerResult {
     /// Stable within a search: the indexer's slug plus the item guid. This is
     /// what GrabIndexerResult names and what the GUI restores a selection by, so
@@ -81,10 +88,19 @@ struct IndexerResult {
     QUrl magnetUrl;
     QString infoHash;
 
+    /// Set by the parser on plain tracker RSS hints (bittorrent enclosure type,
+    /// .torrent link, magnet link) or by a URL feed's network override.
+    IndexerPayload payload = IndexerPayload::Unknown;
+
     /// A row is Usenet-shaped when it has no torrent payload. An aggregator can
     /// return both kinds from one query, so the *row* decides where a grab goes,
     /// not the account's `kind`.
-    [[nodiscard]] bool isUsenet() const { return magnetUrl.isEmpty() && infoHash.isEmpty(); }
+    [[nodiscard]] bool isUsenet() const
+    {
+        if (payload != IndexerPayload::Unknown)
+            return payload == IndexerPayload::Usenet;
+        return magnetUrl.isEmpty() && infoHash.isEmpty();
+    }
 
     /// Days since posting, or -1 when the indexer gave no date.
     [[nodiscard]] int ageDays() const;
@@ -111,6 +127,13 @@ struct IndexerSearchPage {
     int total = -1;   ///< From newznab:response/@total; -1 when absent.
     QString error;    ///< Non-empty when the indexer returned an <error> document.
 };
+
+/// Whether @p body is a bencoded .torrent rather than an NZB. For rows whose
+/// payload kind the feed did not state.
+[[nodiscard]] bool looksLikeTorrentFile(const QByteArray& body);
+
+/// Byte count from "1234", "1.5 GiB", "700 MB". 0 when unreadable.
+[[nodiscard]] qint64 parseHumanSize(QStringView text);
 
 /// Parse an RSS 2.0 search response.
 ///

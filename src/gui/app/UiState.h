@@ -621,7 +621,7 @@ private:
     bool m_searchShowKad = true;
     bool m_searchShowTorrent = true;
     bool m_searchShowWeb = true;
-    bool m_searchHideRelatedContent = false;
+    bool m_searchHideRelatedContent = true;
     int  m_searchLastMethod = -1;     ///< -1 = never saved
     QStringList m_searchHistory;
     int  m_transferTopView = -1;      ///< -1 = never saved

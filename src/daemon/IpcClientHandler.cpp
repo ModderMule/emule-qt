@@ -124,6 +124,7 @@
 #include "utils/PathUtils.h"
 #include "utils/Log.h"
 #include "utils/TimeUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 #include <QDate>
@@ -2564,7 +2565,7 @@ void IpcClientHandler::handleReloadPreferences(const IpcMessage& msg)
         emitPrefOutcome(outcome);
     }
     logInfo(QStringLiteral("Preferences reloaded from %1: %2 changed")
-                .arg(path).arg(changes.size()));
+                .arg(argStr(path), argStr(changes.size())));
 
     QCborMap result;
     insertPortResult(result, outcome);
@@ -3760,10 +3761,10 @@ void IpcClientHandler::handleApplyHttpCacheConfig(const IpcMessage& msg)
             // clears that server's publish backoff on its own.
             logInfo(QStringLiteral("HTTP Cache: server %1 (%2) configured, uploads enabled "
                                    "(%3 in the rotation)")
-                        .arg(QUrl(baseUrl).host(),
-                             info.implementation.isEmpty() ? QStringLiteral("v%1").arg(info.version)
-                                                           : info.implementation)
-                        .arg(thePrefs.httpCacheServers().size()));
+                        .arg(argStr(QUrl(baseUrl).host()),
+                             argStr(info.implementation.isEmpty() ? QStringLiteral("v%1").arg(info.version)
+                                                           : info.implementation),
+                             argStr(thePrefs.httpCacheServers().size())));
 
             self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(QString())));
         });
@@ -5974,6 +5975,7 @@ QCborMap indexerFeedToCbor(const IndexerFeed& feed, const indexer::IndexerFeedSt
         {QStringLiteral("indexers"),        indexers},
         {QStringLiteral("url"),             indexer::redactApiKey(QUrl(feed.url))},
         {QStringLiteral("hasUrl"),          !feed.url.isEmpty()},
+        {QStringLiteral("network"),         indexerFeedNetworkToString(feed.network)},
         {QStringLiteral("accept"),          feed.accept},
         {QStringLiteral("reject"),          feed.reject},
         {QStringLiteral("minSize"),         feed.minSize},
@@ -6005,6 +6007,7 @@ IndexerFeed indexerFeedFromCbor(const QCborMap& map)
     feed.maxAgeDays = int(map.value(QStringLiteral("maxAgeDays")).toInteger(0));
     feed.intervalMinutes = int(map.value(QStringLiteral("intervalMinutes")).toInteger(30));
     feed.grabExisting = map.value(QStringLiteral("grabExisting")).toBool(false);
+    feed.network = indexerFeedNetworkFromString(map.value(QStringLiteral("network")).toString());
     feed.downloadCategory = int(map.value(QStringLiteral("downloadCategory")).toInteger(0));
 
     for (const auto& cat : map.value(QStringLiteral("categories")).toArray())
@@ -6326,8 +6329,8 @@ void IpcClientHandler::handleTestIndexer(const IpcMessage& msg)
             payload.append(caps.serverTitle.isEmpty()
                                ? tr("Connected. %1 categories.").arg(caps.categories.size())
                                : tr("%1 — %2 categories.")
-                                     .arg(caps.serverTitle)
-                                     .arg(caps.categories.size()));
+                                     .arg(argStr(caps.serverTitle),
+                                          argStr(caps.categories.size())));
             payload.append(QString{});
         } else {
             payload.append(QString{});

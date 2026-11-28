@@ -12,8 +12,14 @@
 /// saw it; a buddy that speaks the dialect also sends the requester a 56-byte
 /// OP_NATT_ENDPOINT_HINT and an OP_HOLEPUNCH. The target unwraps the zero file hash and
 /// punches back. Any stock buddy relays the envelope unchanged.
+/// The hint names the served client's outside UDP endpoint: the source of its latest
+/// Kad packet to us (FINDBUDDY_REQ, then its refreshes), the hello's Kad port only when
+/// none is known. A refresh that moves the port within kRehintMs of a hint sends another.
 
 #include "net/natt/NatPath.h"
+
+#include <array>
+#include <vector>
 
 namespace eMule {
 
@@ -34,11 +40,12 @@ public:
     static constexpr uint8  kExtUdp6Size      = 16 + 2;
     static constexpr uint32 kHintSize         = 56;
     static constexpr uint8  kHintVersion      = 1;
+    static constexpr uint64 kRehintMs         = 3000;   ///< refresh after a hint re-hints
 
     /// The served client a hint describes.
     struct ServedPeer {
         Hash16 hash{};
-        Endpoint udp;           ///< its public IPv4 and Kad/UDP port
+        Endpoint udp;           ///< its outside IPv4 UDP endpoint (seen, else Kad port)
         uint8 connectOptions = 0;
 
         [[nodiscard]] static ServedPeer fromClient(const UpDownClient& client);
@@ -51,17 +58,35 @@ public:
     bool request(Attempt& attempt) override;
     void repeat(Attempt& attempt) override;
     bool handlePeerPacket(uint8 opcode, const uint8* data, uint32 size, const Endpoint& from) override;
+    void tick() override;
 
     /// Buddy role: we relayed @p data (an OP_REASKCALLBACKUDP payload) for @p served.
     void onBuddyRelay(const Endpoint& requester, const uint8* data, uint32 size, const ServedPeer& served);
+    /// Buddy role: @p served refreshed its UDP endpoint; hints sent lately go out again
+    /// when it moved.
+    void onServedRefresh(const ServedPeer& served);
     /// Target role: our buddy relayed an OP_RENDEZVOUS; @p data starts after the opcode.
     bool onRendezvous(const Endpoint& requester, const uint8* data, uint32 size);
     /// IPv6 UDP endpoint from an extension block, null when none or the block is bad.
     [[nodiscard]] static Endpoint parseExtUdp6(const uint8* data, uint32 size);
 
 private:
+    /// A hint we sent, kept kRehintMs for a refresh to correct.
+    struct SentHint {
+        Endpoint requester;
+        Hash16 servedHash{};
+        std::array<uint8, 16> buddyID{};
+        Hash16 fileHash{};
+        Endpoint udp;
+        uint64 atMs = 0;
+    };
+
     void sendEnvelope(Attempt& attempt);
     void onEndpointHint(const uint8* data, uint32 size, const Endpoint& from);
+    void sendHint(const SentHint& h, uint8 connectOptions);
+    void pruneHints();
+
+    std::vector<SentHint> m_sentHints;
 };
 
 } // namespace natt

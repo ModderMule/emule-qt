@@ -380,6 +380,11 @@ public:
     }
     /// The first OP_SERVERIDENT of this connection has arrived. OFFERFILES waits for it (up
     /// to a few seconds) so a v1 advertisement is known before the first batch.
+    /// ST_IPV6_CALLBACK bit 0 in this connection's last OP_SERVERIDENT: the server takes
+    /// OP_IPV6_CALLBACK_REQUEST / _OPTIN (ed2k-server#62). Cleared by a refusal that holds
+    /// until the next ident (reason 1-3). Runtime only, per connection.
+    [[nodiscard]] bool ipv6CallbackOffered() const      { return m_ipv6CallbackOffered; }
+    void setIPv6CallbackOffered(bool on)                { m_ipv6CallbackOffered = on; }
     [[nodiscard]] bool identReceived() const            { return m_identReceived; }
     void setIdentReceived()                             { m_identReceived = true; }
 
@@ -509,6 +514,7 @@ private:
     bool    m_natProof = false;           // transient, never saved
     std::optional<OfferFilesV1> m_offerFilesV1;   // transient, never saved
     bool    m_identReceived = false;      // transient, never saved
+    bool    m_ipv6CallbackOffered = false; // transient, never saved
 
     // eNode Meta API
     QString m_metaApiUrl;

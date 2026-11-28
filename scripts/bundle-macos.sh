@@ -173,7 +173,7 @@ fi
 # Find macdeployqt — check common Qt install locations
 MACDEPLOYQT=""
 for candidate in \
-    "$HOME/Qt/6.10.2/macos/bin/macdeployqt" \
+    "$HOME/Qt/6.12.1/macos/bin/macdeployqt" \
     "$HOME/Qt/6.*/macos/bin/macdeployqt" \
     "$(command -v macdeployqt 2>/dev/null || true)"
 do

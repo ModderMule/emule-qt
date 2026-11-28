@@ -17,6 +17,7 @@
 #include "utils/Opcodes.h"
 #include "utils/RatingIcons.h"
 #include "utils/StringUtils.h"
+#include "utils/ArgStr.h"
 
 #include <QColor>
 #include <QDateTime>
@@ -199,9 +200,9 @@ QString SearchResultRow::magnetLink(const QString& name) const
 
     // the form ED2KLink::parseMagnetLink reads back
     return QStringLiteral("magnet:?xt=urn:ed2k:%1&xl=%2&dn=%3")
-        .arg(md4.toUpper())
-        .arg(fileSize)
-        .arg(QString::fromUtf8(QUrl::toPercentEncoding(name.isEmpty() ? fileName : name)));
+        .arg(argStr(md4.toUpper()),
+             argStr(fileSize),
+             QString::fromUtf8(QUrl::toPercentEncoding(name.isEmpty() ? fileName : name)));
 }
 
 QCborMap SearchResultRow::metaRef() const

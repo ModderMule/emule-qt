@@ -7,6 +7,7 @@
 #include "app/AppContext.h"
 #include "prefs/Preferences.h"
 #include "utils/Opcodes.h"
+#include "utils/ArgStr.h"
 
 #include <QDate>
 #include <QDateTime>
@@ -203,8 +204,8 @@ QString ED2KServerLink::toLink() const
     // unresolvable server entry rather than a mis-dialed one.
     const bool isIPv6Literal = Address::fromString(address).isIPv6();
     QString out = QStringLiteral("ed2k://|server|%1|%2|/")
-        .arg(isIPv6Literal ? QStringLiteral("[%1]").arg(address) : address)
-        .arg(port);
+        .arg(argStr(isIPv6Literal ? QStringLiteral("[%1]").arg(address) : address),
+             argStr(port));
     // A dual-stack server's IPv6 goes after the closing "/": stock eMule returns the
     // server link at that "/" and never reads further (srchybrid/ED2KLink.cpp:390-395).
     if (!isIPv6Literal && Address::fromString(address6).isIPv6())
@@ -218,10 +219,9 @@ QString ED2KFileLink::toLink(const ED2KLinkFormat& fmt) const
     if (fmt.html)
         out = QStringLiteral("<a href=\"");
 
+    // one-pass arg: encoded name holds "%2C" etc., a chained .arg would eat it (#272)
     out += QStringLiteral("ed2k://|file|%1|%2|%3|")
-               .arg(urlEncode(stripInvalidFilenameChars(name)))
-               .arg(size)
-               .arg(md4str(hash.data()));
+               .arg(urlEncode(stripInvalidFilenameChars(name)), QString::number(size), md4str(hash.data()));
 
     if (fmt.partHashes && !partHashes.empty()) {
         out += QStringLiteral("p=");
@@ -825,10 +825,9 @@ std::vector<ED2KLinkSource> ownLinkSourceHints()
 
 QString ed2kFileLink(const QString& name, uint64 size, const QString& hexHash)
 {
+    // one-pass arg: encoded name holds "%2C" etc.
     return QStringLiteral("ed2k://|file|%1|%2|%3|/")
-        .arg(urlEncode(stripInvalidFilenameChars(name)))
-        .arg(size)
-        .arg(hexHash);
+        .arg(urlEncode(stripInvalidFilenameChars(name)), QString::number(size), hexHash);
 }
 
 } // namespace eMule

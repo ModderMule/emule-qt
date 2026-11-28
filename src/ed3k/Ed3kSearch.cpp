@@ -13,6 +13,7 @@
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <QPointer>
 #include <QRegularExpression>
@@ -341,7 +342,7 @@ void Ed3kSearch::startMetaSearch(uint32 searchID, SearchType type, const SearchP
     // was: auto lookup = e->search(m_session.now(), text, filter);
     auto lookup = anon ? e->anonSearch(m_session.now(), text, filter) : e->search(m_session.now(), text, filter);
     if (!lookup) {
-        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k search %1 refused (error %2)").arg(searchID).arg(int(lookup.error())); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k search %1 refused (error %2)").arg(argStr(searchID), argStr(int(lookup.error()))); });
         finishLater(searchID, tr("ed3k refused the search (no keyword of at least 3 characters?)."));
         return;
     }
@@ -357,8 +358,8 @@ void Ed3kSearch::startMetaSearch(uint32 searchID, SearchType type, const SearchP
     // was: m_lookups[*lookup] = searchID;
     m_lookups[keyed] = searchID;
     m_runs[searchID] = std::move(run);
-    logEd3kDebug([&]() -> QString { return QStringLiteral(">>> ed3k search %1: \"%2\" (lookup %3%4)").arg(searchID).arg(params.expression).arg(*lookup)
-                     .arg(anon ? QStringLiteral(", anonymous") : QString()); });
+    logEd3kDebug([&]() -> QString { return QStringLiteral(">>> ed3k search %1: \"%2\" (lookup %3%4)").arg(argStr(searchID), argStr(params.expression), argStr(*lookup),
+                          argStr(anon ? QStringLiteral(", anonymous") : QString())); });
     // from outside the pump: send it now
     QTimer::singleShot(0, this, [this] {
         if (m_session.isRunning())
@@ -449,7 +450,7 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, 
             ++added;
         }
     }
-    logEd3kDebug([&]() -> QString { return QStringLiteral("<<< ed3k search %1: %2 file(s) from %3 node(s)").arg(searchID).arg(added).arg(found->nodes); });
+    logEd3kDebug([&]() -> QString { return QStringLiteral("<<< ed3k search %1: %2 file(s) from %3 node(s)").arg(argStr(searchID), argStr(added), argStr(found->nodes)); });
     // the lookup is over; reported from the event loop, not inside the pump
     m_lookups.erase(it);
     if (run != m_runs.end())
@@ -505,7 +506,7 @@ void Ed3kSearch::onLiveFound(uint32 searchID, Run& run, const ::ed3k::event::Kad
                 self->onChannelFile(searchID, std::move(*held), file);
         });
     }
-    logEd3kDebug([&]() -> QString { return QStringLiteral("<<< ed3k channel search %1: %2 channel file(s) from %3 node(s)").arg(searchID).arg(candidates).arg(found.nodes); });
+    logEd3kDebug([&]() -> QString { return QStringLiteral("<<< ed3k channel search %1: %2 channel file(s) from %3 node(s)").arg(argStr(searchID), argStr(candidates), argStr(found.nodes)); });
     // the run may be gone (a fetch answered at once and it ended): looked up again
     const auto again = m_runs.find(searchID);
     if (again == m_runs.end())
@@ -560,7 +561,7 @@ void Ed3kSearch::onChannelFile(uint32 searchID, std::unique_ptr<SearchFile> row,
         applyChannel(*row, &*info);
         addResult(searchID, std::move(row));
     } else {
-        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k channel search %1: %2 is no channel file").arg(searchID).arg(row->fileName()); });
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k channel search %1: %2 is no channel file").arg(argStr(searchID), argStr(row->fileName())); });
     }
     if (it->second.answered && it->second.fetching <= 0) {
         it->second.timeout->stop();

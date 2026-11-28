@@ -23,6 +23,7 @@
 #include "transfer/UploadQueue.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QHostAddress>
@@ -511,10 +512,10 @@ void HttpCacheManager::publish(const Candidate& candidate, const HttpCacheServer
         reachablePeerCount(candidate, reachOfUrl(server.baseUrl), !thePrefs.filterLANIPs());
 
     logDebug(QStringLiteral("HTTP Cache: publishing part %1 of %2 to %3 for %4 peers (%5 can reach it)")
-                .arg(candidate.partIndex)
-                .arg(candidate.file->fileName(), QUrl(server.baseUrl).host())
-                .arg(candidate.peers.size())
-                .arg(reachable));
+                .arg(argStr(candidate.partIndex),
+                     argStr(candidate.file->fileName()), argStr(QUrl(server.baseUrl).host()),
+                     argStr(candidate.peers.size()),
+                     argStr(reachable)));
 
     m_publishing.insert(key, true);
     ++m_activePublishes;
@@ -655,11 +656,11 @@ void HttpCacheManager::notePublishFailure(const QString& key, const QString& ser
 
     logWarning(QStringLiteral("HTTP Cache: publish to %1 failed: %2 — pausing that server for "
                               "%3 min (failure %4); %5")
-                   .arg(host, result.error)
-                   .arg(static_cast<double>(backoff.seconds) / 60.0, 0, 'g', 2)
-                   .arg(health.failures)
-                   .arg(left == 0 ? QStringLiteral("no cache server is usable right now")
-                                  : QStringLiteral("%1 still in the rotation").arg(left)));
+                   .arg(argStr(host), argStr(result.error),
+                        argFmt(static_cast<double>(backoff.seconds) / 60.0, 0, 'g', 2),
+                        argStr(health.failures),
+                        argStr(left == 0 ? QStringLiteral("no cache server is usable right now")
+                                  : QStringLiteral("%1 still in the rotation").arg(left))));
 }
 
 bool HttpCacheManager::serverIsCoolingDown(const QString& baseUrl) const
@@ -772,9 +773,9 @@ void HttpCacheManager::handleReport(UpDownClient* sender, const HttpCacheReport&
 
     if (report.result == HttpCacheResult::Ok) {
         logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: %1 fetched part %2 (%3 bytes)")
-                     .arg(sender ? sender->userName() : QString())
-                     .arg(report.partIndex)
-                     .arg(report.bytesFetched); });
+                     .arg(argStr(sender ? sender->userName() : QString()),
+                          argStr(report.partIndex),
+                          argStr(report.bytesFetched)); });
         return;
     }
 

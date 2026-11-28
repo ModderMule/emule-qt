@@ -50,6 +50,7 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "app/SkinIcons.h"
+#include "utils/ArgStr.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -3576,7 +3577,7 @@ void TransferPanel::dumpEd3kMenus()
         onDownloadContextMenu(QPoint(-1, -1));
         m_downloadMenu->hide();
         logInfo(QStringLiteral("ed3k menu Transfers %1 a4af=%2 limit=%3: %4")
-                    .arg(name).arg(d->a4afSrcCount).arg(limit).arg(MenuDump::text(m_downloadMenu)));
+                    .arg(argStr(name), argStr(d->a4afSrcCount), argStr(limit), argStr(MenuDump::text(m_downloadMenu))));
         if (MenuDump::level() < 2 || acted)
             continue;
         acted = true;

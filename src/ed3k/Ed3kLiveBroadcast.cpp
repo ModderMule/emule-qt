@@ -10,6 +10,7 @@
 #include "Ed3kStore.h"
 
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -225,7 +226,7 @@ std::expected<Ed3kLiveBroadcast::Info, QString> Ed3kLiveBroadcast::start(const O
         b.resume = resumeOf(*saved, now.unixS);
     auto stream = e->liveBroadcast(now, b, key);
     if (!stream && b.resume) {
-        logEd3kWarning(QStringLiteral("ed3k: live channel %1 not resumed (error %2): a new broadcast").arg(title).arg(int(stream.error())));
+        logEd3kWarning(QStringLiteral("ed3k: live channel %1 not resumed (error %2): a new broadcast").arg(argStr(title), argStr(int(stream.error()))));
         b.resume.reset();
         stream = e->liveBroadcast(now, b, key);
     }

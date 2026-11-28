@@ -9,6 +9,7 @@
 #include "prefs/Preferences.h"
 #include "utils/FileAssociation.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QCoreApplication>
 
@@ -54,7 +55,7 @@ void registerEd2kUrlScheme()
         if (status == noErr)
             logInfo(QStringLiteral("Registered as %1: handler").arg(name));
         else
-            logWarning(QStringLiteral("Failed to register %1: handler (OSStatus %2)").arg(name).arg(status));
+            logWarning(QStringLiteral("Failed to register %1: handler (OSStatus %2)").arg(argStr(name), argStr(status)));
     }
 }
 

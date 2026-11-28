@@ -7,6 +7,7 @@
 #include "archive/ArchiveReader.h"
 #include "archive/ExternalUnpacker.h"
 #include "post/UsenetUnpacker.h"
+#include "utils/ArgStr.h"
 
 #include <QFileInfo>
 #include <QTimer>
@@ -334,7 +335,7 @@ bool Ed3kArchiveContents::publishListing(const ArchiveListing& listing)
             logDebug([&]() -> QString { return QStringLiteral("contents record of %1 not published (error %2)").arg(listing.firstName, errorName(ok.error())); });
     }
     ++m_publishedCount;
-    logInfo(QStringLiteral("contents of %1 published: %2 file(s)").arg(listing.firstName).arg(listing.entries.size()));
+    logInfo(QStringLiteral("contents of %1 published: %2 file(s)").arg(argStr(listing.firstName), argStr(listing.entries.size())));
     pumpSession();
     return true;
 }
@@ -359,7 +360,7 @@ std::optional<ffi::ContentsCheck> Ed3kArchiveContents::checkListing(const Archiv
     static constexpr std::array<const char*, 5> kWhat{"match", "manifest", "entry differs", "entry not listed", "member missing"};
     const char* what = check->kind < kWhat.size() ? kWhat.at(check->kind) : "mismatch";
     logWarning(QStringLiteral("contents of %1 false (%2, #%3): listing dropped, %4 publisher(s) ignored from now on")
-                   .arg(listing.firstName, QLatin1String(what)).arg(check->index).arg(found.publishers.size()));
+                   .arg(argStr(listing.firstName), QLatin1String(what), argStr(check->index), argStr(found.publishers.size())));
     // was: aliasSearchBlame(now, search, root): the b3 search ended long before the unpack
     if (auto* e = m_session.engine(); e && !found.publishers.empty())
         if (auto ok = e->aliasBan(m_session.now(), found.publishers); !ok)

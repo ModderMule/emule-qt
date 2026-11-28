@@ -8,6 +8,7 @@
 #include "kademlia/KadSearchManager.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 #include <algorithm>
 #include <iterator>
@@ -151,7 +152,7 @@ void PointerRoute::process()
             continue;
         }
         logKad(QStringLiteral("Kad: retrying buddy pointer for %1, %2 held record(s)")
-                   .arg(sourceID.toHexString()).arg(held.size()));
+                   .arg(argStr(sourceID.toHexString()), argStr(held.size())));
     }
 }
 
@@ -300,7 +301,7 @@ void PointerRoute::onLookupResult(const UInt128& sourceID, std::optional<Search:
     e.waiting.clear();
     if (e.candidates.empty())
         logKad(QStringLiteral("Kad: no buddy pointer for %1, %2 waiting record(s), retry in %3 s")
-                   .arg(sourceID.toHexString()).arg(waiting.size()).arg(kMissCacheSecs));
+                   .arg(argStr(sourceID.toHexString()), argStr(waiting.size()), argStr(kMissCacheSecs)));
     for (const Waiting& w : waiting)
         w.waiter(std::nullopt);
 }

@@ -1,4 +1,5 @@
 #include "Ed3kFfmpegTool.h"
+#include "utils/ArgStr.h"
 
 #ifdef EMULE_HAVE_HOSTER_JD
 
@@ -224,8 +225,8 @@ void Ed3kFfmpegTool::onManifest(const QByteArray& json)
     connect(m_dl.get(), &HttpStreamDownload::finished, this, &Ed3kFfmpegTool::onZipDone);
     m_zip = QDir(m_baseDir).filePath(QStringLiteral("ffmpeg-download.zip"));
     logHoster(QStringLiteral("hoster: downloading ffmpeg %1 (%2 MB)")
-                  .arg(m_version.isEmpty() ? QStringLiteral("?") : m_version)
-                  .arg(d.size / (1024 * 1024)));
+                  .arg(argStr(m_version.isEmpty() ? QStringLiteral("?") : m_version),
+                       argStr(d.size / (1024 * 1024))));
     if (!m_dl->start(QUrl(d.url), m_zip, {kMaxZipBytes, d.sha256, d.size})) {
         const QString err = m_dl->errorString();
         m_dl.reset();

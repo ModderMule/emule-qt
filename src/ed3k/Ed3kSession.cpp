@@ -16,6 +16,7 @@
 #include "prefs/Preferences.h"
 #include "utils/DebugUtils.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -842,7 +843,7 @@ void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
         // packmule logs the batch itself ("sources published <target>: N nodes, x of y along")
     } else if (const auto* kp = std::get_if<e::KeywordsPublished>(&ev)) {
         logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: keywords of %1 file(s) published: %2 stored, %3 full, %4 rejected, %5 unanswered")
-                            .arg(kp->files).arg(kp->stored).arg(kp->full).arg(kp->rejected).arg(kp->unanswered); });
+                            .arg(argStr(kp->files), argStr(kp->stored), argStr(kp->full), argStr(kp->rejected), argStr(kp->unanswered)); });
     } else if (const auto* n = std::get_if<e::NatClass>(&ev)) {
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: IPv%1 class %2").arg(n->family).arg(n->natClass); });
         emit statusChanged();
@@ -1007,12 +1008,12 @@ void Ed3kSession::applyDeclined()
     m_declineDropped = *dropped;
     if (!m_decline.invalid.isEmpty())
         logEd3kWarning(QStringLiteral("ed3k: %1 line(s) of %2 skipped: %3")
-                           .arg(m_decline.invalid.size()).arg(QString::fromLatin1(kDeclineFile), m_decline.invalid.join(QStringLiteral("; "))));
+                           .arg(argStr(m_decline.invalid.size()), QString::fromLatin1(kDeclineFile), argStr(m_decline.invalid.join(QStringLiteral("; ")))));
     if (!m_applied.isEmpty() || *dropped > 0)
         logEd3k(QStringLiteral("ed3k: declining %1 root(s), %2 eD2K hash(es), %3 publisher key(s), %4 kind(s), %5 keyword(s); "
                                "%6 held record(s) dropped")
-                    .arg(m_applied.roots.size()).arg(m_applied.ed2k.size()).arg(m_applied.keys.size())
-                    .arg(m_applied.kinds.size()).arg(m_applied.keywords.size()).arg(*dropped));
+                    .arg(argStr(m_applied.roots.size()), argStr(m_applied.ed2k.size()), argStr(m_applied.keys.size()),
+                         argStr(m_applied.kinds.size()), argStr(m_applied.keywords.size()), argStr(*dropped)));
     // joins withdraw or publish again, search rows judged again
     if (changed)
         emit declinedChanged();

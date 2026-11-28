@@ -18,6 +18,7 @@
 #include "app/SkinIcons.h"
 #include "app/UiState.h"
 #include "utils/Log.h"
+#include "utils/ArgStr.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -908,7 +909,7 @@ void IrcPanel::selfTestRoomFiles(const QString& dir)
                 grab(dlg, QStringLiteral("form_media_off"));
                 media->setChecked(true);
                 files->setChecked(true);
-                logInfo(QStringLiteral("selftest form media on: files enabled %1 checked %2").arg(files->isEnabled()).arg(files->isChecked()));
+                logInfo(QStringLiteral("selftest form media on: files enabled %1 checked %2").arg(argStr(files->isEnabled()), argStr(files->isChecked())));
                 grab(dlg, QStringLiteral("form_files_on"));
                 dlg->accept();
                 continue;
@@ -943,7 +944,7 @@ void IrcPanel::selfTestRoomFiles(const QString& dir)
                 if (state == Ed3kRoomMediaView::Fetching || st->clicked.contains(root + QString::number(state)))
                     continue;
                 st->clicked.insert(root + QString::number(state));
-                logInfo(QStringLiteral("selftest click %1 state %2").arg(p.media.name).arg(state));
+                logInfo(QStringLiteral("selftest click %1 state %2").arg(argStr(p.media.name), argStr(state)));
                 // queued: the question box runs its own loop
                 QTimer::singleShot(0, this, [tab = QPointer<Ed3kRoomTab>(tab), root] {
                     if (tab)

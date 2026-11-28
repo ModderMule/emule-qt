@@ -2,6 +2,7 @@
 /// @brief Torrent creation jobs (#191) — see BtCreateBridge.h.
 
 #include "BtCreateBridge.h"
+#include "utils/ArgStr.h"
 
 #include "BtBridge.h"
 #include "app/AppConfig.h"
@@ -119,7 +120,7 @@ void finish(int jobId, const bt::BtCreateResult& r)
         dropOldResults();
         s_done.insert(jobId, Done{r.data, r.name, QDateTime::currentMSecsSinceEpoch()});
         logInfo(QStringLiteral("BitTorrent: created torrent \"%1\" (%2 pieces of %3 KiB)")
-                    .arg(r.name).arg(r.pieces).arg(r.pieceSize / 1024));
+                    .arg(argStr(r.name), argStr(r.pieces), argStr(r.pieceSize / 1024)));
         if (job.seed) {
             bt::BtSession* ses = BtBridge::session();
             if (!ses || !ses->isRunning()) {

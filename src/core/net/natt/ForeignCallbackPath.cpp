@@ -9,6 +9,7 @@
 #include "server/Server.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
+#include "utils/ArgStr.h"
 
 namespace eMule::natt {
 
@@ -59,7 +60,7 @@ void ForeignCallbackPath::repeat(Attempt& attempt)
     const ForeignServer fs = env().foreignServer(attempt.peer.serverAddress, attempt.peer.serverPort, false);
     if (fs.state == ForeignServer::State::No) {
         hub().failOrNext(attempt, QStringLiteral("server %1:%2 has no foreign callback")
-                                      .arg(attempt.peer.serverAddress.toString()).arg(attempt.peer.serverPort));
+                                      .arg(argStr(attempt.peer.serverAddress.toString()), argStr(attempt.peer.serverPort)));
         return;
     }
     if (repeatDue(attempt, kRepeatMs, kMaxForeignRequests))
@@ -85,8 +86,8 @@ void ForeignCallbackPath::onNotice(const Endpoint& from, const uint8* data, uint
         return;
     }
     log(QStringLiteral("0xA7 from %1: id %2 at %3 flags 0x%4")
-            .arg(from.toString()).arg(n->peer.clientID).arg(n->udp.toString())
-            .arg(n->flags, 2, 16, QLatin1Char('0')));
+            .arg(argStr(from.toString()), argStr(n->peer.clientID), argStr(n->udp.toString()),
+                 argFmt(n->flags, 2, 16, QLatin1Char('0'))));
     Attempt* mine = hub().findAttempt([&](const Attempt& a) {
         return a.path == kind() && a.role == Role::Requester && a.peer.clientID == n->peer.clientID
             && a.peer.serverAddress == from.address();
