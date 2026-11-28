@@ -56,6 +56,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libglib2.0-dev \
         libdbus-1-dev \
         libpulse-dev \
+        libva-dev \
         # X11 runtime libs needed by Qt plugins (linuxdeploy bundling)
         libxrandr-dev \
         libxrender-dev \

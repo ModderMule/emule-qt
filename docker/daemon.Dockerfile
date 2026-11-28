@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libglib2.0-dev \
         libdbus-1-dev \
         libpulse-dev \
+        libva-dev \
         libfontconfig1-dev \
         libfreetype6-dev \
         libegl-dev \
@@ -77,6 +78,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libglib2.0-0t64 \
         libdbus-1-3 \
         libpulse0 \
+        libva2 \
+        libva-drm2 \
         libfontconfig1 \
         libfreetype6 \
         libicu76 \
