@@ -105,6 +105,7 @@ jobs:
           aqt list-qt windows desktop --modules 6.12.1 win64_msvc2022_64
 
           Write-Host "=== Installing Qt base + modules ==="
+          # scripts/aqt-win.py: aqt 3.3.0 misses Qt's per-arch Windows repo folders
           # py7zr's parallel workers race on the shared sbom/ dir ("Bad7zFile:
           # Specified path is bad") -> extract with 7z.exe, retry from scratch
           $aqtArgs = @("install-qt", "windows", "desktop", "6.12.1", "win64_msvc2022_64",
@@ -115,7 +116,7 @@ jobs:
             # parallel 7z.exe runs race on creating the shared output dir
             # ("Cannot create output directory") -> create it up front
             New-Item -ItemType Directory -Force "$qtDir\6.12.1\msvc2022_64" | Out-Null
-            aqt @aqtArgs
+            python scripts/aqt-win.py @aqtArgs
             if ($LASTEXITCODE -eq 0) { break }
             if ($try -eq 3) { Write-Host "ERROR: aqt install-qt failed 3 times" -ForegroundColor Red; exit 1 }
             Write-Host "aqt failed (exit $LASTEXITCODE), retry $try/2"
