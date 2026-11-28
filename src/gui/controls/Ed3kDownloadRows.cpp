@@ -40,9 +40,14 @@ DownloadRow ed3kDownloadRow(const QCborMap& m)
     row.ed3kWebDropped = int(m.value(QStringLiteral("webDropped")).toInteger());
     row.ed3kNetwork = m.value(QStringLiteral("network")).toString();   // single transfer mode
     row.ed3kJoined = m.value(QStringLiteral("joined")).toBool(true);
-    for (const auto& a : m.value(QStringLiteral("aliases")).toArray())
+    for (const auto& a : m.value(QStringLiteral("aliases")).toArray()) {
         if (const QString text = ed3kAliasText(a.toMap()); !text.isEmpty())
             row.ed3kAliases << text;
+        // Networks column (#261)
+        if (const QString net = a.toMap().value(QStringLiteral("network")).toString();
+            !net.isEmpty() && !row.ed3kAliasNets.contains(net))
+            row.ed3kAliasNets << net;
+    }
     row.previewPrio = m.value(QStringLiteral("previewPrio")).toBool();
     row.isPreviewPossible = m.value(QStringLiteral("isPreviewPossible")).toBool();
     row.fileType = getFileTypeByName(row.fileName);

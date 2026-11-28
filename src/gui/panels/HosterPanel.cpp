@@ -8,6 +8,7 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "controls/FilterEdit.h"
 #include "controls/StatusFilterBar.h"
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentProgressDelegate.h"
@@ -402,6 +403,11 @@ HosterPanel::HosterPanel(QWidget* parent)
     auto* dlcBtn = new QPushButton(menuIcon("DLC.ico"), tr("Open DLC..."), this);
     dlcBtn->setToolTip(tr("Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here"));
     bar->addWidget(dlcBtn);
+    // #282: filter box, "Show more controls" only
+    m_textFilter = new FilterEdit(this);
+    m_textFilter->setFixedWidth(200);
+    m_textFilter->setShown(thePrefs.showExtControls());
+    bar->addWidget(m_textFilter);
     layout->addLayout(bar);
     m_filterBar = new StatusFilterBar(filterNames(), theUiState.hosterFilter(), this);
     m_filterBar->layout()->setContentsMargins(0, 0, 0, 0);
@@ -426,6 +432,9 @@ HosterPanel::HosterPanel(QWidget* parent)
     m_tree->bindColumns(QStringLiteral("hosterList"), {320});
     // After the restore: an older saved state pinned the name column to Stretch
     m_tree->header()->setSectionResizeMode(QHeaderView::Interactive);
+    m_textFilter->setIgnoredColumns({ColProgress});   // bar only
+    m_textFilter->setHeader(m_tree->header());
+    connect(m_textFilter, &FilterEdit::filterChanged, this, &HosterPanel::setTextFilter);
     m_tree->header()->setStretchLastSection(true);
     // favicon + server flag before the hoster, as in Options; every host on a package row
     CountryFlags::bindFlagColumn(m_tree, ColHoster);
@@ -532,6 +541,7 @@ void HosterPanel::showLinkGrabber()
 void HosterPanel::applyDisplayOptions()
 {
     m_filterBar->setRowOn(theUiState.showHosterStatusFilter());
+    m_textFilter->setShown(thePrefs.showExtControls());
 }
 
 void HosterPanel::addLinks(const QStringList& links, const QString& package)
@@ -1631,6 +1641,18 @@ void HosterPanel::setFilter(int filter)
 {
     m_filter = std::clamp(filter, 0, int(FilterCount) - 1);
     theUiState.setHosterFilter(m_filterBar->current());
+    applyAllFilters();
+}
+
+void HosterPanel::setTextFilter(const QStringList& tokens, int column)
+{
+    m_textTokens = tokens;
+    m_textColumn = column;
+    applyAllFilters();
+}
+
+void HosterPanel::applyAllFilters()
+{
     for (QTreeWidgetItem* row : std::as_const(m_rows))
         applyFilter(row);
     for (QTreeWidgetItem* row : std::as_const(m_packages))
@@ -1639,7 +1661,15 @@ void HosterPanel::setFilter(int filter)
 
 void HosterPanel::applyFilter(QTreeWidgetItem* row)
 {
-    const bool hide = !matchesFilter(m_items.value(row->data(ColName, kItemIdRole).toLongLong()), m_filter);
+    // A package name matches all its items
+    const auto textMatches = [&] {
+        if (FilterEdit::matches(m_textTokens, row->text(m_textColumn)))
+            return true;
+        const QTreeWidgetItem* pkg = row->parent();
+        return m_textColumn == ColName && pkg && FilterEdit::matches(m_textTokens, pkg->text(ColName));
+    };
+    const bool hide = !matchesFilter(m_items.value(row->data(ColName, kItemIdRole).toLongLong()), m_filter)
+                      || (!m_textTokens.isEmpty() && !textMatches());
     if (hide)
         row->setSelected(false);
     row->setHidden(hide);

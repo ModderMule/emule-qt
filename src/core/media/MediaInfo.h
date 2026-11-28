@@ -157,7 +157,7 @@ inline constexpr qint64 kMediaSniffBytes = 12;
 inline constexpr qint64 kMediaReadBudget = 2 * 1024 * 1024;
 /// Bumped whenever the extractor learns something: files stamped with an older
 /// value are read again.
-inline constexpr uint32 kMediaExtractVersion = 2;   // 2: misnamed containers are read
+inline constexpr uint32 kMediaExtractVersion = 3;   // 2: misnamed containers are read, 3: Ogg video
 
 /// True for an extension the gate holds to a container signature.
 [[nodiscard]] bool isGatedMediaExtension(const QString& fileName);

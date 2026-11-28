@@ -9,6 +9,7 @@
 #include "utils/StringUtils.h"
 #include "app/SkinIcons.h"
 #include "utils/ArgStr.h"
+#include "utils/ClientIcons.h"
 
 #include <QColor>
 #include <QCoreApplication>
@@ -24,6 +25,19 @@
 namespace eMule {
 
 namespace {
+
+/// #261: transports a torrent may use (BtI2pMode), then ed3k when joined
+QList<TransferNet> torrentNetworks(const TorrentRow& r)
+{
+    QList<TransferNet> nets;
+    if (r.i2pMode != 1)
+        nets << TransferNet::Public;
+    if (r.i2pMode != 0)
+        nets << TransferNet::I2p;
+    if (r.ed3kJoined)
+        nets << TransferNet::Ed3k;
+    return nets;
+}
 
 /// Status sort order: busy first, then waiting, then done, then broken.
 int stateRank(TorrentState s)
@@ -148,6 +162,8 @@ TorrentRow torrentRowFromCbor(const QCborMap& m)
     r.hasMetadata = flag("hasMetadata");
     r.isPrivate = flag("private");
     r.i2p = flag("i2p");
+    r.i2pMode = i32("i2pMode", r.i2p ? 1 : 0);   // older core: the flag alone
+    r.ed3kJoined = flag("ed3kJoined");
     r.addedAt = i64("addedAt");
     r.completedAt = i64("completedAt");
     r.seedingSeconds = i64("seedingSeconds");
@@ -263,6 +279,8 @@ QVariant TorrentListModel::data(const QModelIndex& index, int role) const
             static const QIcon folder = skinIcon(QStringLiteral(":/icons/FolderOpen.ico"));
             return r->numFiles > 1 ? folder : fileTypeIconForName(r->name);
         }
+        if (index.column() == ColNetworks)
+            return transferNetsIcon(torrentNetworks(*r));
         return {};
     case Qt::TextAlignmentRole:
         switch (index.column()) {
@@ -286,10 +304,12 @@ QVariant TorrentListModel::data(const QModelIndex& index, int role) const
                 tip += QLatin1Char('\n') + r->savePath;
             if (r->isPrivate)
                 tip += QLatin1Char('\n') + tr("Private torrent (no DHT, PEX or LSD)");
-            if (r->i2p)
+            if (r->i2pMode == 1)
                 tip += QLatin1Char('\n') + tr("I2P only");
             return tip;
         }
+        if (index.column() == ColNetworks)
+            return transferNetsText(torrentNetworks(*r));
         if (index.column() == ColStatus && !r->error.isEmpty())
             return r->error;
         if (index.column() == ColProgress) {
@@ -324,6 +344,7 @@ QVariant TorrentListModel::headerData(int section, Qt::Orientation orientation, 
     case ColUploaded:  return tr("Uploaded");
     case ColSessionUploaded: return tr("Uploaded (Session)");
     case ColDownloaded: return tr("Downloaded");
+    case ColNetworks:  return tr("Networks");
     default:           return {};
     }
 }
@@ -559,6 +580,7 @@ QVariant TorrentListModel::sortData(const TorrentRow& r, int column) const
     case ColUploaded:        return QVariant::fromValue(r.uploaded);
     case ColSessionUploaded: return QVariant::fromValue(r.sessionUploaded);
     case ColDownloaded:      return QVariant::fromValue(r.downloaded);
+    case ColNetworks:        return transferNetsText(torrentNetworks(r));
     default:           return {};
     }
 }

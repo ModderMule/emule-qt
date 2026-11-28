@@ -28,6 +28,7 @@ namespace eMule {
 
 class CategoryFilterProxy;
 class CategoryTabBar;
+class FilterEdit;
 class IpcClient;
 class PanelPoller;
 class UsenetArchiveEntryDialog;
@@ -131,8 +132,8 @@ private:
     void updateCategoryTabInfo();
 
 public:
-    /// Re-read the options this panel acts on (category tab info).
-    void applyDisplayOptions() { updateCategoryTabInfo(); }
+    /// Re-read the options this panel acts on (category tab info, filter box).
+    void applyDisplayOptions();
 
 private:
     void sendSetCategory(const QStringList& ids, int category);
@@ -207,6 +208,7 @@ private:
     CategoryFilterProxy* m_categoryProxy = nullptr;
 
     CategoryTabBar* m_categoryTabBar = nullptr;
+    FilterEdit* m_textFilter = nullptr;   ///< #282: ext controls only
     QLabel* m_summary = nullptr;
 
     QAction* m_addAction = nullptr;

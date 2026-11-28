@@ -328,6 +328,82 @@ QIcon iconPair(const QIcon& first, const QIcon& second)
     return icon;
 }
 
+std::optional<TransferNet> transferNetOf(Ed3kJoin network)
+{
+    switch (network) {
+    case Ed3kJoin::Torrent: return TransferNet::Torrent;
+    case Ed3kJoin::Usenet:  return TransferNet::Usenet;
+    case Ed3kJoin::Hoster:  return TransferNet::Hoster;
+    case Ed3kJoin::None:    break;
+    }
+    return std::nullopt;
+}
+
+QIcon transferNetsIcon(const QList<TransferNet>& nets)
+{
+    if (nets.isEmpty())
+        return {};
+    static QHash<QString, QIcon> cache;
+    static quint64 skinSeen = 0;
+    if (SkinIcons::instance().changedSince(skinSeen))
+        cache.clear();
+    QString key;
+    for (const TransferNet n : nets)
+        key += QChar(u'a' + static_cast<int>(n));
+    if (const auto it = cache.constFind(key); it != cache.cend())
+        return *it;
+
+    const auto iconOf = [](TransferNet n) {
+        switch (n) {
+        case TransferNet::Ed2k:     return skinIcon(QStringLiteral(":/icons/ClientCompatible.ico"));
+        case TransferNet::Ed3k:     return ed3kClientIcon();
+        case TransferNet::Ed3kAnon: return ed3kClientIcon(true);
+        case TransferNet::Torrent:  return networkClientIcon(Ed3kJoin::Torrent);
+        case TransferNet::Usenet:   return networkClientIcon(Ed3kJoin::Usenet);
+        case TransferNet::Hoster:   return networkClientIcon(Ed3kJoin::Hoster);
+        case TransferNet::Public:   return skinIcon(QStringLiteral(":/icons/Global.ico"));
+        case TransferNet::I2p:      return i2pIcon();
+        }
+        return QIcon();
+    };
+    constexpr int kSize = 16;
+    constexpr int kStep = 18;   // 2 px apart
+    constexpr int kDpr = 2;     // no widget here; Qt scales per screen
+    const int width = kSize + static_cast<int>(nets.size() - 1) * kStep;
+    QPixmap pm(QSize(width, kSize) * kDpr);
+    pm.setDevicePixelRatio(kDpr);
+    pm.fill(Qt::transparent);
+    {
+        QPainter p(&pm);
+        int x = 0;
+        for (const TransferNet n : nets) {
+            iconOf(n).paint(&p, QRect(x, 0, kSize, kSize));
+            x += kStep;
+        }
+    }
+    QIcon icon(pm);
+    cache.insert(key, icon);
+    return icon;
+}
+
+QString transferNetsText(const QList<TransferNet>& nets)
+{
+    QStringList names;
+    for (const TransferNet n : nets) {
+        switch (n) {
+        case TransferNet::Ed2k:     names << QStringLiteral("eD2K"); break;
+        case TransferNet::Ed3k:     names << QStringLiteral("ed3k"); break;
+        case TransferNet::Ed3kAnon: names << QCoreApplication::translate("ClientIcons", "ed3k (anonymous key)"); break;
+        case TransferNet::Torrent:  names << networkName(Ed3kJoin::Torrent); break;
+        case TransferNet::Usenet:   names << networkName(Ed3kJoin::Usenet); break;
+        case TransferNet::Hoster:   names << networkName(Ed3kJoin::Hoster); break;
+        case TransferNet::Public:   names << QCoreApplication::translate("ClientIcons", "Public"); break;
+        case TransferNet::I2p:      names << QStringLiteral("I2P"); break;
+        }
+    }
+    return names.join(QStringLiteral(", "));
+}
+
 Ed3kJobSource Ed3kJobSource::fromCbor(const QCborMap& m)
 {
     Ed3kJobSource s;

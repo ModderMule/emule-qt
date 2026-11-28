@@ -89,7 +89,11 @@ void KadBuddyNatPath::sendEnvelope(Attempt& attempt)
     out[32] = OP_RENDEZVOUS;
     const Hash16 ours = env().ourHash();
     std::memcpy(out + 33, ours.data(), 16);
-    out[49] = static_cast<uint8>(env().ourConnectOptions() | CONNECT_OPT_NATT_ENDPOINT_HINT);
+    // transports in the opts too (eMuleAI): served nodes reading only the bits see QUIC, tail or not
+    uint8 opts = env().ourConnectOptions() | CONNECT_OPT_NATT_ENDPOINT_HINT;
+    if (env().quicAvailable())
+        opts |= CONNECT_OPT_NATT_QUIC;
+    out[49] = opts;
     std::memcpy(out + 50, attempt.peer.fileHash.data(), 16);
     const uint32 publicIP = env().ourPublicIPv4();
     pokeUInt32(out + 66, publicIP);            // self-reported; the buddy prefers what it sees

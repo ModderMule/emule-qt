@@ -7,7 +7,10 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QIcon>
+#include <QList>
 #include <QString>
+
+#include <optional>
 
 namespace eMule {
 
@@ -84,5 +87,15 @@ enum class SourceStateIcon { Downloading, OnQueue, Connecting, NoNeededOrFull, U
 
 /// Two 16 px icons side by side, 20 px apart as MFC draws them.
 [[nodiscard]] QIcon iconPair(const QIcon& first, const QIcon& second);
+
+/// One network a transfer runs on (Networks column of Transfers and Torrents, #261).
+/// Public/I2p: the transports a torrent may use; Ed3kAnon: ed3k under our anonymous key.
+enum class TransferNet : quint8 { Ed2k, Ed3k, Ed3kAnon, Torrent, Usenet, Hoster, Public, I2p };
+/// The network of a torrent/usenet/hoster job; None: nullopt.
+[[nodiscard]] std::optional<TransferNet> transferNetOf(Ed3kJoin network);
+/// @p nets side by side, 16 px each (cached). Empty: a null icon.
+[[nodiscard]] QIcon transferNetsIcon(const QList<TransferNet>& nets);
+/// "eD2K, ed3k": tooltip and sort text of the same.
+[[nodiscard]] QString transferNetsText(const QList<TransferNet>& nets);
 
 } // namespace eMule

@@ -9,6 +9,7 @@
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
+#include "controls/FilterEdit.h"
 #include "controls/StatusFilterBar.h"
 #include "controls/TorrentFilterProxy.h"
 #include "controls/TorrentListModel.h"
@@ -22,6 +23,7 @@
 #include "dialogs/TorrentDetailsDialog.h"
 #include "prefs/Preferences.h"
 #include "utils/Clipboard.h"
+#include "utils/CountryFlags.h"
 #include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
 #include "utils/Log.h"
@@ -274,6 +276,7 @@ bool TorrentPanel::engineRunning() const
 void TorrentPanel::applyDisplayOptions()
 {
     m_filterBar->setRowOn(theUiState.showTorrentStatusFilter());
+    m_textFilter->setShown(thePrefs.showExtControls());
     updateSummary();   // DHT v4/v6 split follows ext controls
 }
 
@@ -363,7 +366,16 @@ void TorrentPanel::setupUi()
     m_pasteMagnetAction = new QAction(menuIcon("eD2kLinkPaste.ico"), tr("Paste Magnet Links"), this);
     connect(m_pasteMagnetAction, &QAction::triggered, this, &TorrentPanel::onPasteMagnets);
 
-    layout->addWidget(toolbar);
+    // #282: filter box right of the toolbar, "Show more controls" only
+    auto* toolRow = new QHBoxLayout;
+    toolRow->setContentsMargins(0, 0, 0, 0);
+    toolRow->setSpacing(2);
+    toolRow->addWidget(toolbar, 1);
+    m_textFilter = new FilterEdit(this);
+    m_textFilter->setFixedWidth(200);
+    m_textFilter->setShown(thePrefs.showExtControls());
+    toolRow->addWidget(m_textFilter);
+    layout->addLayout(toolRow);
     layout->addWidget(createFilterBar());
 
     m_splitter = new QSplitter(Qt::Vertical, this);
@@ -381,8 +393,17 @@ void TorrentPanel::setupUi()
     m_proxy->setDynamicSortFilter(true);
 
     m_view->setModel(m_proxy);
+    m_textFilter->setIgnoredColumns({TorrentListModel::ColNetworks});   // icons only
+    m_textFilter->setHeader(m_view->header());
+    connect(m_textFilter, &FilterEdit::filterChanged, this, [this](const QStringList& tokens, int column) {
+        m_proxy->setTextFilter(tokens, column);
+        updateSummary();
+        onSelectionChanged();
+    });
     m_view->setItemDelegateForColumn(TorrentListModel::ColProgress,
                                      new TorrentProgressDelegate(m_view));
+    // #261: several network icons in one cell
+    m_view->setItemDelegateForColumn(TorrentListModel::ColNetworks, new FlagDecorationDelegate(m_view));
     m_view->setRootIsDecorated(true);   // multi-file torrents list their files
     m_view->setUniformRowHeights(true);
     m_view->setAlternatingRowColors(true);
@@ -398,11 +419,18 @@ void TorrentPanel::setupUi()
                               TorrentListModel::ColPeers, TorrentListModel::ColRatio,
                               TorrentListModel::ColAdded, TorrentListModel::ColUploaded,
                               TorrentListModel::ColSessionUploaded, TorrentListModel::ColDownloaded});
+    // #261: a layout saved before Networks existed (or none) gets it next to the name
+    const bool placeNetworks = theUiState.headerStateSectionCount(QStringLiteral("torrentList"))
+                               <= TorrentListModel::ColNetworks;
     // After setModel(): a header without sections cannot take a restore
     view->bindColumns(QStringLiteral("torrentList"),
-                      {260, 80, 80, 150, 110, 80, 80, 75, 75, 50, 90, 120, 90, 90, 90},
+                      {260, 80, 80, 150, 110, 80, 80, 75, 75, 50, 90, 120, 90, 90, 90, 60},
                       {TorrentListModel::ColUploaded, TorrentListModel::ColSessionUploaded,
                        TorrentListModel::ColDownloaded});
+    if (placeNetworks) {
+        auto* hdr = view->header();
+        hdr->moveSection(hdr->visualIndex(TorrentListModel::ColNetworks), hdr->visualIndex(TorrentListModel::ColName) + 1);
+    }
 
     connect(m_model, &TorrentListModel::filesWanted, this, &TorrentPanel::fetchFiles);
     connect(m_view, &QTreeView::expanded, this, [this](const QModelIndex& index) {

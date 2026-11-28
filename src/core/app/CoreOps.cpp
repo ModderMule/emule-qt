@@ -318,8 +318,10 @@ Status swapA4AFToDownload(const QString& hashHex, int* swapped)
     int moved = 0;
     for (UpDownClient* client : sources) {
         if (client && client->swapToAnotherFile(QStringLiteral("Manual swap of all A4AF sources"),
-                                                false, true, false, file, false, false))
+                                                false, true, false, file, false, false)) {
+            client->grantManualSwapGrace();
             ++moved;
+        }
     }
     logInfo(QStringLiteral("Swapped %1 of %2 A4AF sources to \"%3\"")
                 .arg(moved).arg(sources.size()).arg(file->fileName()));

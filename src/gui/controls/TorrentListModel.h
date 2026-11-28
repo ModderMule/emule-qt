@@ -83,6 +83,10 @@ struct TorrentRow {
     bool isPrivate = false;
     /// I2P only (torrent_flags::i2p_torrent)
     bool i2p = false;
+    /// bt::BtI2pMode: 0 public only, 1 I2P only, 2 both (Networks column, #261)
+    int i2pMode = 0;
+    /// ed3k serves it too (torrent join)
+    bool ed3kJoined = false;
     qint64 addedAt = 0;      ///< Unix seconds
     qint64 completedAt = 0;
     qint64 seedingSeconds = 0;
@@ -142,6 +146,7 @@ public:
         ColUploaded,         ///< all time; hidden by default
         ColSessionUploaded,  ///< since the core started; hidden by default
         ColDownloaded,       ///< all time; hidden by default
+        ColNetworks,         ///< #261: Public / I2P / ed3k icons
         ColCount
     };
 

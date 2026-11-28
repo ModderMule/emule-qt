@@ -112,6 +112,7 @@ private slots:
     void viewFilterFollowsMfc();
     void viewFilterModifiersFollowMfc();
     void statusFilterRowBuckets();
+    void textFilterMatchesTopLevelRowsOnly();
 };
 
 void tst_CategoryFilterProxy::theAllTabShowsEverything()
@@ -369,6 +370,32 @@ void tst_CategoryFilterProxy::statusFilterRowBuckets()
     QVERIFY(P::matchesStatus(broken, P::StatusError) && count(P::StatusError) == 1);
     for (int f = 0; f < P::StatusFilterCount; ++f)
         QVERIFY(!P::statusFilterName(f).isEmpty());
+}
+
+void tst_CategoryFilterProxy::textFilterMatchesTopLevelRowsOnly()
+{
+    // #282 filter box: MFC tokens, -token excludes, on top of the category; children stay
+    ToyModel model({{QStringLiteral("Ubuntu ISO"), 1},
+                    {QStringLiteral("Debian iso"), 1},
+                    {QStringLiteral("ubuntu notes"), 2}});
+    QSortFilterProxyModel sort;
+    sort.setSourceModel(&model);
+    sort.sort(0, Qt::AscendingOrder);
+    CategoryFilterProxy proxy;
+    proxy.setSourceModel(&sort);
+
+    proxy.setTextFilter({QStringLiteral("iso")}, 0);
+    QCOMPARE(namesOf(proxy), QStringList({QStringLiteral("Debian iso"), QStringLiteral("Ubuntu ISO")}));
+    QCOMPARE(proxy.rowCount(proxy.index(0, 0)), 1);
+
+    proxy.setTextFilter({QStringLiteral("ubuntu"), QStringLiteral("-iso")}, 0);
+    QCOMPARE(namesOf(proxy), QStringList({QStringLiteral("ubuntu notes")}));
+
+    proxy.setCategoryFilter(1);
+    QCOMPARE(proxy.rowCount(), 0);
+
+    proxy.setTextFilter({}, 0);
+    QCOMPARE(proxy.rowCount(), 2);
 }
 
 QTEST_MAIN(tst_CategoryFilterProxy)

@@ -264,7 +264,7 @@ The compatibility target's dialect, adopted unchanged (`natt-transports-emuleai.
 
 - Requester: 6 `OP_HOLEPUNCH` to the source's Kad endpoint (when known), then
   `OP_REASKCALLBACKUDP` to its serving buddy, plain:
-  `<buddy id 16><zero 16><0xA0><our hash 16><opts | 0x20><file hash 16><our ip 4><udp port 2><hint 1>[<block>]`
+  `<buddy id 16><zero 16><0xA0><our hash 16><opts | 0x20 [| 0x40 while QUIC runs]><file hash 16><our ip 4><udp port 2><hint 1>[<block>]`
   Always the full 73 bytes; IP and port are zeros when we don't know our public IPv4 (was 66
   bytes until 2026-11-27). Hint is 2 (QUIC) while the QUIC transport runs, else 0.
 - Extension block (emule-qt#265, proposed to eMuleAI in eMuleAI#172, aMule buddies carry it

@@ -231,6 +231,9 @@ void appendJointCounts([[maybe_unused]] QCborMap& row, [[maybe_unused]] const QB
     const auto info = s_ed2kJoin->infoOf(md4);
     if (!info)
         return;
+    // Networks column (#261): ed3k root found and not proven false
+    if (info->root && info->pair != ed3k::Ed3kEd2kJoin::Pair::False)
+        row.insert(QLatin1StringView("ed3kJoined"), true);
     if (info->sources > 0)
         row.insert(QLatin1StringView("ed3kSources"), info->sources);
     if (info->a4af > 0)

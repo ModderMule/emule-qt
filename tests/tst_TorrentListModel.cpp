@@ -10,6 +10,7 @@
 #include <QAbstractItemModelTester>
 #include <QCborArray>
 #include <QCborMap>
+#include <QIcon>
 #include <QSet>
 #include <QSignalSpy>
 #include <QTest>
@@ -66,6 +67,7 @@ private slots:
     void filesAsChildren();
     // FolderTreeModel (built here for the Torrent Creator's picker): UNC roots (#213)
     void folderTreeAddedRoots();
+    void networksColumn();
 };
 
 void tst_TorrentListModel::decodesRow()
@@ -369,6 +371,32 @@ void tst_TorrentListModel::folderTreeAddedRoots()
 
     model.removeRoot(QStringLiteral("/"));   // a drive is never removed
     QCOMPARE(model.rowCount(), drives + 1);
+}
+
+// #261: Public / I2P by the torrent's I2P mode, ed3k when joined
+void tst_TorrentListModel::networksColumn()
+{
+    const auto nets = [](QCborMap m) {
+        TorrentListModel model;
+        model.setRows({torrentRowFromCbor(m)});
+        const QModelIndex i = model.index(0, TorrentListModel::ColNetworks);
+        if (model.data(i, Qt::DecorationRole).value<QIcon>().isNull())
+            return QStringLiteral("no icon");
+        return model.data(i, Qt::ToolTipRole).toString();
+    };
+    QCborMap m = row(QStringLiteral("bt:v1:AA"), QStringLiteral("a"), 10, 0, 3);
+    QCOMPARE(nets(m), QStringLiteral("Public"));
+    m.insert(QStringLiteral("i2pMode"), 1);
+    QCOMPARE(nets(m), QStringLiteral("I2P"));
+    m.insert(QStringLiteral("i2pMode"), 2);
+    m.insert(QStringLiteral("ed3kJoined"), true);
+    QCOMPARE(nets(m), QStringLiteral("Public, I2P, ed3k"));
+    // an older core: the i2p flag alone means I2P only
+    m.remove(QStringLiteral("i2pMode"));
+    m.insert(QStringLiteral("i2p"), true);
+    QCOMPARE(torrentRowFromCbor(m).i2pMode, 1);
+    QCOMPARE(TorrentListModel().headerData(TorrentListModel::ColNetworks, Qt::Horizontal).toString(),
+             QStringLiteral("Networks"));
 }
 
 QTEST_MAIN(tst_TorrentListModel)

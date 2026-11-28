@@ -1115,7 +1115,8 @@ target_link_libraries(tst_TorrentLinks PRIVATE Qt6::Widgets)
 # lifted out of TransferPanel.cpp where none of it could be reached.
 emule_add_test(tst_CategoryFilterProxy FOLDER "Gui"
     SOURCES tst_CategoryFilterProxy.cpp
-            "${CMAKE_SOURCE_DIR}/src/gui/controls/CategoryFilterProxy.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/CategoryFilterProxy.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/FilterEdit.cpp")
 target_include_directories(tst_CategoryFilterProxy PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")

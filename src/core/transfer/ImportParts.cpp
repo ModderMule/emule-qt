@@ -42,9 +42,8 @@ bool importPart(PartFile* partFile, const QString& sourceFilePath, uint32 part)
     const uint64 partEnd = std::min<uint64>(partStart + PARTSIZE, partFile->fileSize());
     const uint64 partLen = partEnd - partStart;
 
-    // Only a part that is missing entirely: nothing downloaded is overwritten
-    if (!partFile->isPureGap(partStart, partEnd - 1))
-        return false;
+    // Any part not yet complete, a partly downloaded one too (MFC ImportParts.cpp:62):
+    // a source part that passes MD4 is the right data, so overwriting what is there is safe
 
     QFile sourceFile(sourceFilePath);
     if (!sourceFile.open(QIODevice::ReadOnly) || !sourceFile.seek(static_cast<qint64>(partStart)))
@@ -59,19 +58,10 @@ bool importPart(PartFile* partFile, const QString& sourceFilePath, uint32 part)
     if (!md4equ(hasher.getHash(), expectedHash))
         return false;
 
-    // The .part data file is fullName without its .met suffix
-    QString partDataPath = partFile->fullName();
-    if (partDataPath.endsWith(QStringLiteral(".met")))
-        partDataPath.chop(4);
-    QFile partDataFile(partDataPath);
-    if (!partDataFile.open(QIODevice::ReadWrite) || !partDataFile.seek(static_cast<qint64>(partStart)))
-        return false;
-    if (static_cast<uint64>(partDataFile.write(data)) != partLen)
-        return false;
-    partDataFile.close();
-
-    partFile->fillGap(partStart, partEnd - 1);
-    return true;
+    // Through the write buffer, as MFC OnImportPart: flush, part verification and
+    // file completion all run as for downloaded data
+    return partFile->writeToBuffer(partLen, reinterpret_cast<const uint8*>(data.constData()),
+                                   partStart, partEnd - 1, nullptr, Address{}) > 0;
 }
 
 int importParts(PartFile* partFile, const QString& sourceFilePath,

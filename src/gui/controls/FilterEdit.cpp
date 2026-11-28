@@ -5,12 +5,18 @@
 #include "controls/FilterEdit.h"
 #include "app/SkinIcons.h"
 
+#include <QAbstractItemModel>
 #include <QAction>
 #include <QHeaderView>
 #include <QMenu>
 #include <QTimer>
 
 namespace eMule {
+
+bool TextFilter::accepts(const QAbstractItemModel& model, int row, const QModelIndex& parent) const
+{
+    return tokens.isEmpty() || FilterEdit::matches(tokens, model.index(row, column, parent).data().toString());
+}
 
 FilterEdit::FilterEdit(QWidget* parent)
     : QLineEdit(parent)
@@ -67,6 +73,16 @@ bool FilterEdit::matches(const QStringList& tokens, const QString& target)
             return false;
     }
     return true;
+}
+
+void FilterEdit::setShown(bool on)
+{
+    if (!on && !text().isEmpty()) {
+        clear();
+        m_timer->stop();   // focused: the clear only started the timer
+        evaluate();
+    }
+    setVisible(on);
 }
 
 void FilterEdit::focusOutEvent(QFocusEvent* event)

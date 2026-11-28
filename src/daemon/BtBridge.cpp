@@ -170,6 +170,9 @@ QCborMap toCbor(const bt::BtTorrentRow& r)
         {QStringLiteral("totalSize"), r.totalSize},
         {QStringLiteral("availability"), r.availability},
         {QStringLiteral("i2p"), r.i2p},
+        // Networks column (#261): BtI2pMode, and whether ed3k serves it too
+        {QStringLiteral("i2pMode"), r.i2pMode},
+        {QStringLiteral("ed3kJoined"), Ed3kUploadsBridge::jobJoined(QStringLiteral("torrent"), r.id)},
     };
 }
 

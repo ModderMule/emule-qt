@@ -2561,6 +2561,14 @@ void tst_UpDownClient::dontSwapTo_preventsSwap()
     // A different file should not be suspended
     auto* otherFile = reinterpret_cast<PartFile*>(std::uintptr_t{0x2000});
     QVERIFY(!client.isSwapSuspended(otherFile));
+
+    // Time left matches: the stamp is the block, up to PURGESOURCESWAPSTOP
+    bool byStamp = false;
+    const uint64 left = client.swapBlockLeft(dummyFile, false, false, &byStamp);
+    QVERIFY(left > 0 && left <= PURGESOURCESWAPSTOP);
+    QVERIFY(byStamp);
+    QCOMPARE(client.swapBlockLeft(otherFile, false, false, &byStamp), uint64{0});
+    QVERIFY(!byStamp);
 }
 
 // ---------------------------------------------------------------------------

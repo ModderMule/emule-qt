@@ -2425,8 +2425,16 @@ void SharedFilesPanel::onFolderItemExpanded(QTreeWidgetItem* item)
     if (!item->data(0, kRoleFsItem).toBool())
         return;
 
-    if (item->childCount() == 0)
-        populateFilesystemChildren(item);
+    // MFC re-reads on every expand (SharedDirsTreeCtrl OnTvnItemexpanding): folders made
+    // on disk since show up. Open subfolders below keep their state, so re-read them too.
+    QList<QTreeWidgetItem*> pending{item};
+    while (!pending.isEmpty()) {
+        QTreeWidgetItem* cur = pending.takeLast();
+        populateFilesystemChildren(cur);
+        for (int i = 0; i < cur->childCount(); ++i)
+            if (cur->child(i)->isExpanded())
+                pending.append(cur->child(i));
+    }
 }
 
 void SharedFilesPanel::populateFilesystemChildren(QTreeWidgetItem* parentItem)
@@ -2443,12 +2451,12 @@ void SharedFilesPanel::populateFilesystemChildren(QTreeWidgetItem* parentItem)
     FolderLister::list(m_ipc, parentPath, this,
                        [this, parentPath](bool ok, const QList<FolderEntry>& rows, const QString&) {
         QTreeWidgetItem* item = findFilesystemItem(parentPath);
-        if (!item || item->childCount() > 0)
-            return;   // gone, or filled by an earlier answer
-        for (const FolderEntry& e : rows)
-            addFilesystemChild(item, e.path, e.label, e.hasSubfolders);
-        if (ok && rows.isEmpty() && item != m_allDirsItem)   // a failed ask can be expanded again
-            item->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
+        if (!item || !ok)
+            return;   // gone; a failed ask keeps what is loaded
+        mergeFilesystemChildren(item, rows);
+        if (item != m_allDirsItem)
+            item->setChildIndicatorPolicy(rows.isEmpty() ? QTreeWidgetItem::DontShowIndicator
+                                                         : QTreeWidgetItem::ShowIndicator);
         if (item == m_allDirsItem) {
             m_coreWindows = std::ranges::any_of(rows, [](const FolderEntry& e) { return isDriveRoot(e.path); });
             syncUncRoots();
@@ -2488,9 +2496,14 @@ void SharedFilesPanel::syncUncRoots()
 void SharedFilesPanel::addFilesystemChild(QTreeWidgetItem* parent,
                                           const QString& path,
                                           const QString& displayName,
-                                          bool hasSubfolders)
+                                          bool hasSubfolders,
+                                          int index)
 {
-    auto* item = new QTreeWidgetItem(parent, {displayName});
+    auto* item = new QTreeWidgetItem({displayName});
+    if (index < 0 || index > parent->childCount())
+        parent->addChild(item);
+    else
+        parent->insertChild(index, item);
     item->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::SpecificDir));
     item->setData(0, Qt::UserRole + 1, path);
     item->setData(0, kRoleFsItem, true);
@@ -3135,6 +3148,46 @@ std::vector<const SharedFileRow*> SharedFilesPanel::rowsUnder(const QString& dir
             f && SharedDirState::isBelowKey(SharedDirState::dirKey(QDir::fromNativeSeparators(f->filePath)), key))
             out.push_back(f);
     return out;
+}
+
+void SharedFilesPanel::mergeFilesystemChildren(QTreeWidgetItem* parent, const QList<FolderEntry>& rows)
+{
+    QSet<QString> wanted;
+    for (const FolderEntry& e : rows)
+        wanted.insert(SharedDirState::dirKey(e.path));
+
+    // drop folders gone from disk; UNC roots are synced on their own
+    for (int i = parent->childCount(); --i >= 0;) {
+        QTreeWidgetItem* child = parent->child(i);
+        if (child->data(0, kRoleUncRoot).toBool()
+            || wanted.contains(SharedDirState::dirKey(child->data(0, kRolePath).toString())))
+            continue;
+        for (QTreeWidgetItem* c = m_folderTree->currentItem(); c; c = c->parent())
+            if (c == child) {
+                m_folderTree->setCurrentItem(parent);
+                break;
+            }
+        delete parent->takeChild(i);
+    }
+
+    // kept rows stay in listing order, so a new one goes in where the walk stands
+    QHash<QString, QTreeWidgetItem*> present;
+    for (int i = 0; i < parent->childCount(); ++i)
+        if (QTreeWidgetItem* child = parent->child(i); !child->data(0, kRoleUncRoot).toBool())
+            present.insert(SharedDirState::dirKey(child->data(0, kRolePath).toString()), child);
+    int at = 0;
+    for (const FolderEntry& e : rows) {
+        if (QTreeWidgetItem* child = present.value(SharedDirState::dirKey(e.path))) {
+            child->setText(0, e.label);
+            if (e.hasSubfolders)
+                child->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+            else if (child->childCount() == 0)
+                child->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
+            at = parent->indexOfChild(child) + 1;
+            continue;
+        }
+        addFilesystemChild(parent, e.path, e.label, e.hasSubfolders, at++);
+    }
 }
 
 } // namespace eMule

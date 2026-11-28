@@ -686,6 +686,19 @@ void UpDownClient::setDownloadState(DownloadState state)
 
         m_downloadState = state;
 
+        // The peer answered the re-ask: the manual-swap grace is spent
+        switch (state) {
+        case DownloadState::OnQueue:
+        case DownloadState::NoNeededParts:
+        case DownloadState::ReqHashSet:
+        case DownloadState::Downloading:
+        case DownloadState::RemoteQueueFull:
+            m_manualSwapGrace = false;
+            break;
+        default:
+            break;
+        }
+
         // A slot ends the wait: no rank, not full (MFC DownloadClient.cpp:702-706).
         if (state == DownloadState::Downloading) {
             if (isEmuleClient())
@@ -3084,6 +3097,13 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
             });
         } else if (unreachable && kadCallbackFailed && rerouteViaPointer()) {
             // Buddy gone: waits for the pointer's next candidate (ipv6-spec §5.6.1). Not MFC.
+        } else if (unanswered && !unreachable && std::exchange(m_manualSwapGrace, false)) {
+            // Manual A4AF swap re-asked over a link the peer then closed unanswered: kept,
+            // PartFile::process() re-asks after MIN_REQUESTTIME. MFC drops it. Not MFC.
+            if (thePrefs.wantsA4AFLog())
+                logDebug([&]() -> QString { return QStringLiteral("Kept manually swapped source %1: link closed before the answer")
+                             .arg(dbgGetClientInfo()); });
+            setDownloadState(DownloadState::None);
         } else if ((unanswered || unreachable)
                    // a failed upload callback with no download side is not a dead source
                    && !(callbackRequeued && m_downloadState == DownloadState::None)) {

@@ -462,6 +462,21 @@ struct BtSession::Impl {
     /// strict = I2P only; flag on = I2P only, unless the session mixes; else any .i2p tracker = mixed
     BtI2pMode i2pModeOf(const QString& id)
     {
+        if (const auto mode = i2pModeByFlags(id))
+            return *mode;
+        return i2pModeByTrackers(ask(id, Ask::Trackers).trackers);
+    }
+    /// i2pModeOf from the cached tracker list, never an ask: every row, every poll
+    [[nodiscard]] BtI2pMode cachedI2pModeOf(const QString& id) const
+    {
+        if (const auto mode = i2pModeByFlags(id))
+            return *mode;
+        const auto dt = details.find(id);
+        return dt != details.end() ? i2pModeByTrackers(dt->second.trackers) : BtI2pMode::Direct;
+    }
+    /// what flags and lists decide; nullopt: the trackers do
+    [[nodiscard]] std::optional<BtI2pMode> i2pModeByFlags(const QString& id) const
+    {
         if (i2pOnly.contains(id))
             return BtI2pMode::I2pOnly;
         const auto r = rows.find(id);
@@ -470,7 +485,11 @@ struct BtSession::Impl {
         // list held until metadata: still mixed
         if (settings.i2pEnabled && settings.i2pMixed && i2pListWait.contains(id))
             return BtI2pMode::Mixed;
-        const auto& trackers = ask(id, Ask::Trackers).trackers;
+        return std::nullopt;
+    }
+    /// any .i2p tracker on a normal torrent: mixed
+    [[nodiscard]] static BtI2pMode i2pModeByTrackers(const std::vector<lt::announce_entry>& trackers)
+    {
         const bool any = std::ranges::any_of(trackers, [](const lt::announce_entry& a) { return BtAddSource::isI2pTracker(a.url); });
         return any ? BtI2pMode::Mixed : BtI2pMode::Direct;
     }
@@ -1932,8 +1951,10 @@ QList<BtTorrentRow> BtSession::torrents() const
 {
     QList<BtTorrentRow> out;
     out.reserve(static_cast<qsizetype>(d->rows.size()));
-    for (const auto& [id, row] : d->rows)
+    for (const auto& [id, row] : d->rows) {
         out.append(row);
+        out.back().i2pMode = static_cast<int>(d->cachedI2pModeOf(id));
+    }
     return out;
 }
 
@@ -1942,7 +1963,9 @@ std::optional<BtTorrentRow> BtSession::torrent(const QString& id) const
     auto it = d->rows.find(id);
     if (it == d->rows.end())
         return std::nullopt;
-    return it->second;
+    BtTorrentRow row = it->second;
+    row.i2pMode = static_cast<int>(d->cachedI2pModeOf(id));
+    return row;
 }
 
 QList<BtFileRow> BtSession::files(const QString& id) const

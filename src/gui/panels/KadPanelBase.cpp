@@ -174,10 +174,11 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
     connect(m_searchesView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             &KadPanelBase::onSearchSelectionChanged);
     connect(m_searchesView, &QAbstractItemView::doubleClicked, this, &KadPanelBase::onSearchDoubleClicked);
-    // a click on the row auto-show already marked: no selection change, still a pick
+    // click on an already selected row: no selection change, still a pick; the graph may
+    // show another lookup (auto-show doesn't mark its pick while Contacts is shown)
     connect(m_searchesView, &QAbstractItemView::clicked, this, [this](const QModelIndex& index) {
-        if (index.isValid() && selectedSearchId() == m_graphSearchId)
-            m_lookupPicked = true;
+        if (index.isValid())
+            onSearchSelectionChanged();
     });
     connect(m_incomingView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             &KadPanelBase::onIncomingSelectionChanged);

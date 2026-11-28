@@ -38,6 +38,7 @@
 #include <QInputDialog>
 #include "controls/CategoryFilterProxy.h"
 #include "controls/CategoryTabBar.h"
+#include "controls/FilterEdit.h"
 #include "prefs/Preferences.h"
 
 #include <QHBoxLayout>
@@ -291,6 +292,12 @@ void UsenetPanel::promptAddNzbUrl()
         m_poller->refreshNow();
 }
 
+void UsenetPanel::applyDisplayOptions()
+{
+    updateCategoryTabInfo();
+    m_textFilter->setShown(thePrefs.showExtControls());
+}
+
 // ---------------------------------------------------------------------------
 // Private — construction
 // ---------------------------------------------------------------------------
@@ -367,6 +374,11 @@ void UsenetPanel::setupUi()
     });
     connect(m_categoryTabBar, &CategoryTabBar::menuRequested, this,
             &UsenetPanel::populateCategoryMenu);
+    // #282: filter box, "Show more controls" only
+    m_textFilter = new FilterEdit(this);
+    m_textFilter->setFixedWidth(200);
+    m_textFilter->setShown(thePrefs.showExtControls());
+    headerRow->addWidget(m_textFilter);
     headerRow->addWidget(m_categoryTabBar);
 
     layout->addLayout(headerRow);
@@ -416,6 +428,8 @@ void UsenetPanel::setupUi()
     // bindColumns only after setModel(): a header with no sections cannot take a
     // restore, and caching that empty state would destroy the saved layout.
     view->bindColumns(QStringLiteral("usenetQueue"), {280, 80, 110, 160, 85, 85, 60, 60, 90});
+    m_textFilter->setHeader(m_view->header());
+    connect(m_textFilter, &FilterEdit::filterChanged, m_categoryProxy, &CategoryFilterProxy::setTextFilter);
 
     connect(m_view, &QWidget::customContextMenuRequested,
             this, &UsenetPanel::onContextMenu);

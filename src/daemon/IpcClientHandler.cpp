@@ -2114,6 +2114,7 @@ void stepPartImport(const QString& hashHex)
         if (file) {
             file->setFileOp(PartFileOp::None);
             if (it->imported > 0) {
+                file->flushBuffer();
                 file->updateCompletedInfos();
                 file->savePartFile();
             }

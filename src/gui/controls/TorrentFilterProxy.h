@@ -3,6 +3,7 @@
 /// @file TorrentFilterProxy.h
 /// @brief Sort proxy of the Torrents list with Transmission's state filter.
 
+#include "controls/FilterEdit.h"
 #include "controls/SortableItems.h"
 
 namespace eMule {
@@ -32,6 +33,9 @@ public:
     [[nodiscard]] Filter filter() const { return m_filter; }
     void setFilter(Filter filter);
 
+    /// The filter box (#282): FilterEdit tokens against one column. Torrents only, not their files.
+    void setTextFilter(const QStringList& tokens, int column);
+
     /// Whether @p row belongs to @p filter. Shared with the filter bar's counts.
     [[nodiscard]] static bool matches(const TorrentRow& row, Filter filter);
 
@@ -44,6 +48,7 @@ protected:
 private:
     TorrentListModel* m_torrents = nullptr;
     Filter m_filter = All;
+    TextFilter m_text;
 };
 
 } // namespace eMule

@@ -1166,6 +1166,13 @@ public:
     [[nodiscard]] bool isSwapSuspended(const PartFile* file,
                                        bool allowShortReaskTime = false,
                                        bool fileIsNNP = false) const;
+    /// How long a swap to @p file still waits, ms (0: free). @p byStamp: the "don't swap"
+    /// stamp outlasts the re-ask window (A4AF row tooltip).
+    [[nodiscard]] uint64 swapBlockLeft(const PartFile* file, bool allowShortReaskTime,
+                                       bool fileIsNNP, bool* byStamp = nullptr) const;
+    /// A manual A4AF swap: the first re-ask on the new file survives the peer closing
+    /// the connection unanswered (disconnected()). Not MFC.
+    void grantManualSwapGrace() { m_manualSwapGrace = true; }
     [[nodiscard]] uint32 timeUntilReask() const;
     /// @param allowShortReaskTime use MIN_REQUESTTIME instead of FILEREASKTIME, as MFC
     ///        does for a source we hold no conversation with.
@@ -1652,6 +1659,7 @@ private:
     // Swap suspension tracking
     struct FileStamp { PartFile* file = nullptr; uint64 timestamp = 0; };
     std::list<FileStamp> m_dontSwap;
+    bool m_manualSwapGrace = false;   ///< grantManualSwapGrace()
 
     // Per-file reask times
     std::unordered_map<const PartFile*, uint64> m_fileReaskTimes;

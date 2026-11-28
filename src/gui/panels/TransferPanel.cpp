@@ -20,6 +20,7 @@
 #include "controls/ClientListModel.h"
 #include "controls/CategoryFilterProxy.h"
 #include "controls/CategoryTabBar.h"
+#include "controls/FilterEdit.h"
 #include "controls/StatusFilterBar.h"
 #include "controls/DownloadListModel.h"
 #include "controls/DownloadProgressDelegate.h"
@@ -962,6 +963,11 @@ QWidget* TransferPanel::createDownloadsSection()
     connect(m_categoryTabBar, &CategoryTabBar::menuRequested, this,
             &TransferPanel::populateCategoryMenu);
 
+    // #282: filter box beside the category tabs, "Show more controls" only
+    m_textFilter = new FilterEdit(widget);
+    m_textFilter->setFixedWidth(200);
+    m_textFilter->setShown(thePrefs.showExtControls());
+    headerRow->addWidget(m_textFilter);
     headerRow->addWidget(m_categoryTabBar);
     layout->addLayout(headerRow);
 
@@ -1016,6 +1022,9 @@ QWidget* TransferPanel::createDownloadsSection()
     m_downloadView->setItemDelegateForColumn(
         DownloadListModel::ColProgress,
         new DownloadProgressDelegate(m_downloadView));
+    // #261: several network icons in one cell
+    m_downloadView->setItemDelegateForColumn(DownloadListModel::ColNetworks,
+                                             new FlagDecorationDelegate(m_downloadView));
 
     connect(m_downloadView, &QTreeView::customContextMenuRequested,
             this, &TransferPanel::onDownloadContextMenu);
@@ -1141,14 +1150,24 @@ QWidget* TransferPanel::createDownloadsSection()
     // Fresh layout: Transferred sits after Size, where MFC has it
     if (!theUiState.hasHeaderState(QStringLiteral("downloads")))
         header->moveSection(DownloadListModel::ColTransferred, DownloadListModel::ColSize + 1);
+    // #261: a layout saved before Networks existed (or none) gets it next to the name
+    const bool placeNetworks = theUiState.headerStateSectionCount(QStringLiteral("downloads"))
+                               <= DownloadListModel::ColNetworks;
     // Confidence, Transferred. Hidden by default as in MFC: Transferred, Last Seen
     // Complete, Last Reception, Category.
     downloadView->bindColumns(QStringLiteral("downloads"),
-        // + ed3k Key (batch 15, hops.md §1), Part No. (#162)
-        {220, 65, 65, 65, 170 /* MFC DFLT_PARTSTATUS_COL_WIDTH */, 65, 70, 65, 80, 80, 80, 60, 120, 100, 100, 65, 80, 55},
+        // + ed3k Key (batch 15, hops.md §1), Part No. (#162), Networks (#261)
+        {220, 65, 65, 65, 170 /* MFC DFLT_PARTSTATUS_COL_WIDTH */, 65, 70, 65, 80, 80, 80, 60, 120, 100, 100, 65, 80, 55, 60},
         {DownloadListModel::ColSeenComplete, DownloadListModel::ColLastReception,
          DownloadListModel::ColCategory, DownloadListModel::ColCountry,
          DownloadListModel::ColTransferred, DownloadListModel::ColPartNumber});
+    if (placeNetworks)
+        header->moveSection(header->visualIndex(DownloadListModel::ColNetworks),
+                            header->visualIndex(DownloadListModel::ColFileName) + 1);
+    // Part bar and network icons have no text
+    m_textFilter->setIgnoredColumns({DownloadListModel::ColProgress, DownloadListModel::ColNetworks});
+    m_textFilter->setHeader(header);
+    connect(m_textFilter, &FilterEdit::filterChanged, catProxy, &CategoryFilterProxy::setTextFilter);
     // #162: Part No. exists only with "Show more controls"
     downloadView->setExtColumns({DownloadListModel::ColPartNumber}, thePrefs.showExtControls());
     // MFC DownloadListCtrl.cpp:1581-1613. Remaining has two values: time, then size.
@@ -1619,6 +1638,7 @@ void TransferPanel::requestDownloads()
             row.a4afSrcCount      = static_cast<int>(m.value(QStringLiteral("a4afSrcCount")).toInteger());
             row.jointSrcCount     = static_cast<int>(m.value(QStringLiteral("ed3kSources")).toInteger());
             row.jointA4afCount    = static_cast<int>(m.value(QStringLiteral("ed3kA4af")).toInteger());
+            row.jointEd3k         = m.value(QStringLiteral("ed3kJoined")).toBool();
             row.priority          = m.value(QStringLiteral("downPriority")).toString();
             row.isAutoDownPriority = m.value(QStringLiteral("isAutoDownPriority")).toBool();
             row.isPaused          = m.value(QStringLiteral("isPaused")).toBool();
@@ -1724,6 +1744,8 @@ void TransferPanel::requestDownloadSources(const QString& hash)
                 continue;
             src.noNeededHere     = m.value(QStringLiteral("noNeededHere")).toBool();
             src.swapSuspended    = m.value(QStringLiteral("swapSuspended")).toBool();
+            src.swapBlockSecs    = m.value(QStringLiteral("swapBlockSecs")).toInteger(-1);
+            src.swapBlockStamp   = m.value(QStringLiteral("swapBlockStamp")).toBool();
             src.hasOtherRequests = m.value(QStringLiteral("hasOtherRequests")).toBool();
             src.otherFileName    = m.value(QStringLiteral("reqFileName")).toString();
             src.kadPort          = static_cast<int>(m.value(QStringLiteral("kadPort")).toInteger());
@@ -2604,6 +2626,7 @@ void TransferPanel::applyViews(int topId, int clientView, Pane priority)
     const bool showingDownloads = (topId == TopView::Downloads);
     m_categoryTabBar->setVisible(showingDownloads);
     m_statusFilterBar->setVisible(showingDownloads && theUiState.showDownloadStatusFilter());
+    m_textFilter->setVisible(showingDownloads && thePrefs.showExtControls());   // keeps its text
     updateStatusFilterCounts();   // skipped while hidden
     // hidden, as MFC does (TransferWnd.cpp:1408), and only shown when not closed
     m_actionToolbar->setVisible(showingDownloads && theUiState.showDownloadToolbar());
@@ -2791,6 +2814,8 @@ bool TransferPanel::isListDisabled(int clientView)
 
 void TransferPanel::applyExtColumns()
 {
+    if (!thePrefs.showExtControls())
+        m_textFilter->setShown(false);   // drops the filter too; applyViews() shows it again
     // Shared List, ratio and Part No. columns follow "Show more controls"
     if (auto* view = dynamic_cast<ListTreeView*>(m_downloadView))
         view->applyExtColumns(thePrefs.showExtControls());

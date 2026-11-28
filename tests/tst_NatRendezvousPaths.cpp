@@ -1353,6 +1353,7 @@ void tst_NatRendezvousPaths::kad_requestEnvelopeAndPunches()
     QCOMPARE(uint8(e[32]), uint8{OP_RENDEZVOUS});
     QCOMPARE(e.mid(33, 16), hashBytes(f.env->hash));
     QCOMPARE(uint8(e[49]) & CONNECT_OPT_NATT_ENDPOINT_HINT, CONNECT_OPT_NATT_ENDPOINT_HINT);
+    QCOMPARE(uint8(e[49]) & CONNECT_OPT_NATT_QUIC, CONNECT_OPT_NATT_QUIC);   // as eMuleAI
     QCOMPARE(e.mid(50, 16), hashBytes(peer.fileHash));
     QCOMPARE(Address::fromNetworkOrder(peekUInt32(bytes(e) + 66)), kOurIP);
     QCOMPARE(peekUInt16(bytes(e) + 70), f.env->udpPort);
@@ -1367,6 +1368,17 @@ void tst_NatRendezvousPaths::kad_requestEnvelopeAndPunches()
     const QByteArray z = g.env->udpWith(OP_EMULEPROT, OP_REASKCALLBACKUDP).front().payload;
     QCOMPARE(z.size(), 73);
     QCOMPARE(z.mid(66, 6), QByteArray(6, '\0'));
+    QCOMPARE(uint8(z[49]) & CONNECT_OPT_NATT_QUIC, CONNECT_OPT_NATT_QUIC);   // transport without the tail
+
+    // no QUIC (IPv6 keeps the rendezvous useful): no transport bit
+    HubFixture h;
+    h.env->isKadConnected = true;
+    h.env->publicIPv6 = Address::fromString(QStringLiteral("2a00:1450:4001:801::1"));
+    h.env->quic = false;
+    QVERIFY(h.hub->start(peer));
+    const auto noQuic = h.env->udpWith(OP_EMULEPROT, OP_REASKCALLBACKUDP);
+    QCOMPARE(noQuic.size(), size_t{1});
+    QCOMPARE(uint8(noQuic.front().payload[49]) & CONNECT_OPT_NATT_QUIC, 0);
     QVERIFY(!g.hub->attempts().front()->offeredUdp6);
 }
 

@@ -186,6 +186,8 @@ struct BtTorrentRow {
     double availability = -1;
     /// I2P torrent (torrent_flags::i2p_torrent): I2P peers only unless mixed
     bool i2p = false;
+    /// BtI2pMode the torrent runs in (Networks column, #261); set by BtSession::torrents()/torrent()
+    int i2pMode = 0;
 };
 
 struct BtFileRow {

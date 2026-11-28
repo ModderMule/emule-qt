@@ -1835,6 +1835,7 @@ bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString
         return false;
 
     PartFile* oldFile = m_reqFile;
+    m_manualSwapGrace = false;   // belongs to one swap only
 
     // Remove this client from old file's source list
     oldFile->removeSource(this);
@@ -1995,6 +1996,30 @@ bool UpDownClient::isSwapSuspended(const PartFile* file, bool allowShortReaskTim
             return curTick < stamp.timestamp + PURGESOURCESWAPSTOP;
     }
     return false;
+}
+
+uint64 UpDownClient::swapBlockLeft(const PartFile* file, bool allowShortReaskTime,
+                                   bool fileIsNNP, bool* byStamp) const
+{
+    // Same two gates as isSwapSuspended(), as time left: the block ends with the later one
+    if (byStamp)
+        *byStamp = false;
+    if (!file || file == m_reqFile)
+        return 0;
+
+    const uint64 reask = timeUntilReask(file, allowShortReaskTime, true, fileIsNNP);
+    uint64 stampLeft = 0;
+    const uint64 curTick = getTickCount();
+    for (const auto& stamp : m_dontSwap) {
+        if (stamp.file == file) {
+            const uint64 end = stamp.timestamp + PURGESOURCESWAPSTOP;
+            stampLeft = curTick < end ? end - curTick : 0;
+            break;
+        }
+    }
+    if (byStamp)
+        *byStamp = stampLeft > reask;
+    return std::max(reask, stampLeft);
 }
 
 bool UpDownClient::isInNoNeededList(const PartFile* file) const

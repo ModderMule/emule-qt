@@ -10,6 +10,7 @@
 
 #include <QCborArray>
 #include <QCborMap>
+#include <QIcon>
 #include <QImage>
 #include <QPainter>
 #include <QTest>
@@ -42,6 +43,7 @@ private slots:
     void theBarIsPaintedByPiece();
     void aNetworkJobRow();
     void aCompletingRowShowsItsStep();
+    void networksColumn();
 };
 
 void tst_Ed3kDownloadRows::aCompletingRowShowsItsStep()
@@ -202,12 +204,56 @@ void tst_Ed3kDownloadRows::aNetworkJobRow()
 
     DownloadListModel model;
     model.setDownloads({r});
-    const QString name = model.data(model.index(0, DownloadListModel::ColFileName), Qt::DisplayRole).toString();
-    QVERIFY2(name.contains(QStringLiteral("BitTorrent")), qPrintable(name));
+    // #261: the name stays plain, the Networks column says BitTorrent + ed3k
+    QCOMPARE(model.data(model.index(0, DownloadListModel::ColFileName), Qt::DisplayRole).toString(),
+             QStringLiteral("Big Buck Bunny"));
+    QCOMPARE(model.data(model.index(0, DownloadListModel::ColNetworks), Qt::ToolTipRole).toString(),
+             QStringLiteral("BitTorrent, ed3k"));
     const QString tip = model.data(model.index(0, DownloadListModel::ColFileName), Qt::ToolTipRole).toString();
     QVERIFY2(tip.contains(QStringLiteral("single transfer mode")), qPrintable(tip));
     // a plain ed3k root is no network job
     QVERIFY(!ed3kDownloadRow(QCborMap{{QStringLiteral("root"), QString(64, u'a')}}).isNetworkJob());
+}
+
+// #261: own network first, then the joined ones; icons side by side
+void tst_Ed3kDownloadRows::networksColumn()
+{
+    const auto nets = [](const DownloadRow& r) -> QString {
+        DownloadListModel model;
+        model.setDownloads({r});
+        const QModelIndex i = model.index(0, DownloadListModel::ColNetworks);
+        const auto icon = model.data(i, Qt::DecorationRole).value<QIcon>();
+        const QString text = model.data(i, Qt::ToolTipRole).toString();
+        // one 16 px icon per network, 2 px apart (the delegate reads the aspect ratio)
+        const int count = int(text.count(QStringLiteral(", "))) + 1;
+        const QList<QSize> sizes = icon.availableSizes();
+        if (sizes.isEmpty() || sizes.constFirst().width() * 16 != sizes.constFirst().height() * (16 + (count - 1) * 18))
+            return QStringLiteral("bad icon");
+        return text;
+    };
+    DownloadRow ed2k;
+    ed2k.hash = QStringLiteral("00112233445566778899aabbccddeeff");
+    QCOMPARE(nets(ed2k), QStringLiteral("eD2K"));
+    ed2k.jointEd3k = true;
+    QCOMPARE(nets(ed2k), QStringLiteral("eD2K, ed3k"));
+
+    // an ed3k root known as a torrent and an eD2K file, under the anonymous key
+    const QCborMap m{{QStringLiteral("root"), QString(64, u'b')},
+                     {QStringLiteral("key"), QStringLiteral("Anonymous")},
+                     {QStringLiteral("aliases"), QCborArray{
+                          QCborMap{{QStringLiteral("network"), QStringLiteral("torrent")}, {QStringLiteral("name"), QStringLiteral("t")}},
+                          QCborMap{{QStringLiteral("network"), QStringLiteral("ed2k")}, {QStringLiteral("id"), QStringLiteral("x")}},
+                          QCborMap{{QStringLiteral("network"), QStringLiteral("torrent")}, {QStringLiteral("name"), QStringLiteral("t2")}}}}};
+    const DownloadRow root = ed3kDownloadRow(m);
+    QCOMPARE(root.ed3kAliasNets, (QStringList{QStringLiteral("torrent"), QStringLiteral("ed2k")}));
+    QCOMPARE(nets(root), QStringLiteral("ed3k (anonymous key), eD2K, BitTorrent"));
+    QCOMPARE(nets(ed3kDownloadRow(QCborMap{{QStringLiteral("root"), QString(64, u'c')}})), QStringLiteral("ed3k"));
+
+    // single transfer mode, not joined: its own network only
+    DownloadRow job = ed3kDownloadRow(QCborMap{{QStringLiteral("root"), QStringLiteral("usenet|7")},
+                                               {QStringLiteral("network"), QStringLiteral("usenet")},
+                                               {QStringLiteral("joined"), false}});
+    QCOMPARE(nets(job), QStringLiteral("Usenet"));
 }
 
 QTEST_MAIN(tst_Ed3kDownloadRows)

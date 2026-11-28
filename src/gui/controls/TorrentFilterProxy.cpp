@@ -33,6 +33,20 @@ void TorrentFilterProxy::setFilter(Filter filter)
 #endif
 }
 
+void TorrentFilterProxy::setTextFilter(const QStringList& tokens, int column)
+{
+    if (m_text.tokens == tokens && m_text.column == column)
+        return;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_text = {tokens, column};
+    endFilterChange();
+#else
+    m_text = {tokens, column};
+    invalidateFilter();
+#endif
+}
+
 bool TorrentFilterProxy::matches(const TorrentRow& row, Filter filter)
 {
     switch (filter) {
@@ -80,7 +94,11 @@ QString TorrentFilterProxy::filterName(Filter filter)
 
 bool TorrentFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const
 {
-    if (m_filter == All || !m_torrents || sourceParent.isValid())
+    if (!m_torrents || sourceParent.isValid())
+        return true;
+    if (!m_text.accepts(*m_torrents, sourceRow, sourceParent))
+        return false;
+    if (m_filter == All)
         return true;
     const TorrentRow* row = m_torrents->rowAt(sourceRow);
     return row && matches(*row, m_filter);

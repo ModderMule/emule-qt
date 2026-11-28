@@ -522,14 +522,25 @@ void appendNetworkDownloading([[maybe_unused]] QCborArray& out)
 #ifdef EMULE_HAVE_ED3K
     if (!s_uploads)
         return;
+    // single transfer mode: every job fetching now (unjoined ones get paused), also joined ones
+    // whose ed3k member is not open yet (set still searched) — as appendNetworkUploading
+    QStringList torrents = thePrefs.btSingleTransferOn() ? BtBridge::jobIds(true) : QStringList();
+    QStringList usenet = thePrefs.usenetSingleTransferOn() ? UsenetBridge::jobIds(true) : QStringList();
+    QStringList hoster = thePrefs.hosterSingleTransferOn() ? Ed3kHosterBridge::owners() : QStringList();
     for (const auto& job : ed3k::Ed3kJoinBase::networkJobsAt(s_uploads->session())) {
-        if (job.tag == QLatin1String("torrent"))
-            BtBridge::appendDownloading(out, job.owner);
-        else if (job.tag == QLatin1String("usenet"))
-            UsenetBridge::appendDownloading(out, job.owner);
-        else if (job.tag == QLatin1String("hoster"))
-            Ed3kHosterBridge::appendDownloading(out, job.owner);
+        QStringList* ids = job.tag == QLatin1String("torrent") ? &torrents
+                         : job.tag == QLatin1String("usenet")  ? &usenet
+                         : job.tag == QLatin1String("hoster")  ? &hoster
+                                                               : nullptr;
+        if (ids && !ids->contains(job.owner))
+            *ids << job.owner;
     }
+    for (const QString& id : std::as_const(torrents))
+        BtBridge::appendDownloading(out, id);
+    for (const QString& id : std::as_const(usenet))
+        UsenetBridge::appendDownloading(out, id);
+    for (const QString& id : std::as_const(hoster))
+        Ed3kHosterBridge::appendDownloading(out, id);
 #endif
 }
 
@@ -570,6 +581,15 @@ QCborArray jobSources([[maybe_unused]] const QString& tag, [[maybe_unused]] cons
     }
 #endif
     return out;
+}
+
+bool jobJoined([[maybe_unused]] const QString& tag, [[maybe_unused]] const QString& owner)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (s_uploads)
+        return ed3k::Ed3kJoinBase::joinedAt(s_uploads->session(), tag, owner).value_or(false);
+#endif
+    return false;
 }
 
 std::optional<QCborMap> detailsByEd2kHash(const QByteArray& userHash)

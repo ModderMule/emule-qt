@@ -47,6 +47,7 @@ class DownloadSortProxy;
 struct SourceRow;
 class IpcClient;
 class PanelPoller;
+class FilterEdit;
 class StatusFilterBar;
 class TransferToolbar;
 
@@ -305,6 +306,7 @@ private:
     // Category tab bar — only meaningful while the top pane shows Downloads
     CategoryTabBar* m_categoryTabBar = nullptr;
     StatusFilterBar* m_statusFilterBar = nullptr;   ///< under the header, Downloads only
+    FilterEdit* m_textFilter = nullptr;             ///< #282: header row, Downloads + ext controls only
 
     // Pane content areas and the view each currently holds
     QVBoxLayout* m_topContent = nullptr;

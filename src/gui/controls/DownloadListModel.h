@@ -54,6 +54,8 @@ struct SourceRow {
     bool a4af = false;
     bool noNeededHere = false;      ///< nothing we need of this file
     bool swapSuspended = false;
+    qint64 swapBlockSecs = -1;      ///< time left on the block, -1 none
+    bool swapBlockStamp = false;    ///< blocked by "file not found", not the re-ask window
     QString otherFileName;          ///< the file it is asking for
     // Tooltip and sort (MFC DownloadListCtrl.cpp:2318-2372)
     qint64 clientVersion = 0;
@@ -104,6 +106,7 @@ struct DownloadRow {
     int availableSrcCount = 0;   ///< sources on queue or downloading
     int a4afSrcCount = 0;
     int jointSrcCount = 0;       ///< ed3k peers of a joint eD2K download
+    bool jointEd3k = false;      ///< eD2K: ed3k feeds it too (ed2k join has its root), #261
     int jointA4afCount = 0;      ///< of a joint download, serving another file first
     bool isPaused = false;
     bool isStopped = false;
@@ -169,6 +172,7 @@ struct DownloadRow {
     QString ed3kPath;   ///< ed3k: the part file, or the file once complete (a local GUI opens it)
     QString ed3kKey;    ///< ed3k: "Node" / "Anonymous" (hops.md §1); eD2K rows: empty
     QStringList ed3kAliases;   ///< ed3k: other names of the root known here (ed3kAliasText lines)
+    QStringList ed3kAliasNets; ///< ed3k: their networks ("ed2k", "torrent", ...): Networks column
     int ed3kWebDropped = 0;    ///< ed3k: HTTP sources not used under the anonymous key (hops.md §1)
     /// single transfer mode: a torrent/usenet/hoster job joined with ed3k ("torrent", "usenet",
     /// "hoster"; hash = "<tag>|<owner>"), its own network acts; empty: an ed3k root
@@ -224,6 +228,7 @@ public:
         ColTransferred,      ///< MFC column 2; appended so saved layouts keep their indexes
         ColEd3kKey,          ///< batch 15: ed3k rows' key (hops.md §1); appended
         ColPartNumber,       ///< #162: the Temp part file's number; ext controls only
+        ColNetworks,         ///< #261: icons of the networks a file runs on; appended
         ColCount
     };
 
@@ -304,7 +309,6 @@ private:
     std::vector<DownloadRow> m_downloads;
     QHash<quintptr, int> m_rowByUid;
     quintptr m_nextUid = 1;
-    bool m_hasEd3k = false;   ///< any ed3k row listed: eD2K rows keep a blank badge slot
     QStringList m_categoryNames;
 };
 

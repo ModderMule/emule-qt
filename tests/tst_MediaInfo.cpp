@@ -212,6 +212,37 @@ static QByteArray oggPage(uint8 flags, uint64 granule, uint32 seq, const QByteAr
          + le(seq, 4) + le(0, 4) + be(1, 1) + be(static_cast<uint64>(packet.size()), 1) + packet;
 }
 
+static QByteArray oggPage(uint8 flags, uint64 granule, uint32 serial, uint32 seq, const QByteArray& packet)
+{
+    return QByteArray("OggS") + be(0, 1) + be(flags, 1) + le(granule, 8) + le(serial, 4)
+         + le(seq, 4) + le(0, 4) + be(1, 1) + be(static_cast<uint64>(packet.size()), 1) + packet;
+}
+
+/// OGM (issue #255 layout): DX50 640x480 29.97 fps + Vorbis 48 kHz stereo 128 kbit/s, ten seconds.
+static QByteArray buildOgmDivx()
+{
+    const QByteArray vid = QByteArray("\x01video\0\0\0", 9) + QByteArray("DX50") + le(0x38, 4)
+                         + le(333667, 8) + le(1, 8) + le(1, 4) + le(0x138de00, 4) + le(24, 2) + le(0, 2)
+                         + le(640, 4) + le(480, 4);
+    const QByteArray aud = QByteArray("\x01vorbis") + le(0, 4) + be(2, 1) + le(48000, 4)
+                         + le(0, 4) + le(128000, 4) + le(0, 4) + be(0xB8, 1) + be(1, 1);
+    const QByteArray comments = QByteArray("\x03vorbis") + vorbisComments({u"TITLE=Film"_s}) + be(1, 1);
+    return oggPage(2, 0, 1, 0, vid) + oggPage(2, 0, 2, 0, aud) + oggPage(0, 0, 2, 1, comments)
+         + oggPage(0, 150, 1, 1, QByteArray(200, '\x11')) + oggPage(4, 480000, 2, 2, QByteArray(200, '\x22'))
+         + oggPage(4, 299, 1, 2, QByteArray(200, '\x33'));
+}
+
+/// Ogg Theora only: 320x240 25 fps, KFGSHIFT 6, last granule (249 << 6) + 1 → 250 frames.
+static QByteArray buildOggTheora()
+{
+    QByteArray id = QByteArray("\x80theora") + be(3, 1) + be(2, 1) + be(1, 1)
+                  + be(20, 2) + be(15, 2) + be(320, 3) + be(240, 3) + be(0, 1) + be(0, 1)
+                  + be(25, 4) + be(1, 4) + be(1, 3) + be(1, 3) + be(0, 1) + be(500000, 3)
+                  + be((6 >> 3) & 0x03, 1) + be((6 & 0x07) << 5, 1);
+    return oggPage(2, 0, 7, 0, id) + oggPage(0, 0, 7, 1, QByteArray(100, '\x44'))
+         + oggPage(4, (uint64{249} << 6) + 1, 7, 2, QByteArray(100, '\x55'));
+}
+
 /// Ogg Vorbis, 44.1 kHz stereo, nominal 160 kbit/s, ten seconds.
 static QByteArray buildOggVorbis()
 {
@@ -638,6 +669,40 @@ private slots:
         QVERIFY(qAbs(info.lengthSec - 10.0) < 0.001);
         QCOMPARE(info.title, QStringLiteral("Tune"));
         QCOMPARE(info.author, QStringLiteral("Singer"));
+    }
+
+    void ogg_ogmVideoNotAudioOnly()
+    {
+        const QString path = writeTempFile(buildOgmDivx(), u".ogm"_s);
+        MediaInfo info;
+        QVERIFY(extractMediaInfo(path, info));
+        QCOMPARE(info.fileFormat, QStringLiteral("Ogg"));
+        QCOMPARE(info.videoStreamCount, 1);
+        QCOMPARE(info.audioStreamCount, 1);
+        QCOMPARE(info.video.width, uint32{640});
+        QCOMPARE(info.video.height, uint32{480});
+        QCOMPARE(info.video.codecTag, uint32{0x30355844});
+        QVERIFY(qAbs(info.video.frameRate - 29.97) < 0.01);
+        QCOMPARE(info.audio.codecName, QStringLiteral("vorbis"));
+        QCOMPARE(info.audio.sampleRate, uint32{48000});
+        QCOMPARE(info.audio.channels, uint16{2});
+        QVERIFY(qAbs(info.lengthSec - 10.0) < 0.001);
+        QCOMPARE(info.title, QStringLiteral("Film"));
+    }
+
+    void ogg_theoraOnlyLengthFromVideoGranule()
+    {
+        const QString path = writeTempFile(buildOggTheora(), u".ogv"_s);
+        MediaInfo info;
+        QVERIFY(extractMediaInfo(path, info));
+        QCOMPARE(info.videoStreamCount, 1);
+        QCOMPARE(info.audioStreamCount, 0);
+        QCOMPARE(info.video.codecName, QStringLiteral("theora"));
+        QCOMPARE(info.video.width, uint32{320});
+        QCOMPARE(info.video.height, uint32{240});
+        QCOMPARE(info.video.bitRate, uint32{500000});
+        QVERIFY(qAbs(info.video.frameRate - 25.0) < 0.001);
+        QVERIFY(qAbs(info.lengthSec - 10.0) < 0.001);
     }
 
     void mp4_movieHeaderTrackAndTitle()

@@ -464,8 +464,101 @@ bool readFLACHeaders(const QString& filePath, MediaInfo& info)
 }
 
 // ===================================================================
-// Ogg (Vorbis / Opus)
+// Ogg (Vorbis / Opus / OGM, video: OGM, Theora, VP8)
 // ===================================================================
+
+namespace {
+
+/// A video stream an Ogg BOS packet names.
+struct OggVideo {
+    enum class Granule { Frames, Theora, Vp8 };
+    uint32 serial = 0;
+    uint32 width = 0;
+    uint32 height = 0;
+    uint32 codecTag = 0;
+    uint32 bitrate = 0;
+    double fps = 0.0;
+    double aspect = 0.0;
+    QString codec;
+    Granule granule = Granule::Frames;
+    int theoraShift = 0;
+
+    /// Seconds a granule position stands for.
+    [[nodiscard]] double seconds(uint64 g) const
+    {
+        if (fps <= 0.0)
+            return 0.0;
+        uint64 frames = g;
+        if (granule == Granule::Theora)
+            frames = (g >> theoraShift) + (g & ((uint64{1} << theoraShift) - 1));
+        else if (granule == Granule::Vp8)
+            frames = g >> 32;
+        return static_cast<double>(frames) / fps;
+    }
+};
+
+double ratio(uint64 num, uint64 den)
+{
+    return num > 0 && den > 0 ? static_cast<double>(num) / static_cast<double>(den) : 0.0;
+}
+
+/// Video id header of a BOS packet: OGM (DirectShow), Theora or VP8.
+bool readOggVideoHeader(const Bytes& p, OggVideo& v)
+{
+    if (p.startsWith(0, "\x01video") && p.has(0, 53)) {
+        // type, "video\0\0\0", FourCC, size, time unit (100 ns), samples per unit, ..., width, height
+        v.codecTag = static_cast<uint32>(p.le(9, 4));
+        v.codec = videoFormatName(v.codecTag);
+        const uint64 unit = p.le(17, 8);
+        const uint64 perUnit = p.le(25, 8);
+        v.fps = ratio(10'000'000 * std::max<uint64>(perUnit, 1), unit);
+        v.width = static_cast<uint32>(p.le(45, 4));
+        v.height = static_cast<uint32>(p.le(49, 4));
+        v.granule = OggVideo::Granule::Frames;
+    } else if (p.startsWith(0, "\x80theora") && p.has(0, 42)) {
+        v.codec = QStringLiteral("theora");
+        v.width = static_cast<uint32>(p.be(14, 3));
+        v.height = static_cast<uint32>(p.be(17, 3));
+        v.fps = ratio(p.be(22, 4), p.be(26, 4));
+        if (const double par = ratio(p.be(30, 3), p.be(33, 3)); par > 0.0 && v.height > 0)
+            v.aspect = par * v.width / v.height;
+        v.bitrate = static_cast<uint32>(p.be(37, 3));
+        v.theoraShift = ((p.u8(40) & 0x03) << 3) | (p.u8(41) >> 5);
+        v.granule = OggVideo::Granule::Theora;
+    } else if (p.startsWith(0, "OVP80\x01") && p.has(0, 26)) {
+        v.codec = QStringLiteral("vp8");
+        v.width = static_cast<uint32>(p.be(8, 2));
+        v.height = static_cast<uint32>(p.be(10, 2));
+        if (const double par = ratio(p.be(12, 3), p.be(15, 3)); par > 0.0 && v.height > 0)
+            v.aspect = par * v.width / v.height;
+        v.fps = ratio(p.be(18, 4), p.be(22, 4));
+        v.granule = OggVideo::Granule::Vp8;
+    } else {
+        return false;
+    }
+    if (!std::isfinite(v.fps) || v.fps > 1000.0)
+        v.fps = 0.0;
+    if (v.aspect <= 0.0 && v.width > 0 && v.height > 0)
+        v.aspect = static_cast<double>(v.width) / v.height;
+    return true;
+}
+
+/// Last granule position of a stream, from the file's tail; ~0 if none.
+uint64 oggLastGranule(QFile& f, uint32 serial)
+{
+    const qint64 tailLen = std::min<qint64>(f.size(), 128 * 1024);
+    const QByteArray tail = readAt(f, f.size() - tailLen, tailLen);
+    const Bytes t(tail);
+    for (qsizetype i = tail.size() - 27; i >= 0; --i) {
+        if (!t.startsWith(i, "OggS") || t.le(i + 14, 4) != serial)
+            continue;
+        if (const uint64 granule = t.le(i + 6, 8); granule != ~uint64{0})
+            return granule;
+    }
+    return ~uint64{0};
+}
+
+} // namespace
 
 bool readOggHeaders(const QString& filePath, MediaInfo& info)
 {
@@ -480,13 +573,17 @@ bool readOggHeaders(const QString& filePath, MediaInfo& info)
 
     bool found = false, opus = false, commentsDone = false;
     uint32 serial = 0, sampleRate = 0, nominal = 0, preSkip = 0;
-    uint16 channels = 0;
+    uint16 channels = 0, formatTag = 0;
+    QString audioCodec;
     QByteArray packet;       // the audio stream's packet being assembled
     int packetNo = 0;
+    int audioStreams = 0, videoStreams = 0;
+    OggVideo video;
 
     qsizetype pos = 0;
     for (int pages = 0; pages < 256 && b.startsWith(pos, "OggS") && b.has(pos, 27); ++pages) {
         const uint32 pageSerial = static_cast<uint32>(b.le(pos + 14, 4));
+        const bool bos = (b.u8(pos + 5) & 0x02) != 0;
         const int segments = b.u8(pos + 26);
         if (!b.has(pos + 27, segments))
             break;
@@ -499,27 +596,55 @@ bool readOggHeaders(const QString& filePath, MediaInfo& info)
             const QByteArrayView seg = b.view(body, len);
             body += len;
 
-            if (!found) {
-                // First packet of each stream names its codec.
+            if (bos && s == 0) {
+                // First packet of each stream names its codec; all BOS pages come first.
                 const Bytes p(seg);
-                if (p.startsWith(0, "\x01vorbis") && p.has(0, 28)) {
-                    channels = p.u8(11);
-                    sampleRate = static_cast<uint32>(p.le(12, 4));
-                    nominal = static_cast<uint32>(p.le(20, 4));
-                    found = true;
-                } else if (p.startsWith(0, "OpusHead") && p.has(0, 19)) {
-                    channels = p.u8(9);
-                    preSkip = static_cast<uint32>(p.le(10, 2));
-                    sampleRate = 48000;   // Opus granules always count 48 kHz
-                    found = opus = true;
+                OggVideo v;
+                if (readOggVideoHeader(p, v)) {
+                    if (videoStreams++ == 0) {
+                        video = v;
+                        video.serial = pageSerial;
+                    }
+                    continue;
                 }
-                if (found) {
+                bool audio = false;
+                if (p.startsWith(0, "\x01vorbis") && p.has(0, 28)) {
+                    if (!found) {
+                        channels = p.u8(11);
+                        sampleRate = static_cast<uint32>(p.le(12, 4));
+                        nominal = static_cast<uint32>(p.le(20, 4));
+                        audioCodec = QStringLiteral("vorbis");
+                    }
+                    audio = true;
+                } else if (p.startsWith(0, "OpusHead") && p.has(0, 19)) {
+                    if (!found) {
+                        channels = p.u8(9);
+                        preSkip = static_cast<uint32>(p.le(10, 2));
+                        sampleRate = 48000;   // Opus granules always count 48 kHz
+                        audioCodec = QStringLiteral("opus");
+                        opus = true;
+                    }
+                    audio = true;
+                } else if (p.startsWith(0, "\x01" "audio") && p.has(0, 53)) {
+                    // OGM: format tag as 4 hex digits, samples per unit = rate, then a WAVEFORMAT tail
+                    if (!found) {
+                        bool ok = false;
+                        formatTag = static_cast<uint16>(p.view(9, 4).toByteArray().toUInt(&ok, 16));
+                        sampleRate = static_cast<uint32>(p.le(25, 8));
+                        channels = static_cast<uint16>(p.le(45, 2));
+                        nominal = static_cast<uint32>(p.le(49, 4)) * 8;
+                        audioCodec = ok ? audioFormatName(formatTag) : QString();
+                    }
+                    audio = true;
+                }
+                if (audio && audioStreams++ == 0) {
+                    found = true;
                     serial = pageSerial;
                     packetNo = len < 255 ? 1 : 0;
                 }
                 continue;
             }
-            if (pageSerial != serial || commentsDone)
+            if (!found || pageSerial != serial || commentsDone)
                 continue;
             if (packetNo == 0) {              // tail of an oversized id header
                 packetNo = len < 255 ? 1 : 0;
@@ -540,32 +665,49 @@ bool readOggHeaders(const QString& filePath, MediaInfo& info)
             break;
         pos = body;
     }
-    if (!found || sampleRate == 0)
+    const bool hasAudio = found && sampleRate > 0;
+    if (!hasAudio && videoStreams == 0)
         return false;
 
-    // Length: the granule position of the stream's last page.
-    const qint64 tailLen = std::min<qint64>(f.size(), 128 * 1024);
-    const QByteArray tail = readAt(f, f.size() - tailLen, tailLen);
-    const Bytes t(tail);
-    uint64 lastGranule = 0;
-    for (qsizetype i = tail.size() - 27; i >= 0; --i) {
-        if (!t.startsWith(i, "OggS") || t.le(i + 14, 4) != serial)
-            continue;
-        const uint64 granule = t.le(i + 6, 8);
-        if (granule != ~uint64{0}) {
-            lastGranule = granule;
-            break;
-        }
+    // Length: the granule position of a stream's last page, audio preferred.
+    double lengthSec = 0.0;
+    if (hasAudio) {
+        uint64 lastGranule = oggLastGranule(f, serial);
+        if (lastGranule == ~uint64{0})
+            lastGranule = 0;
+        if (lastGranule > preSkip)
+            lastGranule -= preSkip;
+        lengthSec = static_cast<double>(lastGranule) / sampleRate;
     }
-    if (lastGranule > preSkip)
-        lastGranule -= preSkip;
-    const double lengthSec = static_cast<double>(lastGranule) / sampleRate;
+    if (videoStreams > 0 && lengthSec <= 0.0) {
+        if (const uint64 g = oggLastGranule(f, video.serial); g != ~uint64{0})
+            lengthSec = video.seconds(g);
+    }
+    const uint32 overall = overallBitsPerSec(static_cast<uint64>(f.size()), lengthSec);
 
-    uint32 bitrate = (nominal > 0 && nominal < 2'000'000) ? nominal : 0;
-    if (bitrate == 0)
-        bitrate = overallBitsPerSec(static_cast<uint64>(f.size()), lengthSec);
-    setAudioOnly(info, QStringLiteral("Ogg"), opus ? QStringLiteral("opus") : QStringLiteral("vorbis"),
-                 sampleRate, channels, lengthSec, bitrate);
+    uint32 audioBits = 0;
+    if (hasAudio) {
+        audioBits = (nominal > 0 && nominal < 2'000'000) ? nominal : 0;
+        if (audioBits == 0 && videoStreams == 0)
+            audioBits = overall;
+        setAudioOnly(info, QStringLiteral("Ogg"), audioCodec, sampleRate, channels, lengthSec, audioBits);
+        info.audioStreamCount = audioStreams;
+        info.audio.formatTag = formatTag;
+    }
+    if (videoStreams > 0) {
+        info.fileFormat = QStringLiteral("Ogg");
+        info.lengthSec = lengthSec;
+        info.videoStreamCount = videoStreams;
+        info.video.codecName = video.codec;
+        info.video.codecTag = video.codecTag;
+        info.video.width = video.width;
+        info.video.height = video.height;
+        info.video.frameRate = video.fps;
+        info.video.aspectRatio = video.aspect;
+        info.video.lengthSec = lengthSec;
+        info.video.bitRate = video.bitrate > 0 ? video.bitrate
+                           : overall > audioBits ? overall - audioBits : 0;
+    }
     return true;
 }
 

@@ -38,6 +38,7 @@ class QTreeWidgetItem;
 namespace eMule {
 
 class ArchivePreviewPanel;
+struct FolderEntry;
 class Ed3kOwnSetsView;
 class FilterEdit;
 class IpcClient;
@@ -313,7 +314,10 @@ private:
     /// UNC share roots of the shared list under "All Directories", once the drives are in
     void syncUncRoots();
     void addFilesystemChild(QTreeWidgetItem* parent, const QString& path,
-                            const QString& displayName, bool hasSubfolders);
+                            const QString& displayName, bool hasSubfolders, int index = -1);
+    /// Folders below @p parent become @p rows: gone ones drop, new ones slot in,
+    /// kept ones keep their loaded subtree and expansion
+    void mergeFilesystemChildren(QTreeWidgetItem* parent, const QList<FolderEntry>& rows);
     /// The loaded "All Directories" item of @p path ("" = that node itself)
     [[nodiscard]] QTreeWidgetItem* findFilesystemItem(const QString& path) const;
     /// Another core: its disk replaces the loaded folders

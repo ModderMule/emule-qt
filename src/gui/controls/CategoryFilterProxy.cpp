@@ -48,6 +48,20 @@ void CategoryFilterProxy::setStatusFilter(int filter)
 #endif
 }
 
+void CategoryFilterProxy::setTextFilter(const QStringList& tokens, int column)
+{
+    if (m_text.tokens == tokens && m_text.column == column)
+        return;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_text = {tokens, column};
+    endFilterChange();
+#else
+    m_text = {tokens, column};
+    invalidateFilter();
+#endif
+}
+
 std::array<int, CategoryFilterProxy::StatusFilterCount> CategoryFilterProxy::statusCounts() const
 {
     std::array<int, StatusFilterCount> counts{};
@@ -125,7 +139,8 @@ bool CategoryFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sou
     if (!sourceModel())
         return true;
     const CategoryRowFacts facts = factsOf(sourceRow);
-    return categoryShowsRow(m_categories, m_category, facts) && matchesStatus(facts, m_status);
+    return categoryShowsRow(m_categories, m_category, facts) && matchesStatus(facts, m_status)
+        && m_text.accepts(*sourceModel(), sourceRow, sourceParent);
 }
 
 CategoryRowFacts CategoryFilterProxy::factsOf(int sourceRow) const

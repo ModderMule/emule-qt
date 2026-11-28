@@ -14,6 +14,7 @@
 /// QSortFilterProxyModel forwards data() down whatever stack it is sitting on,
 /// so one role lookup works however the proxies are arranged.
 
+#include "controls/FilterEdit.h"
 #include "prefs/CategoryView.h"
 #include "prefs/DownloadCategory.h"
 
@@ -79,6 +80,9 @@ public:
     /// Localized button text, without the count.
     [[nodiscard]] static QString statusFilterName(int filter);
 
+    /// The filter box (#282): FilterEdit tokens against one column. Top-level rows only.
+    void setTextFilter(const QStringList& tokens, int column);
+
     /// Hands the sort to a sort proxy below, so that proxy's lessThan() decides.
     void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
 
@@ -90,6 +94,7 @@ private:
 
     int m_category = 0;
     int m_status = StatusAll;
+    TextFilter m_text;
     QList<DownloadCategory> m_categories;
 };
 

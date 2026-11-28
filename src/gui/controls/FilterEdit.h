@@ -10,10 +10,22 @@
 #include <QLineEdit>
 #include <QPointer>
 
+class QAbstractItemModel;
 class QHeaderView;
+class QModelIndex;
 class QTimer;
 
 namespace eMule {
+
+/// A list proxy's filter box state: FilterEdit tokens matched against one column's text.
+struct TextFilter {
+    QStringList tokens;
+    int column = 0;
+
+    [[nodiscard]] bool active() const { return !tokens.isEmpty(); }
+    /// Row @p row under @p parent passes; always while inactive.
+    [[nodiscard]] bool accepts(const QAbstractItemModel& model, int row, const QModelIndex& parent) const;
+};
 
 class FilterEdit : public QLineEdit {
     Q_OBJECT
@@ -29,6 +41,9 @@ public:
     void setIgnoredColumns(const QList<int>& columns) { m_ignored = columns; }
 
     [[nodiscard]] int filterColumn() const { return m_column; }
+
+    /// Shows the box, or hides it and clears the filter (lists gated by ext controls).
+    void setShown(bool on);
 
     /// Split a filter text into MFC's tokens: space separated, a lone "-" dropped.
     [[nodiscard]] static QStringList tokens(const QString& text);

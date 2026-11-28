@@ -39,6 +39,7 @@ class HosterPuzzleDialog;
 class IpcClient;
 class LinkGrabberPanel;
 class PanelPoller;
+class FilterEdit;
 class StatusFilterBar;
 
 namespace Ipc {
@@ -150,6 +151,9 @@ private:
     void setGrabberOn(bool on);
     /// Shows only the rows of filter @p filter (persisted in UiState).
     void setFilter(int filter);
+    void setTextFilter(const QStringList& tokens, int column);
+    /// Status filter row and filter box; packages follow via syncPackageVisibility().
+    void applyAllFilters();
     /// Hides item @p row unless it matches the filter; a hidden row is deselected.
     void applyFilter(QTreeWidgetItem* row);
     /// A package row shows while one of its items does.
@@ -166,6 +170,9 @@ private:
     QLabel* m_statusLabel = nullptr;
     StatusFilterBar* m_filterBar = nullptr;
     int m_filter = 0;
+    FilterEdit* m_textFilter = nullptr;   ///< #282: ext controls only
+    QStringList m_textTokens;             ///< filter box tokens, matched on m_textColumn
+    int m_textColumn = 0;
     PanelPoller* m_sourcePoller = nullptr;
     bool m_bulkFill = false;   ///< refresh() fills: counts once at the end
     QAction* m_addAction = nullptr;

@@ -186,7 +186,8 @@ Advertised only while the transport runs (built in, TLS initialised, `natTravers
 - `CT_MOD_MISCOPTIONS` bit 4 (`0x10`) in the hello;
 - connect options `0x40` wherever the callback bit is computed (Kad source publishing, as
   eMuleAI's `GetMyConnectOptions`);
-- Kad buddy rendezvous tail: transport hint `2`;
+- Kad buddy rendezvous: connect options `0x40` in the `0xA0` envelope (eMuleAI's
+  `GetMyConnectOptions(true, true) | 0x20`), and the tail's transport hint `2`;
 - the `0x40` bit in CAPS/CAPS_ACK;
 - the Lugdunum login bit and LowID sources being kept while firewalled now also follow from
   QUIC, not only from a confident IPv6.
