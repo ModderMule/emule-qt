@@ -416,6 +416,7 @@
     <ClCompile Include="transfer\UploadQueue.cpp" />
     <ClCompile Include="transfer\UploadQueueStore.cpp" />
     <ClCompile Include="transfer\BandwidthSplit.cpp" />
+    <ClCompile Include="transfer\QueuePositions.cpp" />
     <ClCompile Include="webserver\WebServer.cpp" />
     <ClCompile Include="app\CoreInfo.cpp" />
     <ClCompile Include="app\CoreOps.cpp" />
@@ -545,6 +546,7 @@
     <ClInclude Include="transfer\ImportParts.h" />
     <ClInclude Include="transfer\UploadQueueStore.h" />
     <ClInclude Include="transfer\BandwidthSplit.h" />
+    <ClInclude Include="transfer\QueuePositions.h" />
     <QtMoc Include="chat\IrcClient.h" />
     <ClInclude Include="chat\IrcEmuleProto.h" />
     <ClInclude Include="chat\IrcNickList.h" />

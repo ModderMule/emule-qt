@@ -12,8 +12,11 @@
 #include <QCborMap>
 #include <QDirIterator>
 #include <QHeaderView>
+#include <QIcon>
 #include <QStandardItemModel>
 #include <QTest>
+
+#include <climits>
 
 using namespace eMule;
 
@@ -220,7 +223,7 @@ void tst_CountryFlags::sharedListColumn_hiddenByDefaultAndExtOnly()
 
 // Uploading and On Queue append Uploaded, Downloaded, Ratio, Session Ratio after
 // Shared List, Uploading also Slot #; all are "Show more controls" columns. Software
-// (MorphXT) comes last and shows always.
+// (MorphXT), Networks (#261) and On Queue's Position follow and show always.
 void tst_CountryFlags::clientModel_transferAndRatioColumns()
 {
     for (const auto mode : {ClientListMode::Uploading, ClientListMode::OnQueue}) {
@@ -235,7 +238,7 @@ void tst_CountryFlags::clientModel_transferAndRatioColumns()
 
         const int first = model.sharedListColumn() + 1;
         const bool uploading = mode == ClientListMode::Uploading;
-        QCOMPARE(model.columnCount(), first + (uploading ? 6 : 5));
+        QCOMPARE(model.columnCount(), first + 7);
         QCOMPARE(model.headerData(first, Qt::Horizontal).toString(), QStringLiteral("Uploaded"));
         QCOMPARE(model.headerData(first + 3, Qt::Horizontal).toString(), QStringLiteral("Session Ratio"));
         QCOMPARE(model.data(model.index(0, first)).toString(), QStringLiteral("3.00 MB"));
@@ -260,7 +263,7 @@ void tst_CountryFlags::clientModel_transferAndRatioColumns()
         }
         QCOMPARE(model.extColumns(), expected);
 
-        const int software = model.columnCount() - 1;
+        const int software = uploading ? model.columnCount() - 2 : model.columnCount() - 3;
         QCOMPARE(model.headerData(software, Qt::Horizontal).toString(), QStringLiteral("Software"));
         QCOMPARE(model.data(model.index(0, software)).toString(), QStringLiteral("Unknown"));
         ClientRow named = row;
@@ -269,6 +272,30 @@ void tst_CountryFlags::clientModel_transferAndRatioColumns()
         QCOMPARE(model.data(model.index(0, software)).toString(), QStringLiteral("eMule v0.50a"));
         const auto hidden = model.defaultHiddenColumns();
         QVERIFY(std::ranges::find(hidden, software) == hidden.end());
+
+        // Networks: the peer's network; an ed3k node also its file's join
+        const int networks = software + 1;
+        QCOMPARE(model.networksColumn(), networks);
+        QCOMPARE(model.headerData(networks, Qt::Horizontal).toString(), QStringLiteral("Networks"));
+        QCOMPARE(model.data(model.index(0, networks), Qt::UserRole).toString(), QStringLiteral("eD2K"));
+        ClientRow node = row;
+        node.network = ClientNetwork::Ed3k;
+        node.userName = QStringLiteral("peer");
+        model.setClients({node});
+        QCOMPARE(model.data(model.index(0, networks), Qt::UserRole).toString(), QStringLiteral("ed3k"));
+        QCOMPARE(model.data(model.index(0, 0)).toString(), QStringLiteral("peer"));   // no "(ed3k)" suffix
+        QVERIFY(!model.data(model.index(0, networks), Qt::DecorationRole).value<QIcon>().isNull());
+        if (!uploading) {
+            // Position: the estimated order; unknown sorts last
+            const int position = networks + 1;
+            QCOMPARE(model.headerData(position, Qt::Horizontal).toString(), QStringLiteral("Position"));
+            QCOMPARE(model.data(model.index(0, position)).toString(), QString());
+            QCOMPARE(model.data(model.index(0, position), Qt::UserRole).toInt(), INT_MAX);
+            node.nextPosition = 4;
+            model.setClients({node});
+            QCOMPARE(model.data(model.index(0, position)).toString(), QStringLiteral("4"));
+            QCOMPARE(model.data(model.index(0, position), Qt::UserRole).toInt(), 4);
+        }
     }
     // The other two tabs keep Shared List last
     ClientListModel known(ClientListMode::KnownClients);

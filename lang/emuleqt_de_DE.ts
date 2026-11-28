@@ -1428,7 +1428,7 @@ Has comments</source>
 Hat Kommentare</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+56"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+61"/>
         <source>Server</source>
         <translation>Server</translation>
     </message>
@@ -1744,7 +1744,7 @@ Erneut herunterladen?</translation>
 <context>
     <name>Units</name>
     <message>
-        <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
+        <location filename="../src/core/utils/StringUtils.cpp" line="+74"/>
         <location filename="../src/core/webserver/WebServer.cpp" line="+5059"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
@@ -4593,7 +4593,7 @@ In Warteschlange: Er wartet auf einen, auf dem angezeigten Platz.</translation>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+379"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+429"/>
         <location line="+13"/>
         <location line="+13"/>
         <location line="+15"/>
@@ -4640,14 +4640,34 @@ In Warteschlange: Er wartet auf einen, auf dem angezeigten Platz.</translation>
         <translation>Erhaltene Teile</translation>
     </message>
     <message>
-        <location line="-252"/>
-        <location line="+231"/>
+        <location line="-272"/>
+        <location line="+251"/>
         <location line="+32"/>
         <source>Software</source>
         <translation>Software</translation>
     </message>
     <message>
-        <location line="-29"/>
+        <location line="-377"/>
+        <source>anonymous</source>
+        <translation>anonym</translation>
+    </message>
+    <message>
+        <location line="+95"/>
+        <source>Networks</source>
+        <translation>Netzwerke</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Position</source>
+        <translation>Position</translation>
+    </message>
+    <message>
+        <location line="+54"/>
+        <source>Estimated order over the eD2K and ed3k upload queues; 1 = next to get a slot</source>
+        <translation>Geschätzte Reihenfolge über die eD2K- und ed3k-Uploadwarteschlangen; 1 = erhält als Nächstes einen Slot</translation>
+    </message>
+    <message>
+        <location line="+198"/>
         <source>Available Parts</source>
         <translation>Verfügbare Teile</translation>
     </message>
@@ -4719,17 +4739,15 @@ In Warteschlange: Er wartet auf einen, auf dem angezeigten Platz.</translation>
         <translation>Heruntergeladen</translation>
     </message>
     <message>
-        <location line="-356"/>
         <source>%1 (ed3k)</source>
-        <translation>%1 (ed3k)</translation>
+        <translation type="vanished">%1 (ed3k)</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>anonymous (ed3k)</source>
-        <translation>anonym (ed3k)</translation>
+        <translation type="vanished">anonym (ed3k)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-374"/>
         <source>place %1</source>
         <translation>Platz %1</translation>
     </message>
@@ -4769,7 +4787,7 @@ In Warteschlange: Er wartet auf einen, auf dem angezeigten Platz.</translation>
         <translation>Slot-Nr.</translation>
     </message>
     <message>
-        <location line="+278"/>
+        <location line="+298"/>
         <source>QUIC</source>
         <translation>QUIC</translation>
     </message>
@@ -4784,22 +4802,22 @@ In Warteschlange: Er wartet auf einen, auf dem angezeigten Platz.</translation>
         <translation>Low ID</translation>
     </message>
     <message>
-        <location line="-342"/>
-        <location line="+185"/>
+        <location line="-362"/>
+        <location line="+205"/>
         <location line="+15"/>
         <source>Yes</source>
         <translation>Ja</translation>
     </message>
     <message>
-        <location line="-200"/>
-        <location line="+185"/>
+        <location line="-220"/>
+        <location line="+205"/>
         <location line="+15"/>
         <source>No</source>
         <translation>Nein</translation>
     </message>
     <message>
-        <location line="-91"/>
-        <location line="+90"/>
+        <location line="-93"/>
+        <location line="+92"/>
         <source>Unknown</source>
         <translation>Unbekannt</translation>
     </message>
@@ -16146,7 +16164,7 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
         <translation type="vanished">▸ Suchdetails (%1)</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/KadPanel.cpp" line="+24"/>
+        <location filename="../src/gui/panels/KadPanel.cpp" line="+25"/>
         <source>eD2K</source>
         <translation>eD2K</translation>
     </message>
@@ -33268,7 +33286,7 @@ Für einen privaten Torrent alle leer lassen und unten die URL des privaten Trac
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+821"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+822"/>
         <source>Downloads</source>
         <translation>Downloads</translation>
     </message>
@@ -33281,77 +33299,77 @@ Für einen privaten Torrent alle leer lassen und unten die URL des privaten Trac
     </message>
     <message>
         <location line="-366"/>
-        <location line="+2293"/>
+        <location line="+2304"/>
         <location line="+198"/>
         <source>Low</source>
         <translation>Niedrig</translation>
     </message>
     <message>
-        <location line="-2490"/>
-        <location line="+2292"/>
+        <location line="-2501"/>
+        <location line="+2303"/>
         <location line="+199"/>
         <source>Normal</source>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="-2490"/>
-        <location line="+2291"/>
+        <location line="-2501"/>
+        <location line="+2302"/>
         <location line="+200"/>
         <source>High</source>
         <translation>Hoch</translation>
     </message>
     <message>
-        <location line="-2487"/>
-        <location line="+2491"/>
+        <location line="-2498"/>
+        <location line="+2502"/>
         <source>Very Low</source>
         <translation>Sehr niedrig</translation>
     </message>
     <message>
-        <location line="-2489"/>
-        <location line="+2491"/>
+        <location line="-2500"/>
+        <location line="+2502"/>
         <source>Very High</source>
         <translation>Sehr hoch</translation>
     </message>
     <message>
-        <location line="-2489"/>
-        <location line="+2492"/>
+        <location line="-2500"/>
+        <location line="+2503"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2481"/>
+        <location line="-2492"/>
         <location line="+319"/>
         <location line="+550"/>
-        <location line="+1417"/>
+        <location line="+1428"/>
         <source>Pause</source>
         <translation>Pause</translation>
     </message>
     <message>
-        <location line="-2277"/>
+        <location line="-2288"/>
         <location line="+310"/>
         <location line="+556"/>
-        <location line="+1413"/>
+        <location line="+1424"/>
         <source>Stop</source>
         <translation>Stopp</translation>
     </message>
     <message>
-        <location line="-2270"/>
+        <location line="-2281"/>
         <location line="+301"/>
         <location line="+562"/>
-        <location line="+1409"/>
+        <location line="+1420"/>
         <source>Resume</source>
         <translation>Fortsetzen</translation>
     </message>
     <message>
-        <location line="-1971"/>
+        <location line="-1982"/>
         <location line="+568"/>
-        <location line="+1405"/>
+        <location line="+1416"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location line="-2232"/>
+        <location line="-2243"/>
         <location line="+257"/>
         <location line="+20"/>
         <source>Preview with</source>
@@ -33374,14 +33392,14 @@ Für einen privaten Torrent alle leer lassen und unten die URL des privaten Trac
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1624"/>
+        <location line="+1635"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Teile in Datei importieren...</translation>
     </message>
     <message>
-        <location line="-1630"/>
+        <location line="-1641"/>
         <location line="+193"/>
         <location line="+17"/>
         <source>Mass Rename...</source>
@@ -33401,19 +33419,19 @@ Für einen privaten Torrent alle leer lassen und unten die URL des privaten Trac
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1514"/>
+        <location line="+1525"/>
         <location line="+1427"/>
         <source>Source Limit...</source>
         <translation>Quellenlimit...</translation>
     </message>
     <message>
-        <location line="-2938"/>
-        <location line="+2934"/>
+        <location line="-2949"/>
+        <location line="+2945"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>Alle A4AF-Quellen zu dieser Datei wechseln</translation>
     </message>
     <message>
-        <location line="-2932"/>
+        <location line="-2943"/>
         <source>cannot swap sources.</source>
         <translation>Quellen können nicht gewechselt werden.</translation>
     </message>
@@ -33466,7 +33484,7 @@ Für einen privaten Torrent alle leer lassen und unten die URL des privaten Trac
         <translation>Symbolleiste schließen</translation>
     </message>
     <message numerus="yes">
-        <location line="+245"/>
+        <location line="+256"/>
         <source>Download %n file(s) under the anonymous ed3k key from now on?
 
 The sources are asked again through other nodes; queue places are lost.</source>
@@ -33662,28 +33680,28 @@ Die Quellen sehen dann die Adresse dieses Knotens; Warteschlangenplätze gehen v
         <translation type="vanished">Dateiname:</translation>
     </message>
     <message>
-        <location line="-2960"/>
+        <location line="-2971"/>
         <location line="+274"/>
         <location line="+573"/>
-        <location line="+695"/>
+        <location line="+706"/>
         <source>Open File</source>
         <translation>Datei öffnen</translation>
     </message>
     <message>
-        <location line="-1533"/>
+        <location line="-1544"/>
         <location line="+2"/>
         <location line="+263"/>
         <location line="+20"/>
         <location line="+567"/>
-        <location line="+739"/>
+        <location line="+750"/>
         <source>Preview</source>
         <translation>Vorschau</translation>
     </message>
     <message>
-        <location line="-1550"/>
+        <location line="-1561"/>
         <location line="+223"/>
         <location line="+21"/>
-        <location line="+2191"/>
+        <location line="+2202"/>
         <location line="+18"/>
         <location line="+123"/>
         <location line="+16"/>
@@ -33691,7 +33709,7 @@ Die Quellen sehen dann die Adresse dieses Knotens; Warteschlangenplätze gehen v
         <translation>Details...</translation>
     </message>
     <message>
-        <location line="-2583"/>
+        <location line="-2594"/>
         <location line="+214"/>
         <location line="+21"/>
         <source>Comments...</source>
@@ -33710,14 +33728,14 @@ Die Quellen sehen dann die Adresse dieses Knotens; Warteschlangenplätze gehen v
         <translation>eD2K-Links...</translation>
     </message>
     <message>
-        <location line="+2860"/>
+        <location line="+2871"/>
         <source>Paste eD2K Links</source>
         <translation>eD2K-Links einfügen</translation>
     </message>
     <message>
-        <location line="-2825"/>
+        <location line="-2836"/>
         <location line="+69"/>
-        <location line="+2199"/>
+        <location line="+2210"/>
         <location line="+17"/>
         <location line="+113"/>
         <location line="+93"/>
@@ -33725,7 +33743,7 @@ Die Quellen sehen dann die Adresse dieses Knotens; Warteschlangenplätze gehen v
         <translation>Suchen...</translation>
     </message>
     <message>
-        <location line="-2483"/>
+        <location line="-2494"/>
         <location line="+64"/>
         <location line="+7"/>
         <location line="+10"/>
@@ -33756,7 +33774,7 @@ Die Quellen sehen dann die Adresse dieses Knotens; Warteschlangenplätze gehen v
         <translation type="vanished">Alle</translation>
     </message>
     <message>
-        <location line="+1260"/>
+        <location line="+1271"/>
         <source>Uploading</source>
         <translation>Hochladen</translation>
     </message>
@@ -33776,7 +33794,7 @@ Die Quellen sehen dann die Adresse dieses Knotens; Warteschlangenplätze gehen v
         <translation>Bekannte Clients</translation>
     </message>
     <message>
-        <location line="-1376"/>
+        <location line="-1387"/>
         <source>Clients on queue:   0</source>
         <translation>Clients in Warteschlange:   0</translation>
     </message>
@@ -33788,12 +33806,12 @@ Die Quellen sehen dann die Adresse dieses Knotens; Warteschlangenplätze gehen v
     </message>
     <message>
         <location line="-83"/>
-        <location line="+1406"/>
+        <location line="+1417"/>
         <source>Priority</source>
         <translation>Priorität</translation>
     </message>
     <message>
-        <location line="-1369"/>
+        <location line="-1380"/>
         <source>Open Folder</source>
         <translation>Ordner öffnen</translation>
     </message>
@@ -33823,7 +33841,7 @@ Die Quellen sehen dann die Adresse dieses Knotens; Warteschlangenplätze gehen v
         <translation>Suchen</translation>
     </message>
     <message>
-        <location line="+651"/>
+        <location line="+662"/>
         <location line="+24"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Vorschau nicht verfügbar — der Webserver läuft nicht oder es wurde kein Stream-Token empfangen.</translation>

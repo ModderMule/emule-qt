@@ -37,6 +37,9 @@ target_link_libraries(emuleed3k
         OpenSSL::Crypto
 )
 
+# ed3k.hpp: Event conversion + poll bodies only in Ed3kFfiImpl.cpp, not inline in every TU
+target_compile_definitions(emuleed3k PUBLIC ED3K_HPP_EXTERN_EVENTS)
+
 # Ed3kTorrentJoin: the torrent join (torrent-join.md Part C); ed3k -> bt only
 if(TARGET eMule::Bt)
     target_link_libraries(emuleed3k PUBLIC eMule::Bt)
@@ -53,6 +56,35 @@ if(MSVC)
     # each TU needs GBs for ed3k.hpp; 5 at once hit C1060 (out of heap) on CI
     set_property(GLOBAL APPEND PROPERTY JOB_POOLS emuleed3k_compile=2)
     set_property(TARGET emuleed3k PROPERTY JOB_POOL_COMPILE emuleed3k_compile)
+endif()
+
+# -- Precompiled header ---------------------------------------------------------
+# Not under ccache: CI's ccache can't cache PCH TUs (MSVC: uncacheable), a cache hit beats it
+if(NOT CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
+    target_precompile_headers(emuleed3k PRIVATE
+        <algorithm>
+        <array>
+        <chrono>
+        <cstdint>
+        <functional>
+        <memory>
+        <optional>
+        <span>
+        <string>
+        <vector>
+        <QByteArray>
+        <QDateTime>
+        <QHash>
+        <QList>
+        <QObject>
+        <QPointer>
+        <QString>
+        <QStringList>
+        <QTimer>
+        "${CMAKE_CURRENT_SOURCE_DIR}/Ed3kFfi.h"
+    )
+    # must read ed3k.hpp with ED3K_HPP_IMPLEMENTATION set
+    set_source_files_properties(Ed3kFfiImpl.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 endif()
 
 set_target_properties(emuleed3k PROPERTIES FOLDER "Libraries")

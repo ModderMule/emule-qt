@@ -16,8 +16,6 @@
 /// - §4 per network: Qt knows no network category; the pref ed3k.lan is on or off for all.
 ///   ToDo: the Network List Manager category on Windows (packmule_udp::lan::category).
 
-#include "Ed3kFfi.h"
-
 #include <QHostAddress>
 #include <QObject>
 #include <QString>

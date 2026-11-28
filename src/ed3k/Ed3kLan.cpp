@@ -3,6 +3,8 @@
 
 #include "Ed3kLan.h"
 
+#include "Ed3kFfi.h"
+
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
 

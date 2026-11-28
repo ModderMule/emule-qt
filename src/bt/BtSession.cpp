@@ -442,6 +442,9 @@ struct BtSession::Impl {
     int redundantIdx = lt::find_metric_idx("net.recv_redundant_bytes");
     int peersIdx = lt::find_metric_idx("peer.num_peers_connected");
     bool listening = false;
+    /// TCP listen port from listen_succeeded_alert; session::listen_port() is a blocking
+    /// call into the network thread, which stalled the core's 1 s stats tick
+    quint16 listenPort = 0;
     /// listenPort 0 (random): the port picked at start, kept until stop
     mutable quint16 randomPort = 0;
     int dhtNodes = 0;
@@ -1240,6 +1243,7 @@ void BtSession::stop()
     d->i2pNameMisses.clear();
     d->outstandingResume = 0;
     d->listening = false;
+    d->listenPort = 0;
     d->randomPort = 0;
     d->dhtNodes = 0;
     d->dhtNodesBySocket.clear();
@@ -2070,7 +2074,7 @@ BtStatus BtSession::status() const
     s.running = d->ses != nullptr;
     if (!s.running)
         return s;
-    s.listenPort = d->ses->listen_port();
+    s.listenPort = d->listenPort;
     s.listening = d->listening;
     s.dhtNodes = d->dhtNodes;
     for (const auto& [ep, n] : d->dhtNodesBySocket)
@@ -2508,9 +2512,11 @@ void BtSession::drainAlerts()
         } else if (auto* pa = lt::alert_cast<lt::piece_availability_alert>(a)) {
             if (auto dt = d->details.find(BtTorrentView::idOf(pa->handle.info_hashes())); dt != d->details.end())
                 dt->second.availability = pa->piece_availability;
-        } else if (lt::alert_cast<lt::listen_succeeded_alert>(a)) {
+        } else if (auto* ls = lt::alert_cast<lt::listen_succeeded_alert>(a)) {
             // one per interface and transport: the port is in the start line
             d->listening = true;
+            if (ls->socket_type == lt::socket_type_t::tcp)
+                d->listenPort = static_cast<quint16>(ls->port);
             emit statusChanged();
         } else if (auto* ex = lt::alert_cast<lt::external_ip_alert>(a)) {
             const lt::address addr = ex->external_address;

@@ -14,6 +14,11 @@
 
 #include <QColor>
 
+#include <array>
+#include <climits>
+#include <span>
+#include <utility>
+
 namespace eMule {
 
 namespace {
@@ -71,6 +76,27 @@ constexpr int DownloadingColCount  = 10; // two Transfer columns
 constexpr int OnQueueColCount      = 12; // File Pri, Rating, Score, Asked, Last Seen, Entered Queue, Banned, Obtained Parts
 constexpr int KnownClientsColCount = 10; // +Connected
 
+// columns after Shared List, in saved-layout order (appended only)
+constexpr std::array kUploadingExtras{0, 1, 2, 3, 4, 5, 6};   // ... Slot, Software, Networks
+constexpr std::array kOnQueueExtras{0, 1, 2, 3, 5, 6, 7};     // no Slot; + Position
+
+/// The networks of a client row's peer, as the Transfers Networks column draws them (#261):
+/// an ed3k node also shows the network its file is joined with.
+QList<TransferNet> clientNetworks(const ClientRow& c)
+{
+    switch (c.network) {
+    case ClientNetwork::Ed2k:   return {TransferNet::Ed2k};
+    case ClientNetwork::Bt:     return {TransferNet::Torrent};
+    case ClientNetwork::Usenet: return {TransferNet::Usenet};
+    case ClientNetwork::Hoster: return {TransferNet::Hoster};
+    case ClientNetwork::Ed3k:   break;
+    }
+    QList<TransferNet> nets{c.anonymous ? TransferNet::Ed3kAnon : TransferNet::Ed3k};
+    if (const auto joined = transferNetOf(ed3kJoinOf(c.ed3kJoin)))
+        nets << *joined;
+    return nets;
+}
+
 } // anonymous namespace
 
 ClientListModel::ClientListModel(ClientListMode mode, QObject* parent)
@@ -83,7 +109,7 @@ std::vector<int> ClientListModel::extColumns() const
 {
     std::vector<int> cols{sharedListColumn()};
     for (int i = 0; i < extraColumnCount(); ++i)
-        if (extraKind(i) != ExtraSoftware)   // shown always
+        if (const int kind = extraKind(i); kind < ExtraSoftware)   // Software, Networks, Position: always
             cols.push_back(baseColumnCount() + i);
     return cols;
 }
@@ -95,6 +121,14 @@ std::vector<int> ClientListModel::defaultHiddenColumns() const
         std::erase(cols, baseColumnCount() + ExtraSlot);   // Slot shows with ext controls
     cols.push_back(countryColumn());
     return cols;
+}
+
+int ClientListModel::networksColumn() const
+{
+    for (int i = 0; i < extraColumnCount(); ++i)
+        if (extraKind(i) == ExtraNetworks)
+            return baseColumnCount() + i;
+    return -1;
 }
 
 int ClientListModel::columnCountValue() const
@@ -123,10 +157,11 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
 
     const bool isCountry = index.column() == countryColumn();
 
-    // ed3k upload queue rows: marked like the Messages panel's, the place instead of a score
+    // ed3k upload queue rows: the place instead of a score
     if (c.network == ClientNetwork::Ed3k && role == Qt::DisplayRole) {
+        // was: "name (ed3k)" / "anonymous (ed3k)"; now the Networks column (#261)
         if (index.column() == 0)
-            return c.anonymous ? tr("anonymous (ed3k)") : tr("%1 (ed3k)").arg(clientNameText(c.userName));
+            return c.anonymous ? tr("anonymous") : clientNameText(c.userName);
         if (m_mode == ClientListMode::OnQueue && index.column() == 4)
             return c.remoteQueueRank > 0 ? tr("place %1").arg(c.remoteQueueRank) : QString();
         // was: sourceFrom -1 → "?"; the network instead, as BT/Usenet/Hoster rows
@@ -221,6 +256,8 @@ QVariant ClientListModel::headerData(int section, Qt::Orientation orientation, i
     case ExtraSessionRatio: return tr("Session Ratio");
     case ExtraSlot:         return tr("Slot #");
     case ExtraSoftware:     return tr("Software");
+    case ExtraNetworks:     return tr("Networks");
+    case ExtraPosition:     return tr("Position");
     default:                return {};
     }
 }
@@ -243,22 +280,38 @@ int ClientListModel::baseColumnCount() const
 int ClientListModel::extraColumnCount() const
 {
     switch (m_mode) {
-    case ClientListMode::Uploading: return ExtraCount;
-    case ClientListMode::OnQueue:   return ExtraCount - 1;   // no slot while queued
+    case ClientListMode::Uploading: return int(kUploadingExtras.size());
+    case ClientListMode::OnQueue:   return int(kOnQueueExtras.size());
     default:                        return 0;
     }
 }
 
 int ClientListModel::extraKind(int extra) const
 {
-    return m_mode == ClientListMode::OnQueue && extra >= ExtraSlot ? extra + 1 : extra;
+    const std::span<const int> kinds = m_mode == ClientListMode::OnQueue ? std::span<const int>(kOnQueueExtras)
+                                                                         : std::span<const int>(kUploadingExtras);
+    return extra >= 0 && std::cmp_less(extra, kinds.size()) ? kinds[size_t(extra)] : -1;
 }
 
 QVariant ClientListModel::extraData(const ClientRow& c, int extraIndex, int role) const
 {
     const int extra = extraKind(extraIndex);
     if (role == Qt::TextAlignmentRole)
-        return static_cast<int>((extra == ExtraSoftware ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter);
+        return static_cast<int>((extra == ExtraSoftware || extra == ExtraNetworks ? Qt::AlignLeft : Qt::AlignRight)
+                                | Qt::AlignVCenter);
+
+    // #261: the peer's network as icons; names in tooltip and sort
+    if (extra == ExtraNetworks) {
+        switch (role) {
+        case Qt::DecorationRole: return transferNetsIcon(clientNetworks(c));
+        case Qt::ToolTipRole:
+        case Qt::UserRole:       return transferNetsText(clientNetworks(c));
+        default:                 return {};
+        }
+    }
+    // an estimate: each queue moves by the slots it holds (daemon mergedQueuePositions)
+    if (extra == ExtraPosition && role == Qt::ToolTipRole)
+        return tr("Estimated order over the eD2K and ed3k upload queues; 1 = next to get a slot");
 
     // Uploaded / Downloaded: the peer's credit totals, kept across restarts in clients.met.
     // Ratio columns: the upload file's bytes sent to anyone, per file size (eMuleAI).
@@ -270,6 +323,7 @@ QVariant ClientListModel::extraData(const ClientRow& c, int extraIndex, int role
         case ExtraSessionRatio: return formatShareRatio(c.uploadFileTransferred, c.uploadFileSize);
         case ExtraSlot:         return c.slotNumber > 0 ? QString::number(c.slotNumber) : QString{};
         case ExtraSoftware:     return c.software.isEmpty() ? tr("Unknown") : c.software;
+        case ExtraPosition:     return c.nextPosition > 0 ? QString::number(c.nextPosition) : QString{};
         default:                return {};
         }
     }
@@ -281,6 +335,7 @@ QVariant ClientListModel::extraData(const ClientRow& c, int extraIndex, int role
         case ExtraSessionRatio: return shareRatio(c.uploadFileTransferred, c.uploadFileSize);
         case ExtraSlot:         return c.slotNumber;
         case ExtraSoftware:     return c.software;
+        case ExtraPosition:     return c.nextPosition > 0 ? c.nextPosition : INT_MAX;   // unknown last
         default:                return {};
         }
     }

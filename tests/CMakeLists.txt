@@ -765,6 +765,8 @@ emule_add_test(tst_UsenetHistory FOLDER "Usenet" LIBRARIES eMule::Usenet yaml-cp
 emule_add_test(tst_UsenetBandwidthSplit FOLDER "Usenet" LIBRARIES eMule::Usenet)
 # eD2K/Usenet/BitTorrent share of the global limits: pure arithmetic.
 emule_add_test(tst_BandwidthSplit FOLDER "Transfer")
+# eD2K + ed3k upload queues merged into one estimated order: pure arithmetic.
+emule_add_test(tst_QueuePositions FOLDER "Transfer")
 # emule-qt.org port test API (BitTorrent, ed3k): URL, reply, ed3k merge. No network.
 emule_add_test(tst_PortTestApi FOLDER "Net")
 

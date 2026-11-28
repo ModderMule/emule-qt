@@ -20,7 +20,7 @@
     <EmuleEd3k Condition="'$(EmuleEd3k)'=='' AND Exists('$(MSBuildThisFileDirectory)libs\packmule\Cargo.toml')">true</EmuleEd3k>
     <EmuleEd3k Condition="'$(EmuleEd3k)'==''">false</EmuleEd3k>
     <EmulePackmuleTargetDir>$(MSBuildThisFileDirectory)libs\packmule\target\emuleqt-msbuild</EmulePackmuleTargetDir>
-    <EmuleEd3kDefines Condition="'$(EmuleEd3k)'=='true'">EMULE_HAVE_ED3K=1;</EmuleEd3kDefines>
+    <EmuleEd3kDefines Condition="'$(EmuleEd3k)'=='true'">EMULE_HAVE_ED3K=1;ED3K_HPP_EXTERN_EVENTS;</EmuleEd3kDefines>
     <!-- the system libraries rustc names for x86_64-pc-windows-msvc (packmule-ffi CMakeLists.txt) -->
     <EmuleEd3kLibs Condition="'$(EmuleEd3k)'=='true'">emuleed3k.lib;$(EmulePackmuleTargetDir)\release\packmule_ffi.lib;bcrypt.lib;advapi32.lib;kernel32.lib;ntdll.lib;userenv.lib;dbghelp.lib;ole32.lib;crypt32.lib;</EmuleEd3kLibs>
   </PropertyGroup>

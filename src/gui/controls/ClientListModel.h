@@ -58,6 +58,7 @@ struct ClientRow {
     int partCount = 0;
     int availPartCount = 0;
     int remoteQueueRank = 0;
+    int nextPosition = 0;       ///< On Queue: estimated order over eD2K + ed3k (GetUploads nextPos), 0 = none
     int sourceFrom = 0;
     int softwareId = -1;
     uint32_t ip = 0;     ///< eD2K byte order; 0 for an IPv6 peer — prefer addr.
@@ -139,6 +140,8 @@ public:
     [[nodiscard]] std::vector<int> extColumns() const;
     /// Columns hidden on a fresh layout.
     [[nodiscard]] std::vector<int> defaultHiddenColumns() const;
+    /// Networks column (Uploading, On Queue), -1 in the other modes.
+    [[nodiscard]] int networksColumn() const;
     [[nodiscard]] const ClientRow* clientAt(int row) const { return rowAt(row); }
 
 protected:
@@ -148,13 +151,17 @@ private:
     /// Uploading and On Queue append Uploaded, Downloaded, Ratio, Session Ratio
     /// after Shared List, so saved layouts keep their indices. Uploading adds Slot.
     /// Then Software (MorphXT's client software column), shown without ext controls.
-    enum ExtraColumn { ExtraUploaded = 0, ExtraDownloaded, ExtraRatio, ExtraSessionRatio, ExtraSlot, ExtraSoftware, ExtraCount };
+    /// Then Networks (#261 icons), and On Queue's Position: the estimated order over both
+    /// networks' queues.
+    enum ExtraColumn { ExtraUploaded = 0, ExtraDownloaded, ExtraRatio, ExtraSessionRatio, ExtraSlot, ExtraSoftware,
+                       ExtraNetworks, ExtraPosition };
 
     /// Columns up to and including Shared List.
     [[nodiscard]] int baseColumnCount() const;
     /// Columns after Shared List in this mode.
     [[nodiscard]] int extraColumnCount() const;
-    /// The ExtraColumn at offset @p extra after Shared List (On Queue has no Slot).
+    /// The ExtraColumn at offset @p extra after Shared List (On Queue has no Slot,
+    /// Uploading no Position).
     [[nodiscard]] int extraKind(int extra) const;
     [[nodiscard]] QVariant extraData(const ClientRow& c, int extra, int role) const;
     [[nodiscard]] QVariant displayData(const ClientRow& c, int column) const;

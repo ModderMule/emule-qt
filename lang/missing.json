@@ -1,32 +1,32 @@
 {
-  "ed3k (anonymous key)": {
-    "_context": "ClientIcons",
-    "de_DE": "ed3k (anonymer Schlüssel)",
-    "es_ES": "ed3k (clave anónima)",
-    "fr_FR": "ed3k (clé anonyme)",
-    "it_IT": "ed3k (chiave anonima)",
-    "ja_JP": "ed3k (匿名キー)",
-    "ko_KR": "ed3k (익명 키)",
-    "nl_NL": "ed3k (anonieme sleutel)",
-    "pl_PL": "ed3k (klucz anonimowy)",
-    "pt_BR": "ed3k (chave anônima)",
-    "ru_RU": "ed3k (анонимный ключ)",
-    "zh_CN": "ed3k（匿名密钥）",
-    "zh_TW": "ed3k（匿名金鑰）"
+  "Position": {
+    "_context": "eMule::ClientListModel",
+    "de_DE": "Position",
+    "es_ES": "Posición",
+    "fr_FR": "Position",
+    "it_IT": "Posizione",
+    "ja_JP": "順位",
+    "ko_KR": "순위",
+    "nl_NL": "Positie",
+    "pl_PL": "Pozycja",
+    "pt_BR": "Posição",
+    "ru_RU": "Позиция",
+    "zh_CN": "位置",
+    "zh_TW": "位置"
   },
-  "Networks": {
-    "_context": "eMule::TorrentListModel",
-    "de_DE": "Netzwerke",
-    "es_ES": "Redes",
-    "fr_FR": "Réseaux",
-    "it_IT": "Reti",
-    "ja_JP": "ネットワーク",
-    "ko_KR": "네트워크",
-    "nl_NL": "Netwerken",
-    "pl_PL": "Sieci",
-    "pt_BR": "Redes",
-    "ru_RU": "Сети",
-    "zh_CN": "网络",
-    "zh_TW": "網路"
+  "Estimated order over the eD2K and ed3k upload queues; 1 = next to get a slot": {
+    "_context": "eMule::ClientListModel",
+    "de_DE": "Geschätzte Reihenfolge über die eD2K- und ed3k-Uploadwarteschlangen; 1 = erhält als Nächstes einen Slot",
+    "es_ES": "Orden estimado entre las colas de subida de eD2K y ed3k; 1 = el próximo en obtener un slot",
+    "fr_FR": "Ordre estimé sur les files d'envoi eD2K et ed3k ; 1 = prochain à obtenir un slot",
+    "it_IT": "Ordine stimato tra le code di upload eD2K ed ed3k; 1 = il prossimo a ottenere uno slot",
+    "ja_JP": "eD2K と ed3k のアップロード待ち行列全体での推定順位。1 = 次にスロットを得る",
+    "ko_KR": "eD2K와 ed3k 업로드 대기열 전체의 예상 순서; 1 = 다음에 슬롯을 받음",
+    "nl_NL": "Geschatte volgorde over de eD2K- en ed3k-uploadwachtrijen; 1 = krijgt als volgende een slot",
+    "pl_PL": "Szacowana kolejność w kolejkach wysyłania eD2K i ed3k; 1 = następny otrzyma slot",
+    "pt_BR": "Ordem estimada nas filas de upload eD2K e ed3k; 1 = o próximo a obter um slot",
+    "ru_RU": "Оценочный порядок по очередям отдачи eD2K и ed3k; 1 = следующий получит слот",
+    "zh_CN": "在 eD2K 和 ed3k 上传队列中的估计顺序；1 = 下一个获得上传槽",
+    "zh_TW": "在 eD2K 與 ed3k 上傳佇列中的估計順序；1 = 下一個取得上傳槽"
   }
 }

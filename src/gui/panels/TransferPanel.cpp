@@ -138,6 +138,7 @@ ClientRow parseClient(const QCborMap& m, bool downloadSide = false)
     row.upPartCount     = static_cast<int>(m.value(QStringLiteral("upPartCount")).toInteger());
     row.availPartCount  = static_cast<int>(m.value(QStringLiteral("availPartCount")).toInteger());
     row.remoteQueueRank = static_cast<int>(m.value(QStringLiteral("remoteQueueRank")).toInteger());
+    row.nextPosition    = static_cast<int>(m.value(QStringLiteral("nextPos")).toInteger());
     row.sourceFrom      = static_cast<int>(m.value(QStringLiteral("sourceFrom")).toInteger());
     row.ip              = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
     row.addr            = m.value(QStringLiteral("addr")).toString();
@@ -1235,8 +1236,8 @@ QWidget* TransferPanel::createBottomPane()
     clientSlot(Uploading).view = createClientView(
         clientSlot(Uploading).model, QStringLiteral("clientsUploading3"),
         // User Name, File, Speed, Transferred, Waited, Upload Time, Status, Obtained Parts, Country,
-        // Shared List, Uploaded, Downloaded, Ratio, Session Ratio, Slot #, Software
-        {150, 220, 70, 90, 80, 80, 90, 120, 100, 80, 90, 90, 50, 80, 50, 120},
+        // Shared List, Uploaded, Downloaded, Ratio, Session Ratio, Slot #, Software, Networks
+        {150, 220, 70, 90, 80, 80, 90, 120, 100, 80, 90, 90, 50, 80, 50, 120, 60},
         {2, 3, 4, 7, 10, 11, 12, 13});       // first click descending, MFC UploadListCtrl.cpp:286-292
     clientSlot(Downloading).view = createClientView(
         clientSlot(Downloading).model, QStringLiteral("clientsDownloading3"),
@@ -1248,8 +1249,8 @@ QWidget* TransferPanel::createBottomPane()
         clientSlot(OnQueue).model, QStringLiteral("clientsOnQueue3"),
         // User Name, File, File Priority, Rating, Score, Asked, Last Seen,
         // Entered Queue, Banned, Obtained Parts, Country, Shared List, Uploaded, Downloaded,
-        // Ratio, Session Ratio, Software
-        {150, 220, 80, 70, 60, 60, 100, 110, 60, 120, 100, 80, 90, 90, 50, 80, 120},
+        // Ratio, Session Ratio, Software, Networks, Position
+        {150, 220, 80, 70, 60, 60, 100, 110, 60, 120, 100, 80, 90, 90, 50, 80, 120, 60, 60},
         {2, 3, 4, 5, 8, 9, 12, 13, 14, 15}); // QueueListCtrl.cpp:292-300, + the 4 new ones
     // Obtained Parts is MFC's upload status bar (UploadListCtrl.cpp:165, QueueListCtrl.cpp:168)
     clientSlot(Uploading).view->setItemDelegateForColumn(
@@ -1502,7 +1503,18 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
     auto* hdr = view->header();
     hdr->setStretchLastSection(true);
     hdr->setDefaultSectionSize(100);
+    // #261: a layout saved before Networks existed (or none) gets it next to the name
+    const int networks = model->networksColumn();
+    const bool placeNetworks = networks >= 0 && theUiState.headerStateSectionCount(headerKey) <= networks;
     view->bindColumns(headerKey, columnWidths, model->defaultHiddenColumns());
+    if (placeNetworks) {
+        hdr->moveSection(hdr->visualIndex(networks), hdr->visualIndex(0) + 1);
+        // On Queue's Position (after Networks) beside it
+        if (networks + 1 < model->columnCount())
+            hdr->moveSection(hdr->visualIndex(networks + 1), hdr->visualIndex(networks) + 1);
+    }
+    if (networks >= 0)
+        view->setItemDelegateForColumn(networks, new FlagDecorationDelegate(view));
     view->setExtColumns(model->extColumns(), thePrefs.showExtControls());
     view->setDescendingFirst(descendingFirst);
     CountryFlags::bindFlagColumn(view);

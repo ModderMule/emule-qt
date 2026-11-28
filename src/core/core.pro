@@ -213,6 +213,7 @@ SOURCES += \
     stats/SaveFolderSpace.cpp \
     stats/StatsSnapshot.cpp \
     transfer/BandwidthSplit.cpp \
+    transfer/QueuePositions.cpp \
     transfer/DownloadQueue.cpp \
     transfer/ImportParts.cpp \
     transfer/Scheduler.cpp \
@@ -422,6 +423,7 @@ HEADERS += \
     stats/SaveFolderSpace.h \
     stats/StatsSnapshot.h \
     transfer/BandwidthSplit.h \
+    transfer/QueuePositions.h \
     transfer/DownloadQueue.h \
     transfer/ImportParts.h \
     transfer/Scheduler.h \

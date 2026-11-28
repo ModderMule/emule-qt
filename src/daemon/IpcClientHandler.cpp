@@ -119,6 +119,7 @@
 #include "stats/StatsSnapshot.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/Scheduler.h"
+#include "transfer/QueuePositions.h"
 #include "transfer/UploadQueue.h"
 #include "utils/FolderList.h"
 #include "utils/PathUtils.h"
@@ -166,7 +167,49 @@ void offCoreThread(IpcClientHandler* handler, Work work, Reply reply)
     });
 }
 
+/// GetUploads: `nextPos` on every waiting row, one estimated order over eD2K and both ed3k
+/// queues (node, anonymous). eD2K's rank is its score's place (UploadQueue::waitingPosition),
+/// ed3k's the engine's; each queue moves by the slots it holds (mergedQueuePositions).
+/// @p ed2kScores: the eD2K rows' scores, they lead @p waiting in that order.
+void addQueuePositions(const QCborArray& uploading, QCborArray& waiting, const std::vector<uint64>& ed2kScores)
+{
+    enum Queue { Ed2k, Ed3kNode, Ed3kAnon, QueueCount };
+    const auto queueOf = [](const QCborMap& m) -> int {
+        const QString net = m.value(QStringLiteral("network")).toString();
+        if (net.isEmpty() || net == QLatin1String("ed2k"))
+            return Ed2k;
+        if (net == QLatin1String("ed3k"))
+            return m.value(QStringLiteral("key")).toString() == QLatin1String("Anonymous") ? Ed3kAnon : Ed3kNode;
+        return -1;   // BitTorrent peers: no queue here
+    };
+    std::vector<int> slotCounts(QueueCount, 0);
+    for (const auto& v : uploading)
+        if (const int q = queueOf(v.toMap()); q >= 0)
+            ++slotCounts[size_t(q)];
 
+    std::vector<uint64> sorted = ed2kScores;
+    std::ranges::sort(sorted, std::greater{});
+    std::vector<QueueWaiter> waiters;
+    waiters.reserve(size_t(waiting.size()));
+    for (qsizetype i = 0; i < waiting.size(); ++i) {
+        const QCborMap m = waiting.at(i).toMap();
+        QueueWaiter w{queueOf(m), 0, m.value(QStringLiteral("waitStartTime")).toInteger()};
+        if (w.queue == Ed2k && std::cmp_less(i, ed2kScores.size())) {
+            // 1 + how many score higher (waitingPosition)
+            const auto higher = std::ranges::lower_bound(sorted, ed2kScores[size_t(i)], std::greater{}) - sorted.begin();
+            w.rank = int(higher) + 1;
+        } else if (w.queue != Ed2k) {
+            w.rank = int(m.value(QStringLiteral("queueRank")).toInteger());
+        }
+        waiters.push_back(w);
+    }
+    const auto pos = mergedQueuePositions(waiters, slotCounts);
+    for (qsizetype i = 0; i < waiting.size(); ++i) {
+        QCborMap m = waiting.at(i).toMap();
+        m.insert(QStringLiteral("nextPos"), pos[size_t(i)]);
+        waiting[i] = m;
+    }
+}
 
 /// Open a filesystem path with the OS default handler. This runs from the
 /// headless daemon (a QCoreApplication), where QDesktopServices::openUrl has no
@@ -776,6 +819,7 @@ void IpcClientHandler::handleGetUploads(const IpcMessage& msg)
 {
     QCborArray uploading;
     QCborArray waiting;
+    std::vector<uint64> ed2kScores;   // per eD2K waiting row, for its rank
     if (theApp.uploadQueue) {
         // A slot past the active count draws its bar greyed (MFC UploadClient.cpp:57-70).
         const auto activeSlots = static_cast<uint32>(theApp.uploadQueue->maxActiveClientsShortTime());
@@ -789,10 +833,12 @@ void IpcClientHandler::handleGetUploads(const IpcMessage& msg)
         });
         theApp.uploadQueue->forEachWaiting([&](UpDownClient* c) {
             waiting.append(toCbor(*c));
+            ed2kScores.push_back(c->score(false));
         });
     }
     // the ed3k upload queue next to eD2K's (network "ed3k")
     Ed3kUploadsBridge::appendRows(uploading, waiting);
+    addQueuePositions(uploading, waiting, ed2kScores);
     // BitTorrent peers of joined torrents (all torrents in single transfer mode)
     Ed3kUploadsBridge::appendNetworkUploading(uploading);
     QCborMap result;

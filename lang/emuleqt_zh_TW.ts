@@ -1266,7 +1266,7 @@ Trust the new certificate?</source>
         <translation>來自 %1 的訊息</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+56"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+61"/>
         <source>Server</source>
         <translation>伺服器</translation>
     </message>
@@ -1654,7 +1654,7 @@ Has comments</source>
 <context>
     <name>Units</name>
     <message>
-        <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
+        <location filename="../src/core/utils/StringUtils.cpp" line="+74"/>
         <location filename="../src/core/webserver/WebServer.cpp" line="+5059"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
@@ -4348,12 +4348,12 @@ On queue: it waits for one, at the place shown.</source>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+150"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+180"/>
         <source>Country</source>
         <translation>國家</translation>
     </message>
     <message>
-        <location line="+288"/>
+        <location line="+308"/>
         <source>QUIC</source>
         <translation>QUIC</translation>
     </message>
@@ -4368,36 +4368,34 @@ On queue: it waits for one, at the place shown.</source>
         <translation>低-ID</translation>
     </message>
     <message>
-        <location line="-342"/>
-        <location line="+185"/>
+        <location line="-362"/>
+        <location line="+205"/>
         <location line="+15"/>
         <source>Yes</source>
         <translation>是</translation>
     </message>
     <message>
-        <location line="-234"/>
         <source>%1 (ed3k)</source>
-        <translation>%1 (ed3k)</translation>
+        <translation type="vanished">%1 (ed3k)</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>anonymous (ed3k)</source>
-        <translation>匿名 (ed3k)</translation>
+        <translation type="vanished">匿名 (ed3k)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-252"/>
         <source>place %1</source>
         <translation>第 %1 位</translation>
     </message>
     <message>
         <location line="+32"/>
-        <location line="+185"/>
+        <location line="+205"/>
         <location line="+15"/>
         <source>No</source>
         <translation>否</translation>
     </message>
     <message>
-        <location line="-149"/>
+        <location line="-169"/>
         <source>Shared List</source>
         <translation>共享清單</translation>
     </message>
@@ -4427,8 +4425,8 @@ On queue: it waits for one, at the place shown.</source>
         <translation>槽位號</translation>
     </message>
     <message>
-        <location line="+50"/>
-        <location line="+90"/>
+        <location line="+68"/>
+        <location line="+92"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
@@ -4480,14 +4478,34 @@ On queue: it waits for one, at the place shown.</source>
         <translation>已取得部分</translation>
     </message>
     <message>
-        <location line="-252"/>
-        <location line="+231"/>
+        <location line="-272"/>
+        <location line="+251"/>
         <location line="+32"/>
         <source>Software</source>
         <translation>軟體</translation>
     </message>
     <message>
-        <location line="-29"/>
+        <location line="-377"/>
+        <source>anonymous</source>
+        <translation>匿名</translation>
+    </message>
+    <message>
+        <location line="+95"/>
+        <source>Networks</source>
+        <translation>網路</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Position</source>
+        <translation>位置</translation>
+    </message>
+    <message>
+        <location line="+54"/>
+        <source>Estimated order over the eD2K and ed3k upload queues; 1 = next to get a slot</source>
+        <translation>在 eD2K 與 ed3k 上傳佇列中的估計順序；1 = 下一個取得上傳槽</translation>
+    </message>
+    <message>
+        <location line="+198"/>
         <source>Available Parts</source>
         <translation>可用部分</translation>
     </message>
@@ -15673,7 +15691,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation type="vanished">▸ 搜尋詳細資料 (%1)</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/KadPanel.cpp" line="+24"/>
+        <location filename="../src/gui/panels/KadPanel.cpp" line="+25"/>
         <source>eD2K</source>
         <translation>eD2K</translation>
     </message>
@@ -32363,7 +32381,7 @@ Leave all unchecked for a private torrent; use the private tracker&apos;s URL be
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+332"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+333"/>
         <location line="+369"/>
         <location line="+26"/>
         <source>Priority (Download)</source>
@@ -32371,95 +32389,95 @@ Leave all unchecked for a private torrent; use the private tracker&apos;s URL be
     </message>
     <message>
         <location line="-366"/>
-        <location line="+2293"/>
+        <location line="+2304"/>
         <location line="+198"/>
         <source>Low</source>
         <translation>低</translation>
     </message>
     <message>
-        <location line="-2490"/>
-        <location line="+2292"/>
+        <location line="-2501"/>
+        <location line="+2303"/>
         <location line="+199"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-2490"/>
-        <location line="+2291"/>
+        <location line="-2501"/>
+        <location line="+2302"/>
         <location line="+200"/>
         <source>High</source>
         <translation>高</translation>
     </message>
     <message>
-        <location line="-2487"/>
-        <location line="+2491"/>
+        <location line="-2498"/>
+        <location line="+2502"/>
         <source>Very Low</source>
         <translation>非常低</translation>
     </message>
     <message>
-        <location line="-2489"/>
-        <location line="+2491"/>
+        <location line="-2500"/>
+        <location line="+2502"/>
         <source>Very High</source>
         <translation>非常高</translation>
     </message>
     <message>
-        <location line="-2489"/>
-        <location line="+2492"/>
+        <location line="-2500"/>
+        <location line="+2503"/>
         <source>Auto</source>
         <translation>自動</translation>
     </message>
     <message>
-        <location line="-2481"/>
+        <location line="-2492"/>
         <location line="+319"/>
         <location line="+550"/>
-        <location line="+1417"/>
+        <location line="+1428"/>
         <source>Pause</source>
         <translation>暫停</translation>
     </message>
     <message>
-        <location line="-2277"/>
+        <location line="-2288"/>
         <location line="+310"/>
         <location line="+556"/>
-        <location line="+1413"/>
+        <location line="+1424"/>
         <source>Stop</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location line="-2270"/>
+        <location line="-2281"/>
         <location line="+301"/>
         <location line="+562"/>
-        <location line="+1409"/>
+        <location line="+1420"/>
         <source>Resume</source>
         <translation>繼續</translation>
     </message>
     <message>
-        <location line="-1971"/>
+        <location line="-1982"/>
         <location line="+568"/>
-        <location line="+1405"/>
+        <location line="+1416"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-2249"/>
+        <location line="-2260"/>
         <location line="+274"/>
         <location line="+573"/>
-        <location line="+695"/>
+        <location line="+706"/>
         <source>Open File</source>
         <translation>開啟檔案</translation>
     </message>
     <message>
-        <location line="-1533"/>
+        <location line="-1544"/>
         <location line="+2"/>
         <location line="+263"/>
         <location line="+20"/>
         <location line="+567"/>
-        <location line="+739"/>
+        <location line="+750"/>
         <source>Preview</source>
         <translation>預覽</translation>
     </message>
     <message>
-        <location line="-1583"/>
+        <location line="-1594"/>
         <location line="+257"/>
         <location line="+20"/>
         <source>Preview with</source>
@@ -32479,7 +32497,7 @@ Leave all unchecked for a private torrent; use the private tracker&apos;s URL be
         <location line="+9"/>
         <location line="+223"/>
         <location line="+21"/>
-        <location line="+2191"/>
+        <location line="+2202"/>
         <location line="+18"/>
         <location line="+123"/>
         <location line="+16"/>
@@ -32487,7 +32505,7 @@ Leave all unchecked for a private torrent; use the private tracker&apos;s URL be
         <translation>詳細資料...</translation>
     </message>
     <message>
-        <location line="-2583"/>
+        <location line="-2594"/>
         <location line="+214"/>
         <location line="+21"/>
         <source>Comments...</source>
@@ -32500,14 +32518,14 @@ Leave all unchecked for a private torrent; use the private tracker&apos;s URL be
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1624"/>
+        <location line="+1635"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>將部分匯入檔案...</translation>
     </message>
     <message>
-        <location line="-1630"/>
+        <location line="-1641"/>
         <location line="+193"/>
         <location line="+17"/>
         <source>Mass Rename...</source>
@@ -32534,19 +32552,19 @@ Leave all unchecked for a private torrent; use the private tracker&apos;s URL be
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1514"/>
+        <location line="+1525"/>
         <location line="+1427"/>
         <source>Source Limit...</source>
         <translation>來源限制...</translation>
     </message>
     <message>
-        <location line="-2938"/>
-        <location line="+2934"/>
+        <location line="-2949"/>
+        <location line="+2945"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>將所有 A4AF 來源切換到此檔案</translation>
     </message>
     <message>
-        <location line="-2932"/>
+        <location line="-2943"/>
         <source>cannot swap sources.</source>
         <translation>無法切換來源。</translation>
     </message>
@@ -32568,7 +32586,7 @@ Leave all unchecked for a private torrent; use the private tracker&apos;s URL be
         <translation>eD2K 連結...</translation>
     </message>
     <message>
-        <location line="+2860"/>
+        <location line="+2871"/>
         <source>Paste eD2K Links</source>
         <translation>貼上 eD2K 連結</translation>
     </message>
@@ -32577,9 +32595,9 @@ Leave all unchecked for a private torrent; use the private tracker&apos;s URL be
         <translation type="vanished">ed3k 集合...</translation>
     </message>
     <message>
-        <location line="-2825"/>
+        <location line="-2836"/>
         <location line="+69"/>
-        <location line="+2199"/>
+        <location line="+2210"/>
         <location line="+17"/>
         <location line="+113"/>
         <location line="+93"/>
@@ -32587,7 +32605,7 @@ Leave all unchecked for a private torrent; use the private tracker&apos;s URL be
         <translation>尋找...</translation>
     </message>
     <message>
-        <location line="-2483"/>
+        <location line="-2494"/>
         <location line="+64"/>
         <location line="+7"/>
         <location line="+10"/>
@@ -32658,12 +32676,12 @@ Leave all unchecked for a private torrent; use the private tracker&apos;s URL be
     </message>
     <message>
         <location line="+11"/>
-        <location line="+1406"/>
+        <location line="+1417"/>
         <source>Priority</source>
         <translation>優先權</translation>
     </message>
     <message>
-        <location line="-1369"/>
+        <location line="-1380"/>
         <source>Open Folder</source>
         <translation>開啟資料夾</translation>
     </message>
@@ -32693,7 +32711,7 @@ Leave all unchecked for a private torrent; use the private tracker&apos;s URL be
         <translation>尋找</translation>
     </message>
     <message numerus="yes">
-        <location line="+117"/>
+        <location line="+128"/>
         <source>Download %n file(s) under the anonymous ed3k key from now on?
 
 The sources are asked again through other nodes; queue places are lost.</source>
