@@ -345,12 +345,14 @@ int main(int argc, char* argv[])
     }
 
     // One default core per user, wherever it was installed: the setup's per-user
-    // config and a portable copy each have a profile lock of their own. A --config
-    // profile stays separate, unless it names the default one.
+    // config has a profile lock of its own. A --config profile or a portable copy
+    // stays separate, unless a --config names the default one.
     // Only built in here: its path creates ~/eMuleQt, which a --config profile never needs (#153)
     std::optional<QLockFile> userLockHolder;
     const eMule::AppConfig::UserCore lastUserCore = eMule::AppConfig::lastUserCore();
-    if (cli.configOverride().isEmpty() || eMule::AppConfig::sameDir(configDir, lastUserCore.configDir)) {
+    if (!eMule::AppConfig::isPortableProfile()
+        && (cli.configOverride().isEmpty()
+            || eMule::AppConfig::sameDir(configDir, lastUserCore.configDir))) {
         QLockFile& userLock = userLockHolder.emplace(eMule::AppConfig::userCoreLockPath());
         userLock.setStaleLockTime(0);
         // No wait: a holder with our profile was gone once the lock above was ours

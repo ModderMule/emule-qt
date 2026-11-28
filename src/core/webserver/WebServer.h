@@ -281,6 +281,9 @@ public:
     [[nodiscard]] uint16 port() const;
     /// Bound to TLS (HTTPS requested and the cert/key loaded).
     [[nodiscard]] bool isHttps() const;
+    /// Host a player on the core's machine reaches the server at: the bound
+    /// address, a loopback literal for a wildcard bind. Empty when stopped.
+    [[nodiscard]] QString localHost() const;
     /// Logged-in web UI sessions not yet expired; 0 when stopped.
     [[nodiscard]] int sessionCount() const;
 

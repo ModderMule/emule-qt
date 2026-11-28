@@ -576,7 +576,8 @@ bool WebServer::start(const WebServerConfig& config)
     }
 
     if (!m_tcpServer->listen(addr, m_config.port)) {
-        logError(QStringLiteral("WebServer: failed to listen on port %1: %2")
+        // Status bar too: without the server there is no preview at all
+        logStatusError(QStringLiteral("WebServer: failed to listen on port %1: %2")
                      .arg(m_config.port)
                      .arg(m_tcpServer->errorString()));
         m_server.reset();
@@ -697,6 +698,19 @@ uint16 WebServer::port() const
 bool WebServer::isHttps() const
 {
     return isRunning() && qobject_cast<QSslServer*>(m_tcpServer) != nullptr;
+}
+
+QString WebServer::localHost() const
+{
+    if (!isRunning())
+        return {};
+    const QHostAddress addr = m_tcpServer->serverAddress();
+    // literal, not "localhost": Windows resolves that to ::1 first
+    if (addr == QHostAddress::AnyIPv6)
+        return QStringLiteral("::1");
+    if (addr == QHostAddress::Any || addr == QHostAddress::AnyIPv4)
+        return QStringLiteral("127.0.0.1");
+    return addr.toString();
 }
 
 int WebServer::sessionCount() const

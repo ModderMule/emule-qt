@@ -224,12 +224,14 @@ void Ed3kKadPanel::requestLookupHistory()
 void Ed3kKadPanel::autoPickLookup()
 {
     // as the eD2K page: keep a shown lookup while it runs, else the newest running one,
-    // searches and stores before node lookups
+    // searches and stores before node lookups; a clicked one stays while listed (ended too)
     if (!theUiState.kadAutoShowLookups() || !m_running)
         return;
     if (const int row = m_lookupsModel->rowOf(m_graphSearchId);
-        m_graphSearchId != 0 && row >= 0 && !m_lookupsModel->row(row).value(QStringLiteral("ended")).toBool())
+        m_graphSearchId != 0 && row >= 0
+        && (m_lookupPicked || !m_lookupsModel->row(row).value(QStringLiteral("ended")).toBool()))
         return;
+    m_lookupPicked = false;
     std::uint64_t interesting = 0, other = 0;
     for (int r = 0; r < m_lookupsModel->count() && interesting == 0; ++r) {
         const QCborMap& l = m_lookupsModel->row(r);

@@ -2418,8 +2418,17 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
     // Not part of the core snapshot: the stream token belongs to the web server this
     // daemon runs, which core has no handle on.
     if (auto* da = DaemonApp::instance()) {
-        if (auto* ws = da->webServer())
-            stats.insert(QStringLiteral("streamToken"), ws->streamToken());
+        // A server that failed to bind sends an empty token: the GUI then says preview
+        // is unavailable instead of handing the player a dead URL
+        const WebServer* ws = da->webServer();
+        const bool running = ws && ws->isRunning();
+        stats.insert(QStringLiteral("streamToken"), running ? ws->streamToken() : QString());
+        if (running) {
+            // what is actually served: preview-only mode is plain HTTP on loopback
+            // whatever the HTTPS option says
+            stats.insert(QStringLiteral("streamHttps"), ws->isHttps());
+            stats.insert(QStringLiteral("streamLocalHost"), ws->localHost());
+        }
     }
 
     // Likewise daemon-only: the split is Usenet's, and core must not know Usenet.

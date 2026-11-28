@@ -14,6 +14,11 @@ class IpcClient;
 
 class PreviewApps;
 
+/// The daemon's web server as it reports it with its stats: TLS or not, and the
+/// host a player on its machine reaches it at. Not @p known: guessed from the
+/// preferences. Every daemon*Url() builder below uses it.
+void setDaemonWebEndpoint(bool known, bool https = false, const QString& localHost = {});
+
 /// Launch the configured video player with the given streaming URL.
 /// If VLC is detected, reuses an existing instance instead of spawning a new one.
 /// @p title: the file name the player shows instead of the URL's last segment.

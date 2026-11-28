@@ -95,6 +95,8 @@ protected:
     QSplitter* m_vertSplitter = nullptr;
     /// Lookup the graph shows; may outlive its row (MFC keeps the history while shown).
     std::uint64_t m_graphSearchId = 0;
+    /// Graph lookup picked by a click: auto-show keeps it while its row stays.
+    bool m_lookupPicked = false;
     PanelPoller* m_poller = nullptr;
     IpcClient* m_ipc = nullptr;
 
