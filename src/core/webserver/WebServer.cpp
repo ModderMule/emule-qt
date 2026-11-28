@@ -51,6 +51,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDeadlineTimer>
+#include <QElapsedTimer>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -254,6 +255,239 @@ private:
     qint64 m_bufPos = 0;
     qint64 m_fetched;                ///< bytes of the window read so far
     bool m_reading = false;
+    bool m_failed = false;
+};
+
+/// @p want bytes of the logical file at @p from, stitched across @p pieces; short
+/// at a gap in the map or an unreadable file. Pool-safe. A piece with no length
+/// runs to the end of its file.
+QByteArray readPieces(const QList<UsenetStreamPiece>& pieces, qint64 from, qint64 want)
+{
+    QByteArray data;
+    data.reserve(want);
+    for (const UsenetStreamPiece& p : pieces) {
+        const qint64 pos = from + data.size();
+        if (data.size() >= want)
+            break;
+        const qint64 length = p.length > 0 ? p.length : std::numeric_limits<qint64>::max() / 2;
+        if (p.virtualOffset + length <= pos)
+            continue;
+        if (p.virtualOffset > pos)
+            break;                  // a gap in the map
+        QFile file(p.path);
+        if (!openReadShared(file))  // a moved .part can still go (#187)
+            break;
+        const qint64 into = pos - p.virtualOffset;
+        if (!file.seek(p.fileOffset + into))
+            break;
+        const QByteArray chunk = file.read(qMin(want - data.size(), length - into));
+        if (chunk.isEmpty())
+            break;
+        data.append(chunk);
+    }
+    return data;
+}
+
+/// A file as it is on disk, holes read as zeros; not found when it is missing or empty
+UsenetStreamSource wholeFileSource(const QString& path, const QString& fileName)
+{
+    UsenetStreamSource src;
+    if (path.isEmpty())
+        return src;
+    const QFileInfo fi(path);
+    if (!fi.exists() || fi.size() <= 0)
+        return src;
+    src.found = true;
+    src.fileName = fileName;
+    src.totalSize = fi.size();
+    src.availableEnd = src.totalSize;
+    src.pieces = {{path, 0, 0, src.totalSize}};
+    return src;
+}
+
+/// The body of a preview answer: a window of a file that may still be downloading (#279).
+///
+/// Sent with the window's full length as Content-Length, so a player that opened
+/// without a Range (GStreamer) learns the real size instead of one 4 MiB slice.
+/// Reads ahead on the pool what @p probe says is on disk; at the write head it
+/// polls @p probe at the read offset (which also renews a download's stream focus
+/// or a Usenet boost) and hands out more once it is there. No bytes for @p waitMs,
+/// or the file gone: ends short and calls @p giveUp, which drops the connection.
+/// Not sequential: QHttpServerResponder sends size() as Content-Length and waits
+/// for readyRead while a read returns 0.
+class PreviewStreamDevice : public QIODevice     // no Q_OBJECT: adds no signals
+{
+public:
+    using Probe = std::function<UsenetStreamSource(qint64 offset)>;
+
+    static constexpr qint64 kChunk = 256 * 1024;
+    static constexpr qint64 kAhead = 1024 * 1024;
+
+    PreviewStreamDevice(Probe probe, UsenetStreamSource now, qint64 start, qint64 length,
+                        qint64 fileSize, int waitMs, QString what, std::function<void()> giveUp)
+        : m_probe(std::move(probe)), m_src(std::move(now)), m_start(start), m_length(length),
+          m_fileSize(fileSize), m_waitMs(waitMs), m_what(std::move(what)), m_giveUp(std::move(giveUp))
+    {
+        m_poll.setInterval(kStreamPollMs);
+        QObject::connect(&m_poll, &QTimer::timeout, &m_poll, [this] { onPoll(); });
+        m_sinceProbe.start();
+    }
+
+    bool open(OpenMode mode) override
+    {
+        const bool ok = QIODevice::open(mode | QIODevice::Unbuffered);
+        requestMore();
+        return ok;
+    }
+
+    /// The window, sent as Content-Length
+    qint64 size() const override { return m_length; }
+    bool isSequential() const override { return false; }
+    qint64 bytesAvailable() const override { return m_buf.size() - m_bufPos; }
+    bool atEnd() const override { return (m_failed && bytesAvailable() == 0) || pos() >= m_length; }
+
+    /// Forward only: nothing behind is kept
+    bool seek(qint64 pos) override { return pos == this->pos() && QIODevice::seek(pos); }
+
+protected:
+    qint64 readData(char* data, qint64 maxSize) override
+    {
+        const qint64 n = qMin(maxSize, bytesAvailable());
+        std::memcpy(data, m_buf.constData() + m_bufPos, static_cast<size_t>(n));
+        m_bufPos += n;
+        if (m_bufPos == m_buf.size()) {
+            m_buf.clear();
+            m_bufPos = 0;
+        }
+        requestMore();
+        return n;
+    }
+
+    qint64 writeData(const char*, qint64) override { return -1; }
+
+private:
+    [[nodiscard]] qint64 readHead() const { return m_start + m_fetched; }
+
+    /// Where the content stops as last probed; 0 = the caller tracks no holes
+    [[nodiscard]] qint64 contentEnd() const
+    {
+        return m_src.availableEnd > 0 ? qMin(m_src.availableEnd, m_fileSize) : m_fileSize;
+    }
+
+    void requestMore()
+    {
+        if (m_reading || m_failed || m_fetched >= m_length || bytesAvailable() >= kAhead)
+            return;
+        // renew the stream focus / boost while the player reads
+        if (m_sinceProbe.hasExpired(kStreamPollMs) && !reprobe())
+            return;
+        const qint64 at = readHead();
+        if (at >= contentEnd()) {
+            startWaiting();
+            return;
+        }
+        m_poll.stop();
+        m_reading = true;
+        const qint64 want = qMin(qMin(kChunk, contentEnd() - at), m_length - m_fetched);
+        QThreadPool::globalInstance()->start([self = QPointer<QObject>(&m_poll), pieces = m_src.pieces,
+                                              at, want] {
+            QByteArray data = readPieces(pieces, at, want);
+            QMetaObject::invokeMethod(QCoreApplication::instance(), [self, data = std::move(data)] {
+                if (self)
+                    static_cast<PreviewStreamDevice*>(self->parent())->onRead(data);
+            });
+        });
+    }
+
+    void onRead(const QByteArray& data)
+    {
+        m_reading = false;
+        if (m_failed)
+            return;
+        if (data.isEmpty()) {
+            // not on disk after all (flush pending, file moved): wait for a fresh probe
+            m_src.availableEnd = readHead();
+            startWaiting();
+            return;
+        }
+        m_waiting = false;
+        if (m_bufPos > 0) {
+            m_buf.remove(0, m_bufPos);
+            m_bufPos = 0;
+        }
+        m_buf.append(data);
+        m_fetched += data.size();
+        emit readyRead();
+        requestMore();
+    }
+
+    /// False: the file is gone or will never stream, and the stream has ended
+    bool reprobe()
+    {
+        m_src = m_probe(readHead());
+        m_sinceProbe.restart();
+        if (!m_src.found || !m_src.notSeekableReason.isEmpty()) {
+            fail(m_src.found ? m_src.notSeekableReason : QStringLiteral("file gone"));
+            return false;
+        }
+        return true;
+    }
+
+    void startWaiting()
+    {
+        // the stall clock runs from the first wait without bytes, not per poll
+        if (!m_waiting) {
+            m_waiting = true;
+            m_stall = QDeadlineTimer(m_waitMs);
+        }
+        if (!m_poll.isActive())
+            m_poll.start();
+    }
+
+    void onPoll()
+    {
+        if (m_reading || m_failed)
+            return;
+        if (!reprobe())
+            return;
+        if (readHead() < contentEnd()) {
+            m_poll.stop();
+            requestMore();
+        } else if (m_stall.hasExpired()) {
+            fail(QStringLiteral("timed out waiting for byte %1 (have %2)")
+                     .arg(argStr(readHead()), argStr(m_src.availableEnd)));
+        }
+    }
+
+    /// End short of the promised length; the connection has to go with it, or
+    /// the player waits on the rest
+    void fail(const QString& why)
+    {
+        logDebug([&]() -> QString { return QStringLiteral("%1: stream ended at byte %2 of %3 — %4")
+                       .arg(argStr(m_what), argStr(readHead()), argStr(m_start + m_length), argStr(why)); });
+        m_failed = true;
+        m_poll.stop();
+        emit readChannelFinished();
+        if (m_giveUp)
+            m_giveUp();
+    }
+
+    Probe m_probe;
+    UsenetStreamSource m_src;        ///< as last probed
+    qint64 m_start;                  ///< window start in the file
+    qint64 m_length;
+    qint64 m_fileSize;
+    int m_waitMs;
+    QString m_what;
+    std::function<void()> m_giveUp;
+    QByteArray m_buf;
+    qint64 m_bufPos = 0;
+    qint64 m_fetched = 0;            ///< bytes of the window read so far
+    QTimer m_poll{this};             ///< polls at the write head; parent of pool replies
+    QElapsedTimer m_sinceProbe;
+    QDeadlineTimer m_stall;
+    bool m_reading = false;
+    bool m_waiting = false;          ///< no bytes since the stall clock started
     bool m_failed = false;
 };
 
@@ -822,8 +1056,8 @@ void WebServer::registerRoutes()
     // Neither web UI nor REST API — the GUI's preview feature relies on it, so it
     // is served regardless of either flag.
     m_server->route(QStringLiteral("/api/v1/downloads/<arg>/preview"), QHttpServerRequest::Method::Get,
-        [this](const QString& hash, const QHttpServerRequest& req) {
-            return handlePreviewStream(hash, req);
+        [this](const QString& hash, const QHttpServerRequest& req, QHttpServerResponder& responder) {
+            handlePreviewStream(hash, req, responder);
         });
 
     // --- Incoming folder browsing (always available, stream-token auth) ---
@@ -835,9 +1069,9 @@ void WebServer::registerRoutes()
             return handleIncomingListing(req);
         });
 
-    // The two routes in the daemon that answer through the responder rather than
-    // by returning a response, for the same reason: every QHttpServerResponse
-    // holds its body in memory, and these two hand over a whole file.
+    // These answer through the responder rather than by returning a response, as
+    // the preview routes do: every QHttpServerResponse holds its body in memory,
+    // and these hand over a whole file.
     m_server->route(QStringLiteral("/api/v1/incoming/stream"), QHttpServerRequest::Method::Get,
         [this](const QHttpServerRequest& req, QHttpServerResponder& responder) {
             handleIncomingStream(req, responder);
@@ -854,22 +1088,24 @@ void WebServer::registerRoutes()
     // by waiting, which is why it returns a future.
     m_server->route(QStringLiteral("/api/v1/usenet/<arg>/<arg>/preview"),
         QHttpServerRequest::Method::Get,
-        [this](const QString& itemId, const QString& fileIndex, const QHttpServerRequest& req) {
-            return handleUsenetPreviewStream(itemId, fileIndex, req);
+        [this](const QString& itemId, const QString& fileIndex, const QHttpServerRequest& req,
+               QHttpServerResponder& responder) {
+            handleUsenetPreviewStream(itemId, fileIndex, req, responder);
         });
 
     // Hoster preview: a hoster item by its id
     m_server->route(QStringLiteral("/api/v1/hoster/<arg>/preview"),
         QHttpServerRequest::Method::Get,
-        [this](const QString& id, const QHttpServerRequest& req) {
-            return handleHosterPreviewStream(id, req);
+        [this](const QString& id, const QHttpServerRequest& req, QHttpServerResponder& responder) {
+            handleHosterPreviewStream(id, req, responder);
         });
 
     // Torrent preview: one file of a torrent by its id and file index (-1: the largest)
     m_server->route(QStringLiteral("/api/v1/torrents/<arg>/<arg>/preview"),
         QHttpServerRequest::Method::Get,
-        [this](const QString& id, const QString& fileIndex, const QHttpServerRequest& req) {
-            return handleTorrentPreviewStream(id, fileIndex, req);
+        [this](const QString& id, const QString& fileIndex, const QHttpServerRequest& req,
+               QHttpServerResponder& responder) {
+            handleTorrentPreviewStream(id, fileIndex, req, responder);
         });
 
     // --- REST API (/api/v1/*), from the operation table ---
@@ -958,7 +1194,8 @@ bool WebServer::requestBodyTooLarge(const QHttpServerRequest& req)
 // Preview streaming handler
 // ---------------------------------------------------------------------------
 
-QFuture<QHttpServerResponse> WebServer::handlePreviewStream(const QString& hash, const QHttpServerRequest& req)
+void WebServer::handlePreviewStream(const QString& hash, const QHttpServerRequest& req,
+                                    QHttpServerResponder& responder)
 {
     const bool dbg = m_preferences && m_preferences->logWebServer();
 
@@ -974,52 +1211,59 @@ QFuture<QHttpServerResponse> WebServer::handlePreviewStream(const QString& hash,
     }
 
     // Authenticate via stream token query parameter
-    if (auto refusal = streamTokenRefusal(req, u"Preview"))
-        return finishedResponse(std::move(*refusal));
+    if (auto refusal = streamTokenRefusal(req, u"Preview")) {
+        responder.sendResponse(std::move(*refusal));
+        return;
+    }
 
     // "Enable seeking in downloads": a read of an unfinished download waits for
     // its bytes — and has them fetched first — instead of getting the zeros of
     // the preallocated part file. Off: the part file as it is on disk.
     const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
     const bool seeking = m_preferences && m_preferences->downloadSeeking();
+    auto pending = std::make_shared<QHttpServerResponder>(std::move(responder));
+    auto drop = connectionDropper(req);
 
     // ed3k: a 64-hex root names its part file (or the finished file)
     if (hash.size() == 64 && seeking && m_ed3kStreamResolver) {
-        const qint64 wantStart = parseRangeStart(rangeHeader);
-        auto probe = [this, hash, wantStart] {
-            return m_ed3kStreamResolver ? m_ed3kStreamResolver(hash, wantStart) : UsenetStreamSource{};
+        auto probe = [this, hash](qint64 offset) {
+            return m_ed3kStreamResolver ? m_ed3kStreamResolver(hash, offset) : UsenetStreamSource{};
         };
-        return serveWhenAvailable(std::move(probe), rangeHeader, kDownloadStreamWaitMs,
-                                  QStringLiteral("ed3k preview"));
+        serveWhenAvailable(std::move(pending), std::move(probe), rangeHeader, kDownloadStreamWaitMs,
+                           QStringLiteral("ed3k preview"), std::move(drop));
+        return;
     }
     if (hash.size() == 64) {
-        QString path;
-        QString fileName;
-        if (!m_ed3kFileResolver || !m_ed3kFileResolver(hash, path, fileName) || !QFileInfo::exists(path)) {
-            logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — no ed3k download for root %1").arg(hash); });
-            return finishedResponse(jsonError(404, QStringLiteral("File not found")));
-        }
-        return finishedResponse(serveRange({{path, 0, 0, 0}}, fileName, /*totalSize*/ 0,
-                                           /*availableEnd*/ 0, rangeHeader));
+        auto probe = [this, hash](qint64) {
+            QString path;
+            QString fileName;
+            if (!m_ed3kFileResolver || !m_ed3kFileResolver(hash, path, fileName))
+                return UsenetStreamSource{};
+            return wholeFileSource(path, fileName);
+        };
+        serveWhenAvailable(std::move(pending), std::move(probe), rangeHeader, kDownloadStreamWaitMs,
+                           QStringLiteral("ed3k preview"), std::move(drop));
+        return;
     }
 
     if (!m_downloadQueue) {
         logDebug([&]() -> QString { return QStringLiteral("Preview: 500 — download queue not available"); });
-        return finishedResponse(jsonError(500, QStringLiteral("Download queue not available")));
+        pending->sendResponse(jsonError(500, QStringLiteral("Download queue not available")));
+        return;
     }
 
     std::array<uint8, 16> hashBytes{};
     if (hash.size() != 32 || decodeBase16(hash, hashBytes.data(), 16) != 16) {
         logDebug([&]() -> QString { return QStringLiteral("Preview: 400 — invalid hash format: %1").arg(hash); });
-        return finishedResponse(jsonError(400, QStringLiteral("Invalid hash format")));
+        pending->sendResponse(jsonError(400, QStringLiteral("Invalid hash format")));
+        return;
     }
 
     // Seeking on and still downloading: wait for the bytes (PartFile::playFrom).
     // Looked up anew on every poll — the download may finish or go meanwhile.
     if (const auto* download = m_downloadQueue->fileByID(hashBytes.data());
         seeking && download && download->status() != PartFileStatus::Complete) {
-        const qint64 wantStart = parseRangeStart(rangeHeader);
-        auto probe = [this, hashBytes, wantStart] {
+        auto probe = [this, hashBytes](qint64 offset) {
             UsenetStreamSource src;
             PartFile* f = m_downloadQueue ? m_downloadQueue->fileByID(hashBytes.data()) : nullptr;
             if (!f)
@@ -1029,110 +1273,116 @@ QFuture<QHttpServerResponse> WebServer::handlePreviewStream(const QString& hash,
             src.fileName = f->fileName();
             src.totalSize = static_cast<qint64>(static_cast<uint64>(f->fileSize()));
             src.complete = complete;
-            src.availableEnd = static_cast<qint64>(f->playFrom(static_cast<uint64>(wantStart)));
+            src.availableEnd = static_cast<qint64>(f->playFrom(static_cast<uint64>(qMax<qint64>(0, offset))));
             src.pieces = {{f->dataFilePath(), 0, 0, src.totalSize}};
             return src;
         };
-        return serveWhenAvailable(std::move(probe), rangeHeader, kDownloadStreamWaitMs,
-                                  QStringLiteral("Preview"));
+        serveWhenAvailable(std::move(pending), std::move(probe), rangeHeader, kDownloadStreamWaitMs,
+                           QStringLiteral("Preview"), std::move(drop));
+        return;
     }
 
     // The hash may name an active download or any other shared file. A finished
     // download leaves the queue — KnownFileList owns it from then on — and a file that
     // came from a shared directory was never in it, so asking the queue alone would
     // answer 404 for nearly everything the Shared Files window can offer to open.
-    QString path;
-    QString fileName;
-    if (const auto* download = m_downloadQueue->fileByID(hashBytes.data())) {
-        fileName = download->fileName();
-
-        // For an in-progress download fullName() is the .part.met metadata path — strip
-        // .met to get the .part data file. A completed download has been moved to the
-        // incoming dir and fullName() still points at the now-deleted .part, so use the
-        // final path recorded in filePath() instead. This lets the endpoint back both
-        // live preview and completed-file open (remote core).
-        if (download->status() == PartFileStatus::Complete && !download->filePath().isEmpty()) {
-            path = download->filePath();
-        } else {
-            path = download->fullName();
-            if (path.endsWith(QStringLiteral(".met")))
-                path.chop(4);
+    // Resolved anew on every probe: a download completing mid-stream moves its file.
+    auto probe = [this, hashBytes](qint64) {
+        QString path;
+        QString fileName;
+        if (const auto* download = m_downloadQueue ? m_downloadQueue->fileByID(hashBytes.data()) : nullptr) {
+            fileName = download->fileName();
+            // In progress: fullName() is the .part.met — strip .met for the .part data
+            // file. Completed: moved to incoming, filePath() holds the final path.
+            if (download->status() == PartFileStatus::Complete && !download->filePath().isEmpty()) {
+                path = download->filePath();
+            } else {
+                path = download->fullName();
+                if (path.endsWith(QStringLiteral(".met")))
+                    path.chop(4);
+            }
+        } else if (m_sharedFiles) {
+            if (const auto* shared = m_sharedFiles->getFileByID(hashBytes.data())) {
+                fileName = shared->fileName();
+                path = shared->filePath();
+            }
         }
-    } else if (m_sharedFiles) {
-        if (const auto* shared = m_sharedFiles->getFileByID(hashBytes.data())) {
-            fileName = shared->fileName();
-            path = shared->filePath();
-        }
-    }
-
-    if (path.isEmpty()) {
-        logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — no download or shared file for hash %1").arg(hash); });
-        return finishedResponse(jsonError(404, QStringLiteral("File not found")));
-    }
-    if (!QFileInfo::exists(path)) {
-        logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — file not available: %1").arg(path); });
-        return finishedResponse(jsonError(404, QStringLiteral("File not available")));
-    }
-
-    // The file is resolved fresh on every request; serveRange does the rest,
-    // and is also where the response-size cap lives.
-    return finishedResponse(serveRange({{path, 0, 0, 0}}, fileName, /*totalSize*/ 0,
-                                       /*availableEnd*/ 0, rangeHeader));
+        return wholeFileSource(path, fileName);
+    };
+    serveWhenAvailable(std::move(pending), std::move(probe), rangeHeader, kDownloadStreamWaitMs,
+                       QStringLiteral("Preview"), std::move(drop));
 }
 
-QFuture<QHttpServerResponse> WebServer::handleTorrentPreviewStream(
-    const QString& id, const QString& fileIndexText, const QHttpServerRequest& req)
+void WebServer::handleTorrentPreviewStream(const QString& id, const QString& fileIndexText,
+                                           const QHttpServerRequest& req, QHttpServerResponder& responder)
 {
-    if (auto refusal = streamTokenRefusal(req, u"Torrent preview"))
-        return finishedResponse(std::move(*refusal));
-    if (!m_btStreamResolver)
-        return finishedResponse(jsonError(503, QStringLiteral("BitTorrent unavailable")));
+    if (auto refusal = streamTokenRefusal(req, u"Torrent preview")) {
+        responder.sendResponse(std::move(*refusal));
+        return;
+    }
+    if (!m_btStreamResolver) {
+        responder.sendResponse(jsonError(503, QStringLiteral("BitTorrent unavailable")));
+        return;
+    }
     bool indexOk = false;
     const int fileIndex = fileIndexText.toInt(&indexOk);
-    if (!indexOk || fileIndex < -1)
-        return finishedResponse(jsonError(400, QStringLiteral("Invalid file index")));
+    if (!indexOk || fileIndex < -1) {
+        responder.sendResponse(jsonError(400, QStringLiteral("Invalid file index")));
+        return;
+    }
 
     const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
-    const qint64 wantStart = parseRangeStart(rangeHeader);
-    auto resolve = [this, id, fileIndex, wantStart](bool fetch) {
-        return m_btStreamResolver ? m_btStreamResolver(id, fileIndex, wantStart, fetch) : UsenetStreamSource{};
+    auto resolve = [this, id, fileIndex](bool fetch, qint64 offset) {
+        return m_btStreamResolver ? m_btStreamResolver(id, fileIndex, offset, fetch) : UsenetStreamSource{};
     };
-    return serveDownloadPreview(std::move(resolve), rangeHeader, kDownloadStreamWaitMs,
-                                QStringLiteral("Torrent preview"), false);
+    serveDownloadPreview(std::make_shared<QHttpServerResponder>(std::move(responder)), std::move(resolve),
+                         rangeHeader, kDownloadStreamWaitMs, QStringLiteral("Torrent preview"), false,
+                         connectionDropper(req));
 }
 
-QFuture<QHttpServerResponse> WebServer::handleHosterPreviewStream(const QString& id, const QHttpServerRequest& req)
+void WebServer::handleHosterPreviewStream(const QString& id, const QHttpServerRequest& req,
+                                          QHttpServerResponder& responder)
 {
-    if (auto refusal = streamTokenRefusal(req, u"Hoster preview"))
-        return finishedResponse(std::move(*refusal));
-    if (!m_hosterStreamResolver)
-        return finishedResponse(jsonError(503, QStringLiteral("Hoster downloads unavailable")));
+    if (auto refusal = streamTokenRefusal(req, u"Hoster preview")) {
+        responder.sendResponse(std::move(*refusal));
+        return;
+    }
+    if (!m_hosterStreamResolver) {
+        responder.sendResponse(jsonError(503, QStringLiteral("Hoster downloads unavailable")));
+        return;
+    }
     const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
-    const qint64 wantStart = parseRangeStart(rangeHeader);
-    auto resolve = [this, id, wantStart](bool fetch) {
-        return m_hosterStreamResolver ? m_hosterStreamResolver(id, wantStart, fetch) : UsenetStreamSource{};
+    auto resolve = [this, id](bool fetch, qint64 offset) {
+        return m_hosterStreamResolver ? m_hosterStreamResolver(id, offset, fetch) : UsenetStreamSource{};
     };
-    return serveDownloadPreview(std::move(resolve), rangeHeader, kDownloadStreamWaitMs,
-                                QStringLiteral("Hoster preview"), true);
+    serveDownloadPreview(std::make_shared<QHttpServerResponder>(std::move(responder)), std::move(resolve),
+                         rangeHeader, kDownloadStreamWaitMs, QStringLiteral("Hoster preview"), true,
+                         connectionDropper(req));
 }
 
-QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
-    const QString& itemId, const QString& fileIndexText, const QHttpServerRequest& req)
+void WebServer::handleUsenetPreviewStream(const QString& itemId, const QString& fileIndexText,
+                                          const QHttpServerRequest& req, QHttpServerResponder& responder)
 {
     // Same gate as the ED2K route: a stream token, not the REST API key.
     // Preview is served even with both web surfaces switched off, so it cannot
     // lean on either one's authentication.
-    if (auto refusal = streamTokenRefusal(req, u"Usenet preview"))
-        return finishedResponse(std::move(*refusal));
+    if (auto refusal = streamTokenRefusal(req, u"Usenet preview")) {
+        responder.sendResponse(std::move(*refusal));
+        return;
+    }
     const QUrlQuery query(req.query());
 
-    if (!m_usenetStreamResolver)
-        return finishedResponse(jsonError(503, QStringLiteral("Usenet engine unavailable")));
+    if (!m_usenetStreamResolver) {
+        responder.sendResponse(jsonError(503, QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
 
     bool indexOk = false;
     const int fileIndex = fileIndexText.toInt(&indexOk);
-    if (!indexOk || fileIndex < 0)
-        return finishedResponse(jsonError(400, QStringLiteral("Invalid file index")));
+    if (!indexOk || fileIndex < 0) {
+        responder.sendResponse(jsonError(400, QStringLiteral("Invalid file index")));
+        return;
+    }
 
     // Which file inside the archive set. Absent means "the first playable one",
     // which is what every URL predating the chooser carries. A malformed value
@@ -1142,58 +1392,61 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     if (query.hasQueryItem(QStringLiteral("entry"))) {
         bool entryOk = false;
         entryOrdinal = query.queryItemValue(QStringLiteral("entry")).toInt(&entryOk);
-        if (!entryOk || entryOrdinal < 0)
-            return finishedResponse(jsonError(400, QStringLiteral("Invalid archive entry")));
+        if (!entryOk || entryOrdinal < 0) {
+            responder.sendResponse(jsonError(400, QStringLiteral("Invalid archive entry")));
+            return;
+        }
     }
 
     // The request object does not outlive this call, so everything the deferred
     // path needs is copied out now.
     const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
-    const qint64 wantStart = parseRangeStart(rangeHeader);
 
-    // What to ask the queue to fetch. The response is capped at one chunk
-    // anyway, so asking for more than that would promote articles the client is
-    // not going to read yet.
-    constexpr qint64 kWantLength = kPreviewChunkBytes;
-
+    // What to ask the queue to fetch at each probe: one chunk from the read offset.
+    // The stream probes again as it reads on, so asking for more would promote
+    // articles the client is not going to read yet.
     UsenetStreamRequest ask;
     ask.itemId = itemId;
     ask.fileIndex = fileIndex;
-    ask.wantOffset = wantStart;
-    ask.wantLength = kWantLength;
+    ask.wantLength = kPreviewChunkBytes;
     ask.entryOrdinal = entryOrdinal;
 
     // Resolving is not a pure lookup (a preview fetches, seeking on or off) — it also tells the queue
     // somebody is watching this item, which is what puts its articles at the
     // front of the schedule. That is why the poll calls it again rather than
     // caching: the boost has to be refreshed for as long as a player is reading.
-    auto resolve = [this, ask](bool fetch) mutable {
+    auto resolve = [this, ask](bool fetch, qint64 offset) mutable {
         ask.fetch = fetch;
+        ask.wantOffset = offset;
         return m_usenetStreamResolver ? m_usenetStreamResolver(ask) : UsenetStreamSource{};
     };
-    return serveDownloadPreview(std::move(resolve), rangeHeader, kStreamWaitMs, QStringLiteral("Usenet preview"),
-                                true);
+    serveDownloadPreview(std::make_shared<QHttpServerResponder>(std::move(responder)), std::move(resolve),
+                         rangeHeader, kStreamWaitMs, QStringLiteral("Usenet preview"), true,
+                         connectionDropper(req));
 }
 
-QFuture<QHttpServerResponse> WebServer::serveDownloadPreview(std::function<UsenetStreamSource(bool fetch)> resolve,
-                                                             const QByteArray& rangeHeader, int waitMs,
-                                                             const QString& what, bool alwaysFetch)
+void WebServer::serveDownloadPreview(std::shared_ptr<QHttpServerResponder> responder,
+                                     std::function<UsenetStreamSource(bool fetch, qint64 offset)> resolve,
+                                     const QByteArray& rangeHeader, int waitMs, const QString& what,
+                                     bool alwaysFetch, std::function<void()> dropConnection)
 {
     const bool seeking = alwaysFetch || (m_preferences && m_preferences->downloadSeeking());
-    auto probe = [resolve = std::move(resolve), seeking] {
-        UsenetStreamSource src = resolve(seeking);
-        // off: everything mapped counts as there (serveRange caps at the file's size);
+    auto probe = [resolve = std::move(resolve), seeking](qint64 offset) {
+        UsenetStreamSource src = resolve(seeking, offset);
+        // off: everything mapped counts as there (capped at the file's size);
         // only a source still without pieces waits
         if (!seeking && !src.pieces.isEmpty())
             src.availableEnd = std::numeric_limits<qint64>::max();
         return src;
     };
-    return serveWhenAvailable(std::move(probe), rangeHeader, waitMs, what);
+    serveWhenAvailable(std::move(responder), std::move(probe), rangeHeader, waitMs, what,
+                       std::move(dropConnection));
 }
 
-QFuture<QHttpServerResponse> WebServer::serveWhenAvailable(std::function<UsenetStreamSource()> probe,
-                                                           const QByteArray& rangeHeader, int waitMs,
-                                                           const QString& what)
+void WebServer::serveWhenAvailable(std::shared_ptr<QHttpServerResponder> responder,
+                                   std::function<UsenetStreamSource(qint64 offset)> probe,
+                                   const QByteArray& rangeHeader, int waitMs, const QString& what,
+                                   std::function<void()> dropConnection)
 {
     const qint64 wantStart = parseRangeStart(rangeHeader);
 
@@ -1201,264 +1454,297 @@ QFuture<QHttpServerResponse> WebServer::serveWhenAvailable(std::function<UsenetS
     // it went away, or the wait ran out. Only the first is a success, and
     // forgetting the middle two means a removed or solid release holds a player
     // for the whole timeout. A start at or past the end is answered at once
-    // too: serveRange turns it into the EOF 416 a player probes for.
-    auto answer = [this, rangeHeader, wantStart, what](const UsenetStreamSource& now, bool timedOut)
-        -> std::optional<QHttpServerResponse> {
+    // too: planRange turns it into the EOF 416 a player probes for.
+    // True: answered.
+    auto answer = [this, responder, probe, rangeHeader, wantStart, waitMs, what, dropConnection](
+                      const UsenetStreamSource& now, bool timedOut) -> bool {
         if (!now.found) {
             logDebug([&]() -> QString { return QStringLiteral("%1: 404 — file gone").arg(what); });
-            return jsonError(404, QStringLiteral("File not found"));
+            responder->sendResponse(jsonError(404, QStringLiteral("File not found")));
+            return true;
         }
         // A compressed, solid or encrypted archive will never be mappable. Waiting
         // out the poll would end in a 416 that reads like "not yet" — 406 with the
         // reason says "not ever", which is what the user needs to know.
         if (!now.notSeekableReason.isEmpty()) {
             logDebug([&]() -> QString { return QStringLiteral("%1: 406 — %2").arg(what, now.notSeekableReason); });
-            return jsonError(406, now.notSeekableReason);
+            responder->sendResponse(jsonError(406, now.notSeekableReason));
+            return true;
         }
         const bool pastEnd = now.totalSize > 0 && wantStart >= now.totalSize;
-        if (now.availableEnd > wantStart || pastEnd)
-            return serveRange(now.pieces, now.fileName, now.totalSize, now.availableEnd, rangeHeader);
+        if (now.availableEnd > wantStart || pastEnd) {
+            streamWindow(*responder, now, probe, rangeHeader, waitMs, what, dropConnection);
+            return true;
+        }
         if (!timedOut)
-            return std::nullopt;
+            return false;
         // The bytes at this offset were asked for and have not come back inside
         // the window — a slow source, or a hole nobody holds. A prompt 416 beats
         // a player hanging on a request that might take the rest of the download.
         logDebug([&]() -> QString { return QStringLiteral("%1: 416 — timed out waiting for byte %2 of \"%3\" (have %4)")
                        .arg(argStr(what), argStr(wantStart), argStr(now.fileName), argStr(now.availableEnd)); });
-        return rangeNotSatisfiable(now.totalSize > 0 ? now.totalSize : now.availableEnd);
+        responder->sendResponse(rangeNotSatisfiable(now.totalSize > 0 ? now.totalSize : now.availableEnd));
+        return true;
     };
 
-    if (auto resp = answer(probe(), false))
-        return finishedResponse(std::move(*resp));
+    if (answer(probe(wantStart), false))
+        return;
 
     // Playback has caught up with the write head, or a seek went past it. Hold
     // the request rather than answer it: a zero-byte 206 reads as end-of-stream
     // and every player stops.
     //
     // This runs on the daemon's event loop — the same thread as the downloads —
-    // so sleeping here would stall the very transfers being waited for. A
-    // deferred QFuture is the way out: the handler returns at once and the
-    // response goes when the promise is fulfilled.
-    auto promise = std::make_shared<QPromise<QHttpServerResponse>>();
-    promise->start();
-    QFuture<QHttpServerResponse> future = promise->future();
-
+    // so sleeping here would stall the very transfers being waited for. The
+    // responder is held instead and answered from the poll.
     auto* timer = new QTimer(this);
     timer->setInterval(kStreamPollMs);
     const QDeadlineTimer deadline(waitMs);
 
     connect(timer, &QTimer::timeout, this,
-            [timer, promise, probe = std::move(probe), answer = std::move(answer), deadline] {
-        auto resp = answer(probe(), deadline.hasExpired());
-        if (!resp)
+            [timer, probe = std::move(probe), answer = std::move(answer), wantStart, deadline] {
+        if (!answer(probe(wantStart), deadline.hasExpired()))
             return;
         timer->stop();
         timer->deleteLater();
-        promise->addResult(std::move(*resp));
-        promise->finish();
     });
 
     timer->start();
-    return future;
 }
 
-QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& piecesIn,
-                                          const QString& fileName,
-                                          qint64 totalSize, qint64 availableEnd,
-                                          const QByteArray& rangeHeader)
+void WebServer::streamWindow(QHttpServerResponder& responder, const UsenetStreamSource& now,
+                             const std::function<UsenetStreamSource(qint64 offset)>& probe,
+                             const QByteArray& rangeHeader, int waitMs, const QString& what,
+                             std::function<void()> dropConnection)
+{
+    PreviewWindow w = planRange(now.pieces, now.fileName, now.totalSize, now.availableEnd, rangeHeader);
+    if (w.error) {
+        responder.sendResponse(std::move(*w.error));
+        return;
+    }
+    // No total yet (an extraction still writing): no Content-Length can be promised,
+    // so one in-memory window with `/*`
+    if (w.totalUnknown) {
+        responder.sendResponse(serveRange(now.pieces, now.fileName, now.totalSize, now.availableEnd,
+                                          rangeHeader));
+        return;
+    }
+
+    // The whole window asked for, streamed as it comes (PreviewStreamDevice). A range-less
+    // request gets 200 and the file's size: GStreamer takes Content-Length for the size of
+    // the file and never asks again, so a capped 206 played 4 MiB of it (#279).
+    UsenetStreamSource first = now;
+    first.pieces = w.pieces;
+    auto guarded = [self = QPointer<WebServer>(this), probe](qint64 offset) {
+        return self ? probe(offset) : UsenetStreamSource{};
+    };
+    const qint64 length = w.end - w.start + 1;
+    auto* device = new PreviewStreamDevice(std::move(guarded), std::move(first), w.start, length,
+                                           w.fileSize, waitMs, what, std::move(dropConnection));
+    device->open(QIODevice::ReadOnly);
+
+    QHttpHeaders headers;
+    headers.append(QHttpHeaders::WellKnownHeader::ContentType, QString::fromUtf8(w.mimeType));
+    headers.append(QByteArrayLiteral("Accept-Ranges"), QStringLiteral("bytes"));
+    if (w.hasRange) {
+        headers.append(QByteArrayLiteral("Content-Range"),
+                       QStringLiteral("bytes %1-%2/%3").arg(argStr(w.start), argStr(w.end), argStr(w.fileSize)));
+    }
+    headers.append(QHttpHeaders::WellKnownHeader::ContentDisposition,
+                   QStringLiteral("inline; filename=\"%1\"").arg(now.fileName));
+
+    if (m_preferences && m_preferences->logWebServer())
+        logDebug([&]() -> QString { return QStringLiteral("%1: streaming [%2-%3/%4] (on disk to %5)  hasRange=%6")
+            .arg(argStr(what), argStr(w.start), argStr(w.end), argStr(w.fileSize), argStr(w.contentEnd),
+                 argStr(w.hasRange)); });
+
+    responder.write(device, headers,
+                    w.hasRange ? static_cast<QHttpServerResponse::StatusCode>(206)
+                               : QHttpServerResponse::StatusCode::Ok);
+}
+
+WebServer::PreviewWindow WebServer::planRange(const QList<UsenetStreamPiece>& piecesIn,
+                                              const QString& fileName, qint64 totalSize,
+                                              qint64 availableEnd, const QByteArray& rangeHeader) const
 {
     const bool dbg = m_preferences && m_preferences->logWebServer();
+    PreviewWindow w;
 
     if (piecesIn.isEmpty()) {
         logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — nothing to serve for %1").arg(fileName); });
-        return jsonError(404, QStringLiteral("File not available"));
+        w.error = jsonError(404, QStringLiteral("File not available"));
+        return w;
     }
 
     // A lone piece with no length means "whatever is on disk" — the ED2K route,
     // whose .part file is already preallocated to its final length.
-    QList<UsenetStreamPiece> pieces = piecesIn;
-    const bool lengthFromDisk = pieces.size() == 1 && pieces.first().length <= 0;
+    w.pieces = piecesIn;
+    const bool lengthFromDisk = w.pieces.size() == 1 && w.pieces.first().length <= 0;
     if (lengthFromDisk) {
-        const qint64 onDisk = QFileInfo(pieces.first().path).size();
-        pieces[0].length = qMax<qint64>(0, onDisk - pieces.first().fileOffset);
+        const qint64 onDisk = QFileInfo(w.pieces.first().path).size();
+        w.pieces[0].length = qMax<qint64>(0, onDisk - w.pieces.first().fileOffset);
     }
 
     // totalSize is what the *finished* file will be, and it is what Content-Range
     // must report: a player derives its duration and seek bar from it, and a
     // total that grows underneath makes both jump.
-    qint64 fileSize = totalSize;
-    if (fileSize <= 0) {
-        fileSize = 0;
-        for (const UsenetStreamPiece& p : std::as_const(pieces))
-            fileSize += p.length;
+    w.fileSize = totalSize;
+    if (w.fileSize <= 0) {
+        w.fileSize = 0;
+        for (const UsenetStreamPiece& p : std::as_const(w.pieces))
+            w.fileSize += p.length;
     }
-    if (fileSize <= 0) {
+    if (w.fileSize <= 0) {
         logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — nothing readable yet: %1")
-                       .arg(pieces.first().path); });
-        return jsonError(404, QStringLiteral("File not available"));
+                       .arg(w.pieces.first().path); });
+        w.error = jsonError(404, QStringLiteral("File not available"));
+        return w;
     }
+
+    // Pieces of a stated length, and no total: whoever built them knows how far
+    // the file goes but not how far it will go — an extraction still writing it
+    // out. Its current length is not its length. A lone piece with no length is the
+    // opposite case: that length *came* from the preallocated file on disk.
+    w.totalUnknown = totalSize <= 0 && !lengthFromDisk;
 
     // Where the *content* stops. Zero means "the caller does not track holes",
     // which is the ED2K case: its .part file is preallocated and its gaps have
     // always read back as zeros.
-    const qint64 contentEnd = availableEnd > 0 ? qMin(availableEnd, fileSize) : fileSize;
+    w.contentEnd = availableEnd > 0 ? qMin(availableEnd, w.fileSize) : w.fileSize;
 
     // Derive MIME type from the original filename
     QMimeDatabase mimeDb;
-    const QMimeType mime = mimeDb.mimeTypeForFile(fileName, QMimeDatabase::MatchExtension);
-    const QByteArray mimeType = mime.name().toUtf8();
+    w.mimeType = mimeDb.mimeTypeForFile(fileName, QMimeDatabase::MatchExtension).name().toUtf8();
 
     if (dbg)
         logDebug([&]() -> QString { return QStringLiteral("Preview: file=%1  pieces=%2  size=%3  available=%4  mime=%5")
-            .arg(argStr(fileName), argStr(pieces.size()), argStr(fileSize), argStr(contentEnd),
-                 QString::fromUtf8(mimeType)); });
+            .arg(argStr(fileName), argStr(w.pieces.size()), argStr(w.fileSize), argStr(w.contentEnd),
+                 QString::fromUtf8(w.mimeType)); });
 
     // --- Range, for seeking support (required by VLC et al.) ---
-    qint64 rangeStart = 0;
-    qint64 rangeEnd   = fileSize - 1;
-    bool   hasRange   = false;
-
+    w.start = 0;
+    w.end = w.fileSize - 1;
     if (!rangeHeader.isEmpty()) {
         if (dbg)
             logDebug([&]() -> QString { return QStringLiteral("Preview: Range header: %1").arg(QString::fromLatin1(rangeHeader)); });
 
         qint64 parsedEnd = -1;
-        if (!parseRange(rangeHeader, rangeStart, parsedEnd)) {
+        if (!parseRange(rangeHeader, w.start, parsedEnd)) {
             logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — malformed Range header: %1")
                 .arg(QString::fromLatin1(rangeHeader)); });
-            return rangeNotSatisfiable(fileSize);
+            w.error = rangeNotSatisfiable(w.fileSize);
+            return w;
         }
-        rangeEnd = parsedEnd < 0 ? fileSize - 1 : parsedEnd;
+        w.end = parsedEnd < 0 ? w.fileSize - 1 : parsedEnd;
         // RFC 7233 §2.1: clamp last-byte-pos to file size
-        if (rangeEnd >= fileSize)
-            rangeEnd = fileSize - 1;
+        if (w.end >= w.fileSize)
+            w.end = w.fileSize - 1;
         // A player probing exactly at the end (VLC after the trailing moov) is
         // ordinary EOF, not worth a warning
-        if (rangeStart == fileSize) {
+        if (w.start == w.fileSize) {
             if (dbg)
-                logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — EOF probe at %1").arg(fileSize); });
-            return rangeNotSatisfiable(fileSize);
+                logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — EOF probe at %1").arg(w.fileSize); });
+            w.error = rangeNotSatisfiable(w.fileSize);
+            return w;
         }
-        if (rangeStart >= fileSize || rangeStart > rangeEnd) {
+        if (w.start >= w.fileSize || w.start > w.end) {
             logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — out of bounds: start=%1 end=%2 fileSize=%3")
-                .arg(rangeStart).arg(rangeEnd).arg(fileSize); });
-            return rangeNotSatisfiable(fileSize);
+                .arg(argStr(w.start), argStr(w.end), argStr(w.fileSize)); });
+            w.error = rangeNotSatisfiable(w.fileSize);
+            return w;
         }
-        hasRange = true;
-    } else {
-        if (dbg)
-            logDebug(QStringLiteral("Preview: no Range header — serving from byte 0"));
+        w.hasRange = true;
+    } else if (dbg) {
+        logDebug(QStringLiteral("Preview: no Range header — serving from byte 0"));
     }
 
     // Nothing at that offset yet. Whoever called has already waited as long as
     // it was willing to; a zero-byte 206 reads as end-of-stream and stops
     // playback, so say plainly that the range cannot be satisfied instead.
-    if (rangeStart >= contentEnd) {
+    if (w.start >= w.contentEnd) {
         logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — byte %1 is not downloaded yet (have %2)")
-            .arg(rangeStart).arg(contentEnd); });
-        return rangeNotSatisfiable(fileSize);
+            .arg(argStr(w.start), argStr(w.contentEnd)); });
+        w.error = rangeNotSatisfiable(w.fileSize);
     }
+    return w;
+}
+
+QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces,
+                                          const QString& fileName,
+                                          qint64 totalSize, qint64 availableEnd,
+                                          const QByteArray& rangeHeader)
+{
+    PreviewWindow w = planRange(pieces, fileName, totalSize, availableEnd, rangeHeader);
+    if (w.error)
+        return std::move(*w.error);
 
     // Two ceilings, both load-bearing:
     //   - contentEnd, so the preallocated tail of a half-downloaded file is
     //     never handed over as content;
-    //   - kPreviewChunkBytes, because the body is assembled in memory. Without
-    //     it `Range: bytes=0-` on a 40 GB release asks the daemon to allocate
-    //     40 GB — and that is the request a player opens with.
-    // Answering with fewer bytes than were asked for is ordinary HTTP:
+    //   - kPreviewChunkBytes, because the body is assembled in memory.
     // Content-Range states what was actually sent and the client comes back for
     // the next window.
-    rangeEnd = qMin(rangeEnd, contentEnd - 1);
-    rangeEnd = qMin(rangeEnd, rangeStart + kPreviewChunkBytes - 1);
+    qint64 rangeEnd = qMin(w.end, w.contentEnd - 1);
+    rangeEnd = qMin(rangeEnd, w.start + kPreviewChunkBytes - 1);
 
-    const qint64 contentLength = rangeEnd - rangeStart + 1;
-
-    // Walk the pieces the window touches. Usually one — a 4 MiB window inside a
-    // volume of tens of megabytes — but a window landing on a volume boundary
-    // spans two files, and stitching them here is what makes a RAR set look like
-    // one continuous file to the player.
-    QByteArray data;
-    data.reserve(contentLength);
-    for (const UsenetStreamPiece& p : std::as_const(pieces)) {
-        const qint64 pos = rangeStart + data.size();
-        if (pos > rangeEnd)
-            break;
-        if (p.virtualOffset + p.length <= pos)
-            continue;
-        if (p.virtualOffset > pos)
-            break;                  // a gap in the map; serve what we have
-
-        QFile file(p.path);
-        if (!openReadShared(file)) {   // a moved .part can still go (#187)
-            logDebug([&]() -> QString { return QStringLiteral("Preview: cannot open %1").arg(p.path); });
-            break;
-        }
-        const qint64 into = pos - p.virtualOffset;
-        if (!file.seek(p.fileOffset + into))
-            break;
-
-        const qint64 want = qMin(rangeEnd - pos + 1, p.length - into);
-        const QByteArray chunk = file.read(want);
-        if (chunk.isEmpty())
-            break;
-        data.append(chunk);
-    }
-
+    // Usually one piece — but a window landing on a volume boundary spans two
+    // files, and stitching them is what makes a RAR set look like one file.
+    const QByteArray data = readPieces(w.pieces, w.start, rangeEnd - w.start + 1);
     if (data.isEmpty()) {
-        logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — byte %1 could not be read").arg(rangeStart); });
-        return rangeNotSatisfiable(fileSize);
+        logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — byte %1 could not be read").arg(w.start); });
+        return rangeNotSatisfiable(w.fileSize);
     }
-    rangeEnd = rangeStart + data.size() - 1;
-
-    if (dbg)
-        logDebug([&]() -> QString { return QStringLiteral("Preview: serving %1 bytes [%2-%3/%4]  hasRange=%5  pieces=%6")
-            .arg(argStr(data.size()), argStr(rangeStart), argStr(rangeEnd), argStr(fileSize),
-                 argStr(hasRange), argStr(pieces.size())); });
-
-    // Pieces of a stated length, and no total: whoever built them knows how far
-    // the file goes but not how far it will go — an extraction still writing it
-    // out. Its current length is not its length, so say `/*` rather than invent
-    // a number the player will latch onto as the duration.
-    //
-    // A lone piece with no length is the opposite case: that length *came* from
-    // the file on disk, which the ED2K route preallocates to its final size, so
-    // there the size on disk is the answer.
-    const bool totalUnknown = totalSize <= 0 && !lengthFromDisk;
+    rangeEnd = w.start + data.size() - 1;
 
     // A capped answer to an uncapped request is still a *partial* one, so it has
     // to be 206 with a Content-Range even when the client sent no Range header.
-    // Replying 200 would claim the truncated body is the whole file.
-    const bool partial = hasRange || data.size() < fileSize || totalUnknown;
-
+    // Replying 200 would claim the truncated body is the whole file. No total:
+    // `/*` rather than a number the player latches onto as the duration.
+    const bool partial = w.hasRange || data.size() < w.fileSize || w.totalUnknown;
     const auto statusCode = partial
         ? static_cast<QHttpServerResponse::StatusCode>(206)
         : QHttpServerResponse::StatusCode::Ok;
 
-    QHttpServerResponse resp(mimeType, data, statusCode);
+    QHttpServerResponse resp(w.mimeType, data, statusCode);
     auto headers = resp.headers();
     headers.append(QByteArrayLiteral("Accept-Ranges"), QStringLiteral("bytes"));
     if (partial) {
         headers.append(QByteArrayLiteral("Content-Range"),
                        QStringLiteral("bytes %1-%2/%3")
-                           .arg(rangeStart).arg(rangeEnd)
-                           .arg(totalUnknown ? QStringLiteral("*") : QString::number(fileSize)));
+                           .arg(argStr(w.start), argStr(rangeEnd),
+                                w.totalUnknown ? QStringLiteral("*") : QString::number(w.fileSize)));
     }
     headers.append(QHttpHeaders::WellKnownHeader::ContentDisposition,
                    QStringLiteral("inline; filename=\"%1\"").arg(fileName));
     resp.setHeaders(std::move(headers));
 
-    if (dbg) {
-        const auto respHeaders = resp.headers();
-        for (qsizetype i = 0; i < respHeaders.size(); ++i) {
-            logDebug([&]() -> QString { return QStringLiteral("Preview response header: %1: %2")
-                .arg(QString::fromLatin1(respHeaders.nameAt(i)),
-                     QString::fromLatin1(respHeaders.valueAt(i))); });
-        }
-        logDebug([&]() -> QString { return QStringLiteral("Preview: responding %1  body=%2 bytes")
-            .arg(static_cast<int>(statusCode)).arg(data.size()); });
-    }
+    if (m_preferences && m_preferences->logWebServer())
+        logDebug([&]() -> QString { return QStringLiteral("Preview: responding %1  body=%2 bytes [%3-%4]")
+            .arg(argStr(static_cast<int>(statusCode)), argStr(data.size()), argStr(w.start), argStr(rangeEnd)); });
 
     return resp;
+}
+
+std::function<void()> WebServer::connectionDropper(const QHttpServerRequest& req)
+{
+    // Queued: the transfer still has to send what it has. disconnectFromHost, not
+    // abort: abort would drop those bytes. No socket found (another Qt layout): the
+    // keep-alive timeout closes it.
+    return [self = QPointer<WebServer>(this), addr = req.remoteAddress(), port = req.remotePort()] {
+        if (!self)
+            return;
+        QMetaObject::invokeMethod(self.data(), [self, addr, port] {
+            if (!self || !self->m_server)
+                return;
+            const auto sockets = self->m_server->findChildren<QTcpSocket*>();
+            for (QTcpSocket* s : sockets) {
+                if (s->peerPort() == port && s->peerAddress().isEqual(addr)) {
+                    s->disconnectFromHost();
+                    break;
+                }
+            }
+        }, Qt::QueuedConnection);
+    };
 }
 
 // ---------------------------------------------------------------------------

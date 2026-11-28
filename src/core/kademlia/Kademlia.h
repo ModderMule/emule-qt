@@ -78,9 +78,11 @@ public:
     [[nodiscard]] bool isFirewalled() const;
     /// Not MFC: served node keepalive. Repeats our FINDBUDDY_REQ to @p buddy so it sees
     /// our current outside UDP port (NAT-T endpoint hint) and the mapping stays open.
-    /// @p onDemand (a relayed OP_RENDEZVOUS): at most every kBuddyRefreshGapSecs.
+    /// @p onDemand: for a relayed OP_RENDEZVOUS, else the OP_BUDDYPING one. Either way
+    /// never within kBuddyRefreshGapMs of the last FINDBUDDY_REQ to that IP: the buddy's
+    /// flood check allows one per 30 s and charges dropped ones too (emule-qt#281).
     void sendBuddyRefresh(const UpDownClient& buddy, bool onDemand);
-    static constexpr time_t kBuddyRefreshGapSecs = 30;
+    static constexpr uint64 kBuddyRefreshGapMs = 45'000;
     /// Firewalled and the TCP check finished: not just the default while rechecking.
     [[nodiscard]] bool isFirewalledVerified() const;
     /// Starts a firewall re-check. At most one NodeFwCheckUDP lookup may run at
@@ -248,7 +250,6 @@ private:
     time_t m_nextFindBuddy = 0;
     uint32 m_buddySearchesWithoutBuddy = 0;
     BuddyStore m_buddyStore;
-    time_t m_lastBuddyRefresh = 0;   ///< last served node keepalive sent
     QString m_buddyStorePath;   ///< empty: memory only
     BuddyStore::SessionVerdict m_sessionVerdict = BuddyStore::SessionVerdict::Unknown;
     bool m_askBuddiesOnConnect = false;   ///< last session firewalled: ask on connect

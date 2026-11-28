@@ -379,62 +379,81 @@ private:
     [[nodiscard]] std::optional<QHttpServerResponse> streamTokenRefusal(
         const QHttpServerRequest& req, QStringView what);
 
-    // Endpoint handlers — preview
-    QFuture<QHttpServerResponse> handlePreviewStream(const QString& hash, const QHttpServerRequest& req);
-
-    // Endpoint handlers — torrent preview
-    QFuture<QHttpServerResponse> handleTorrentPreviewStream(const QString& id, const QString& fileIndex,
-                                                            const QHttpServerRequest& req);
-
-    // Endpoint handlers — hoster preview
-    QFuture<QHttpServerResponse> handleHosterPreviewStream(const QString& id, const QHttpServerRequest& req);
-
-    // Endpoint handlers — Usenet preview
-    QFuture<QHttpServerResponse> handleUsenetPreviewStream(const QString& itemId,
-                                                           const QString& fileIndex,
-                                                           const QHttpServerRequest& req);
+    // Endpoint handlers — preview. Answered through the responder: the body is
+    // streamed as it comes (#279), and a source still downloading may first be waited for.
+    void handlePreviewStream(const QString& hash, const QHttpServerRequest& req,
+                             QHttpServerResponder& responder);
+    void handleTorrentPreviewStream(const QString& id, const QString& fileIndex,
+                                    const QHttpServerRequest& req, QHttpServerResponder& responder);
+    void handleHosterPreviewStream(const QString& id, const QHttpServerRequest& req,
+                                   QHttpServerResponder& responder);
+    void handleUsenetPreviewStream(const QString& itemId, const QString& fileIndex,
+                                   const QHttpServerRequest& req, QHttpServerResponder& responder);
 
     /// Answers a preview Range request once @p probe reports the bytes at its
     /// start (availableEnd past it), polling until @p waitMs runs out (416).
-    /// @p probe runs on every poll: it may renew what makes the bytes come
-    /// (a Usenet stream boost, a download's stream focus). Not found: 404; a
-    /// notSeekableReason: 406. @p what prefixes the log lines.
-    QFuture<QHttpServerResponse> serveWhenAvailable(std::function<UsenetStreamSource()> probe,
-                                                    const QByteArray& rangeHeader, int waitMs,
-                                                    const QString& what);
+    /// @p probe(offset) runs on every poll and as the stream reads on: it may renew
+    /// what makes the bytes come (a Usenet stream boost, a download's stream focus).
+    /// Not found: 404; a notSeekableReason: 406. @p what prefixes the log lines.
+    /// @p dropConnection closes the connection of a stream that ends short.
+    void serveWhenAvailable(std::shared_ptr<QHttpServerResponder> responder,
+                            std::function<UsenetStreamSource(qint64 offset)> probe,
+                            const QByteArray& rangeHeader, int waitMs, const QString& what,
+                            std::function<void()> dropConnection);
 
     /// Preview of an unfinished download: @p alwaysFetch (Usenet, hoster: a click is a request
     /// for those bytes, both are fast) or "Enable seeking in downloads" (BitTorrent): @p
-    /// resolve(true) has the range fetched first and the answer waits for its bytes
-    /// (serveWhenAvailable); else @p resolve(false) and the file as it is on disk, gaps read
-    /// as zeros, a source with no pieces yet still waited for.
-    QFuture<QHttpServerResponse> serveDownloadPreview(std::function<UsenetStreamSource(bool fetch)> resolve,
-                                                      const QByteArray& rangeHeader, int waitMs,
-                                                      const QString& what, bool alwaysFetch);
+    /// resolve(true, offset) has the range fetched first and the answer waits for its bytes
+    /// (serveWhenAvailable); else @p resolve(false, offset) and the file as it is on disk, gaps
+    /// read as zeros, a source with no pieces yet still waited for.
+    void serveDownloadPreview(std::shared_ptr<QHttpServerResponder> responder,
+                              std::function<UsenetStreamSource(bool fetch, qint64 offset)> resolve,
+                              const QByteArray& rangeHeader, int waitMs, const QString& what,
+                              bool alwaysFetch, std::function<void()> dropConnection);
 
-    /// Answer a Range request for @p path, serving nothing past @p availableEnd.
-    ///
-    /// Shared by both preview routes. Two properties matter and neither is
-    /// obvious from the signature:
-    ///
-    ///  - the body is capped at kPreviewChunkBytes, so an open-ended
-    ///    `Range: bytes=0-` cannot materialise a whole release in the daemon's
-    ///    address space. A short 206 is ordinary HTTP and every player asks for
-    ///    the next window;
-    ///  - @p availableEnd is where the *content* stops, which for a file still
-    ///    downloading is short of its size. Serving past it would hand a player
-    ///    the preallocated zeros.
-    ///
-    /// Takes the raw `Range` header rather than the request, because the Usenet
-    /// route can answer long after the QHttpServerRequest is gone.
-    /// The one implementation of HTTP Range in the daemon, shared by the ED2K
-    /// and Usenet preview routes. @p pieces are in ascending virtualOffset order
-    /// and may span several files; the ED2K route passes exactly one.
+    /// Answer with the whole window the Range asks for (none: 200, the whole file),
+    /// streamed off disk as @p now and later probes say it is there. Content-Length is
+    /// the window: a player that opened without a Range takes it for the file's size.
+    /// A source with no total yet gets one in-memory window instead (serveRange).
+    void streamWindow(QHttpServerResponder& responder, const UsenetStreamSource& now,
+                      const std::function<UsenetStreamSource(qint64 offset)>& probe,
+                      const QByteArray& rangeHeader, int waitMs, const QString& what,
+                      std::function<void()> dropConnection);
+
+    /// A Range request against what a source holds (planRange)
+    struct PreviewWindow {
+        QList<UsenetStreamPiece> pieces;     ///< a lone length-less piece sized from disk
+        qint64 fileSize = 0;                 ///< the total Content-Range reports
+        qint64 contentEnd = 0;               ///< where the content stops; the rest is zeros
+        qint64 start = 0;
+        qint64 end = 0;                      ///< last byte asked for, clamped to the file
+        bool hasRange = false;
+        bool totalUnknown = false;           ///< pieces with lengths but no total
+        QByteArray mimeType;
+        std::optional<QHttpServerResponse> error;   ///< set: answer this instead
+    };
+
+    /// The one parser of HTTP Range in the daemon's preview routes: 404 for nothing
+    /// to serve, 416 for a malformed, out-of-bounds or end probe, or a start
+    /// past @p availableEnd. @p pieces in ascending virtualOffset order; a lone
+    /// piece with no length is the ED2K part file, preallocated to its final size.
+    [[nodiscard]] PreviewWindow planRange(const QList<UsenetStreamPiece>& pieces,
+                                          const QString& fileName, qint64 totalSize,
+                                          qint64 availableEnd, const QByteArray& rangeHeader) const;
+
+    /// One in-memory answer, capped at kPreviewChunkBytes and at @p availableEnd:
+    /// for a source with no total yet, which cannot promise a Content-Length.
+    /// Takes the raw `Range` header rather than the request, because the answer
+    /// may come long after the QHttpServerRequest is gone.
     [[nodiscard]] QHttpServerResponse serveRange(const QList<UsenetStreamPiece>& pieces,
                                                  const QString& fileName,
                                                  qint64 totalSize,
                                                  qint64 availableEnd,
                                                  const QByteArray& rangeHeader);
+
+    /// Closes the connection of @p req once queued work is done: a streamed body that
+    /// ends short of its Content-Length would leave the player waiting on the rest.
+    [[nodiscard]] std::function<void()> connectionDropper(const QHttpServerRequest& req);
 
     // Endpoint handlers — Incoming folder browsing
     //

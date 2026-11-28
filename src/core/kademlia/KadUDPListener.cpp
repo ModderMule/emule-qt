@@ -450,6 +450,24 @@ void KademliaUDPListener::sendFindBuddyReq(uint32 ip, uint16 udpPort, const KadU
     // stock nodes ignore the byte
     packet.writeUInt8(prefs->myConnectOptions());
     sendPacket(packet, KADEMLIA_FINDBUDDY_REQ, ip, udpPort, targetKey, cryptTargetID);
+
+    // Remember per IP for the refresh gap; entries past any gap go when the map grows
+    const uint64 now = getTickCount();
+    if (m_findBuddyReqSent.size() > 256)
+        std::erase_if(m_findBuddyReqSent, [now](const auto& kv) { return now - kv.second > MIN2MS(5); });
+    m_findBuddyReqSent[ip] = now;
+}
+
+uint64 KademliaUDPListener::lastFindBuddyReqTick(uint32 ip) const
+{
+    const auto it = m_findBuddyReqSent.find(ip);
+    return it != m_findBuddyReqSent.end() ? it->second : 0;
+}
+
+KadUDPKey KademliaUDPListener::buddyOfferKey(uint32 ip, uint16 udpPort) const
+{
+    const auto it = m_buddyOfferKeys.find((uint64{ip} << 16) | udpPort);
+    return it != m_buddyOfferKeys.end() ? it->second : KadUDPKey(0);
 }
 
 void KademliaUDPListener::sendPacket(SafeMemFile& data, uint8 opcode, uint32 destIP,
@@ -2147,7 +2165,7 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
 
 void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_RES(const uint8* data, uint32 len,
                                                           uint32 ip, uint16 udpPort,
-                                                          const KadUDPKey& /*senderKey*/)
+                                                          const KadUDPKey& senderKey)
 {
     // Matches MFC KademliaUDPListener.cpp:1725-1761
     if (len < 34) // 16 (checkID) + 16 (clientHash) + 2 (tcpPort)

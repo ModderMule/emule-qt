@@ -129,6 +129,7 @@ jobs:
           # Not plain "macos": restore matches by prefix, and that picked up the
           # newer macos-intel cache (v0.6.2: 26% hits).
           key: macos-arm64
+          max-size: 1G   # default 500M; repo cache quota 10G shared by all jobs
 
       - name: Configure
         run: >

@@ -3,7 +3,6 @@
 #include <libtorrent/alert.hpp>
 #include <libtorrent/config.hpp>
 #include <libtorrent/fingerprint.hpp>
-#include <libtorrent/version.hpp>
 
 #include <algorithm>
 #include <limits>
@@ -61,7 +60,7 @@ lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
     p.set_int(lt::settings_pack::allowed_enc_level, lt::settings_pack::pe_both);
 
     if (!s.userAgent.isEmpty())
-        p.set_str(lt::settings_pack::user_agent, s.userAgent.toStdString() + " libtorrent/" LIBTORRENT_VERSION);
+        p.set_str(lt::settings_pack::user_agent, s.userAgent.toStdString());
     p.set_str(lt::settings_pack::peer_fingerprint, lt::generate_fingerprint("EQ", s.versionMajor, s.versionMinor, s.versionRevision));
 
     // I2P. No SAM yet (router starting or failed, or I2P off): a bridge nothing answers on

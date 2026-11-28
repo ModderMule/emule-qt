@@ -307,12 +307,17 @@ The compatibility target's dialect, adopted unchanged (`natt-transports-emuleai.
     rule. Anything else goes the normal claim path; a buddy that does not know refreshes
     refuses it there ("already a known client" / own buddy), harmless.
   - When: with every `OP_BUDDYPING` (first one at link start, then 10 min), and on demand
-    when our buddy relays a `0xA0` to us, at most every 30 s. No 60 s keepalive: the
-    mappings measured outlived 150 s idle, and the on-demand refresh covers a moved one.
+    when our buddy relays a `0xA0` to us. Either one only ≥ 45 s (ms clock) after the last
+    `0x51` to that IP, the one that found the buddy included: the buddy's flood check allows
+    one `0x51` per 30 s per IP and charges dropped ones too, so a 30 s cadence under frequent
+    relays drains it to a ban. No 60 s keepalive: the mappings measured outlived 150 s idle,
+    and the on-demand refresh covers a moved one.
   - Buddy does not hold the hint for the refresh: it sends `0xAA` at once with the port it
     has. A refresh that moves the port within 3 s of a hint sends one more `0xAA` (same
     target, buddy ID, file) with the new port. The requester treats it like the first one:
     one more endpoint to punch, the freshest.
+  - Receiver key: the sender key of the buddy's `0x5A` (`KADEMLIA_FINDBUDDY_RES`), else the
+    routing table contact's. Sent with key 0 the buddy takes it as a new request and refuses.
   - No Kad ID or receiver key for the buddy (not in the routing table or buddy store): no
     refresh sent; the hint falls back to the first `0x51` source.
 - Target: `processReaskCallbackTCP` sees the zero file hash, reads the embedded opcode and

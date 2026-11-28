@@ -224,6 +224,8 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1
         with:
           key: windows
+          # default 500M was 99.8% full; repo cache quota 10G shared by all jobs
+          max-size: 2G
 
       - name: Configure
         shell: pwsh

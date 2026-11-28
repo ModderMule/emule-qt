@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <list>
 #include <memory>
+#include <unordered_map>
 
 namespace eMule {
 class HostResolver;
@@ -59,6 +60,12 @@ public:
     /// Out-tracked, so the node's FINDBUDDY_RES is accepted. MFC Search.cpp:810-837.
     void sendFindBuddyReq(uint32 ip, uint16 udpPort, const KadUDPKey& targetKey,
                           const UInt128* cryptTargetID);
+    /// getTickCount() of the last FINDBUDDY_REQ sent to @p ip, 0 = none lately. The
+    /// buddy's flood check charges each one, a refresh included (emule-qt#281).
+    [[nodiscard]] uint64 lastFindBuddyReqTick(uint32 ip) const;
+    /// Sender key of the node's FINDBUDDY_RES: our receiver key for it when it is not
+    /// in the routing table. Empty when none.
+    [[nodiscard]] KadUDPKey buddyOfferKey(uint32 ip, uint16 udpPort) const;
     /// receiverKeySent: the peer echoed a non-zero receiver key, valid or not.
     void processPacket(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
                        bool validReceiverKey, const KadUDPKey& senderKey,
@@ -182,6 +189,8 @@ private:
     IncomingLog m_incoming;
     OutboundGuard m_outGuard;              ///< every request we send, per destination IP
     uint64 m_lastOutGuardCleanup = 0;      ///< getTickCount() ms
+    std::unordered_map<uint32, uint64> m_findBuddyReqSent;     ///< IP → getTickCount()
+    std::unordered_map<uint64, KadUDPKey> m_buddyOfferKeys;    ///< (IP << 16 | port) → key
 
     void chargeOutbound(uint32 destIP, uint8 opcode);
 };
